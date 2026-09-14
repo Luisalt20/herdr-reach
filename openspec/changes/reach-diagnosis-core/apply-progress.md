@@ -1178,3 +1178,213 @@ PR 7 extends `internal/probe/egress.go` and `egress_test.go` (both now exist) an
 This file is the **authoritative** artefact. Its Engram mirror is now split in **five** parts because the merged text exceeds the store's 50,000-character content limit: part 1 — the file header plus the PR 1 and PR 2 sections — under the topic `sdd/reach-diagnosis-core/apply-progress`; part 2 — the PR 3 section — under `sdd/reach-diagnosis-core/apply-progress/part2`; part 3 — the PR 4 section — under `sdd/reach-diagnosis-core/apply-progress/part3`; part 4 — the PR 5 section — under `sdd/reach-diagnosis-core/apply-progress/part4`; and part 5 — this PR 6 section — under `sdd/reach-diagnosis-core/apply-progress/part5`.
 
 Every part states the artefact path, this file's byte size and its SHA-256 digest **as recorded when that part was saved**, and that the repository file is authoritative. Parts 1–4 therefore carry their own slice's snapshot and their digests no longer match this file, which has grown by one section since; part 5 carries the merged file's size and digest as of this run. A mirror part is a readable convenience copy of this artefact, not a second source of truth: read this file for the complete, current record. The PR 3, PR 4 and PR 5 sections' own older notes still describe the earlier two-, three- and four-part shapes; they are earlier sections of this artefact and are deliberately not rewritten here.
+
+---
+
+# Apply Progress — PR 7 of 20 — WU12 + WU13 · The egress reachability probes: public SSH and the Cloudflare edge regions
+
+**Change**: `reach-diagnosis-core` · **Slice**: **PR 7 of 20** — "the egress reachability probes: public SSH and the Cloudflare edge regions" (WU12 + WU13)
+**Branch**: `feat/probe-egress-reachability`, stacked on PR 6's branch `feat/probe-sshd-hub` (chain strategy `stacked-to-main`, so PR 7 targets PR 6's branch and **not** `main`)
+**Date**: 2026-09-14 · **Artifact store**: `both` (this file + Engram mirror, split as the mirror note at the end records)
+**Strict TDD**: active — `openspec/config.yaml` declares `strict_tdd: true` with runner `go test ./...`; RED → GREEN → TRIANGULATE → REFACTOR followed for both halves of this slice
+**Skill resolution**: `paths-injected` — read `/home/luisalt20/.config/opencode/skills/go-testing/SKILL.md` and `/home/luisalt20/.config/opencode/skills/work-unit-commits/SKILL.md` before writing code; no registry fallback was needed
+**Delivery path consumed**: `auto-chain` / `stacked-to-main` — this run implements **only** the assigned slice and stops at its PR boundary; the PR 1–PR 6 sections above are preserved unchanged
+**Commit status**: nothing committed, staged, pushed or branched by this phase; the work is left in the working tree for the orchestrator
+**How to read this file**: PR 7's entry is the section below. The current change-wide remainder is restated at the end of this section.
+
+---
+
+## Structured status consumed (PR 7)
+
+| Field | Value |
+|---|---|
+| `schemaName` / `schemaVersion` | `gentle-ai.sdd-status` / `2` |
+| `changeName` | `reach-diagnosis-core` |
+| `nextRecommended` | `apply` |
+| `applyState` | `ready` |
+| `dependencies.apply` / `.verify` / `.archive` | `ready` / `blocked` / `blocked` |
+| `actionContext.mode` | `repo-local` |
+| `actionContext.workspaceRoot` | `/home/luisalt20/projects/close/herdr-reach` |
+| `actionContext.allowedEditRoots` | `["/home/luisalt20/projects/close/herdr-reach"]` — every file written lives inside it |
+| `artifactStore` | `both` declared by the parent prompt (native `openspec`); files written under `openspec/changes/reach-diagnosis-core/` and mirrored to Engram |
+| `taskProgress` before this run | 165 total / 52 completed / 113 pending (PR 1 + PR 2 + PR 3 + PR 4 + PR 5 + PR 6) |
+| `taskProgress` after this run | 165 total / **60 completed** / 105 pending |
+| `actionContext` warnings | none |
+| Work-unit ownership markers | all eight PR 7 rows carry the terminal `<!-- sdd-owner: implementation -->` marker; the whole file still holds 165 markers for 165 checkbox rows, none malformed, duplicate, unsupported or non-terminal |
+| `applyState: all_done`? | no — implementation continues, so editing was permitted |
+
+**Attempt context**: the status reports one bounded attempt already active for this work unit (`token sha256:7f46227bd0aee8f37dc39aa4d05cacce0f1f61d5c364681180edba4687eb4843`) with a **3,000**-changed-line ceiling. Per the parent prompt the parent owns `sdd-attempt acquire`/`settle`; this executor did **not** call the native attempt command. The counted-line position against that ceiling is in "Workload and PR boundary".
+
+---
+
+## Completed tasks and their persisted checkbox updates (PR 7)
+
+All eight PR 7 rows were flipped from `- [ ]` to `- [x]` in `openspec/changes/reach-diagnosis-core/tasks.md` (lines 226–233) as the work completed, then re-read to confirm. `git diff --stat` on that file reports exactly `8 insertions(+), 8 deletions(-)` — eight flips and nothing else (60 checked, 105 unchecked of 165).
+
+| # | Task (short) | Persisted update | Evidence |
+|---|---|---|---|
+| 1 | RED — one case per outcome for both SSH probes: banner received; non-SSH banner ⇒ measured fail/`banner_not_ssh`; refused and reset ⇒ measured fail; authoritative resolver negative ⇒ measured fail/`dns_no_such_host` vs resolver timeout ⇒ unresolved/`dns_unresolved`; plus each probe's `indeterminate` control case | `tasks.md:226` → `- [x]` | `go test -count=1 -run 'TestEgressSsh' ./internal/probe/` → **exit 1**, 53 behaviour failures, every one `the registry built no "egress.ssh.known"/"egress.ssh.443" probe, so no run could measure it` — the probes are declared and unbuildable, not missing symbols |
+| 2 | GREEN — implement both probes in `egress.go` through the classification table only | `tasks.md:227` → `- [x]` | Focused run **exit 0**, 57 `--- PASS` lines including subtests: banner (pass/`ok` with the banner verbatim), non-SSH banner, refused, reset, the two name-level outcomes on both surfaces, the two not-measured capabilities and the dial-budget expiry |
+| 3 | TRIANGULATE — partial-banner case: a truncated read that still carries an SSH identification string classifies as SSH, verbatim detail preserved (R-HR-07) | `tasks.md:228` → `- [x]` | `TestEgressSshProbesPreserveAPartialIdentificationString`: two packets `SSH` + `-2.0-OpenS` ⇒ pass with `"SSH-2.0-OpenS"` in the detail; a read truncated to `SSH-` ⇒ pass; `SSH` alone ⇒ `banner_not_ssh`; a reset and a deadlined read beside them; the read deadline asserted per case |
+| 4 | REFACTOR + GATE — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestEgressSsh` | `tasks.md:229` → `- [x]` | `gofmt -l .` exit 0 (empty output) · `go vet ./...` exit 0 (no output) · focused `TestEgressSsh` exit 0 |
+| 5 | RED — both regions pass; one region fails while the other passes ⇒ the split is visible per observation and the aggregate is `fail`; a fully blackholed target ⇒ measured fail/`budget_expired`; plus the `indeterminate` control case | `tasks.md:230` → `- [x]` | `go test -count=1 -run 'TestEgressCF' ./internal/probe/` → **exit 1**, 29 behaviour failures, every one `the registry built no "egress.cf.7844"/"egress.cf.443" probe, so no run could measure it` |
+| 6 | GREEN — both probes produce one observation per region (`region1`, `region2`) while the registry still contains exactly ten probes (D10) | `tasks.md:231` → `- [x]` | Focused run **exit 0**: two observations labelled `tcp 7844 region1` / `tcp 7844 region2` (and `tcp 443 regionN`), both declared addresses dialed, both connections closed, `len(probe.Registry()) == 10` asserted, one registry entry per probe |
+| 7 | TRIANGULATE — the declared target set for these probes carries both regions, an override that replaces it is reflected per observation and the closed-set assertion still holds | `tasks.md:232` → `- [x]` | `TestEgressCFDeclaredRegionsSurviveAnOverride`: both regions and their labels read from `DeclaredTargets()`; an override of `egress.cf.443` yields exactly one observation and one dial at `198.51.100.7:443`; the effective set total is `declared − 2 + 1` with every other probe unchanged; a per-region name split (region1 `dns_no_such_host`, region2 pass) surfaces per observation |
+| 8 | REFACTOR + GATE — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestEgressCF` | `tasks.md:233` → `- [x]` | `gofmt -l .` exit 0 (empty) · `go vet ./...` exit 0 · focused `TestEgressCF` exit 0 · full suite and `-race` suite exit 0 |
+
+---
+
+## Files changed (PR 7)
+
+| Path | Status | Authored lines | Purpose |
+|---|---|---|---|
+| `internal/probe/egress.go` | modified | +540 / −10 (550) | The file header rewritten to describe the three egress question families; the two SSH subject/prefix constants and the identification-string bound; `dialFact` split into a hub wrapper plus the shared `dialFactFor(subject, …)`; the shared reachability helpers (`resolverFact`, `isAuthoritativeNegative`, `isNameResolutionError`, `declaredEndpoints`, `declaredEndpoint`, `reachAttempt`); the `egressSSH` probe with `readIdentificationString`, `carriesSSHIdentification` and `bannerFact`; the `egressCF` probe measuring one observation per declared region |
+| `internal/probe/egress_test.go` | modified | +1165 / −8 (1173) | The PR 7 fixtures (`scriptedResolver`, `scriptedBannerConn` with chunked reads, `scriptedDialFunc`, `cfDialer`, `reachSeams`, `egressBuild`, `runSsh`/`runCF`, `declaredAddresses`/`declaredAddress`, `declaredTargetsFor`, `cfDialerFunc`, the two probe tables) and thirteen test functions: seven for the SSH half and six for the Cloudflare half. The two hub assertions that read the whole result text were renamed `hubText` → `resultText`, because the helper is no longer hub-specific |
+| `internal/probe/classify.go` | modified (enabling edit — deviation #1) | +21 / −1 (22) | One new observable (`ObsSSHBannerReceived`) with its `PurposePortReachability` row, and the two `PurposeNameResolution` rows for `ObsCapabilityExcluded`/`ObsCommandDenied` that the name-resolution step needs (design §5.1 obligation 2) |
+| `internal/probe/registry.go` | modified (enabling edit — deviation #2) | +14 / −11 (25) | The four PR 7 constructors filled in (`egress.ssh.known`, `egress.ssh.443`, `egress.cf.7844`, `egress.cf.443`); the names, the kinds and the order are untouched, and the registry still holds exactly ten entries |
+| `openspec/changes/reach-diagnosis-core/tasks.md` | modified | 8 lines changed in place (8 deletions + 8 additions = 16 changed lines) | Eight PR 7 checkboxes `- [ ]` → `- [x]` |
+| `openspec/changes/reach-diagnosis-core/apply-progress.md` | modified | this appended section | Cumulative PR 7 evidence; the PR 1–PR 6 sections are untouched |
+
+**Authored code + tests: 1,770 counted lines** (550 + 1,173 + 22 + 25). No file outside the two assigned paths, the two disclosed enabling paths and the two artifact files was created or modified; `README.md`, `PRD.md`, the proposal, the specs, the design, `explore.md`, `research.md`, `preproposal.md` and `openspec/config.yaml` are untouched. No new dependency was added (production code imports only `bytes`, `context`, `errors`, `fmt`, `io`, `net`, `strconv`, `strings`, `syscall`, `time` — all standard library; the tests add `io`, `net`, `reflect`); no linter, no CI configuration and no `go.sum` was introduced.
+
+---
+
+## Test commands run — exact commands and exit status (PR 7)
+
+| # | Command | Exit | Observed output (abridged) |
+|---|---|---|---|
+| 1 | `go test -count=1 -run 'TestEgressSsh' ./internal/probe/` (task 1 RED) | **1** | 53 failures, all `the registry built no "egress.ssh.known" probe, so no run could measure it` (the 443 probe likewise) — a behaviour RED: the probes are declared, registered by name and unbuildable |
+| 2 | `gofmt -w internal/probe/egress.go internal/probe/egress_test.go internal/probe/classify.go internal/probe/registry.go` then the same focused run (task 2 GREEN) | **0** | `ok …/internal/probe 0.009s`; 57 `--- PASS` lines including subtests |
+| 3 | `go test -count=1 ./...` (after the SSH half) | **0** | `ok …/internal/probe 0.412s` · `ok …/internal/version 0.008s` — the hub suite still green after `dialFact` was split |
+| 4 | mutations S1–S5, one at a time against `/tmp` backups (see "Mutation evidence") | **1** each | every mutation caught by the case it targets; `diff` confirmed each restore and the package was green again afterwards |
+| 5 | `go test -count=1 -run 'TestEgressCF' ./internal/probe/` (task 5 RED) | **1** | 29 failures, all `the registry built no "egress.cf.7844" probe, so no run could measure it` (the 443 probe likewise) |
+| 6 | the same focused run (task 6 GREEN) | **0** | `ok …/internal/probe 0.009s` |
+| 7 | mutations C1–C5, one at a time against `/tmp` backups | **1** each | every mutation caught by the case it targets; restores verified with `diff` and the package re-run green |
+| 8 | `gofmt -l .` · `go vet ./...` · `go test -count=1 -run 'TestEgressSsh' ./internal/probe/` · `-run 'TestEgressCF'` (tasks 4 and 8 gates) | **0** each | `gofmt` empty output; `vet` no output; both focused runs `ok` |
+| 9 | `go test -count=1 ./...` (final gate) | **0** | `ok …/internal/probe 0.418s` · `ok …/internal/version 0.009s` |
+| 10 | `go test -race -count=1 ./...` (final gate) | **0** | `ok …/internal/probe 1.497s` · `ok …/internal/version 1.018s` |
+| 11 | `go test -count=1 -run 'TestEgressSsh|TestEgressCF' ./internal/probe/` (the map's two filters, **bare pipe**) | **0** | `ok …/internal/probe 0.016s` |
+| 12 | `go test -count=1 -run 'TestEgressSsh\|TestEgressCF' ./internal/probe/` (the map's **escaped** form, reproduced as written) | **0** | `ok …/internal/probe 0.008s [no tests to run]` — the artifact's `\|` typo again (PR 4 risk #7, PR 5 note 12, PR 6 run 13): under RE2 it matches a literal pipe and selects nothing |
+| 13 | `go test -count=1 -run 'TestEgressSsh|TestEgressCF|TestEgressHub' -v ./internal/probe/` (focused inventory) | **0** | 19 top-level functions PASS (6 hub + 7 SSH + 6 Cloudflare) |
+| 14 | `go test -count=1 -v ./internal/probe/` (final inventory) | **0** | 69 top-level functions PASS across the package, 248 `--- PASS` lines including subtests |
+
+**Runtime harness**: **N/A as an end-to-end run, exercised in process at both new probe boundaries.** There is still no CLI (`cmd/herdr-reach` lands in PR 18/19), no `doctor` wiring (PR 18) and no real network: the slices that would make a real machine reachable are PR 18–PR 20. What *is* exercised is the production path a run takes — `Registry()`/`ProbesFor(seams, input)` → the declared entry → its constructor → `Run` — with scripted resolver, dialer, connection and clock seams over the deny-all base of design §6.2, which is the first proof level the design names for a probe. The unmeasured live steps remain the real socket shapes (a real SSH banner, a real NXDOMAIN, a real blackholed region) and the real registry interaction with the runner, both of which belong to the verify phase's hand-run and to PR 18's doctor.
+
+---
+
+## TDD Cycle Evidence (PR 7)
+
+RED → GREEN → TRIANGULATE → REFACTOR per PR 7 task row, in the two halves the slice merges (the two SSH destination probes first, then the two per-region Cloudflare edge probes, which is also the boundary the task plan names). Both REDs are behaviour failures — the probe is declared, registered and unbuildable — rather than missing symbols inside a file that already exists.
+
+| Task row | Phase | Evidence produced | Observed failure (RED) | Observed pass (GREEN) |
+|---|---|---|---|---|
+| 1 RED — SSH cases | RED | `egress_test.go` gained the PR 7 fixtures and the seven SSH test functions before any PR 7 production code existed | exit 1: 53 × `the registry built no "egress.ssh.known"/"egress.ssh.443" probe, so no run could measure it` | n/a |
+| 2 GREEN — both probes | GREEN | `egress.go`: the constants, the `dialFactFor` split, `resolverFact`/`isAuthoritativeNegative`/`isNameResolutionError`, `declaredEndpoints`/`declaredEndpoint`, `reachAttempt`, the `egressSSH` probe, `readIdentificationString`, `carriesSSHIdentification`, `bannerFact`; `classify.go`: the banner observable and three rows; `registry.go`: the two SSH constructors | (previous row) | exit 0: 57 PASS lines; banner pass, non-SSH banner, refused, reset, both name-level outcomes on both surfaces, both not-measured capabilities, dial-budget expiry |
+| 3 TRIANGULATE — partial banner | TRIANGULATE | `TestEgressSshProbesPreserveAPartialIdentificationString` (five cases × two probes), plus the read-surface reset and deadlined-read cases | Cases pass against the GREEN implementation; teeth proven by S5 (the read stops after one chunk), S1 (the identification string is never recognised) and S4 (no read deadline), each exit 1 | exit 0 after each restore |
+| 4 REFACTOR + GATE | REFACTOR | `dialFact` split into the hub wrapper plus `dialFactFor` so four probes share one mapping and the hub's text is byte-identical (the hub suite re-ran green); comments re-read against the code | n/a — refactor only (the hub suite is the regression gate) | exit 0: `gofmt -l .` (empty), `go vet ./...`, focused suite, full suite |
+| 5 RED — Cloudflare cases | RED | `egress_test.go` gained `declaredTargetsFor`, `cfDialerFunc` and the six Cloudflare test functions, with no Cloudflare production code in place | exit 1: 29 × `the registry built no "egress.cf.7844"/"egress.cf.443" probe, so no run could measure it` | n/a |
+| 6 GREEN — both probes | GREEN | `egress.go`: the `egressCF` probe (`Run` with the per-region reduction, `observe` with one measurement per declared region); `registry.go`: the two Cloudflare constructors | (previous row) | exit 0: both regions observed separately, the split visible, the blackholed budget measured, the indeterminate control table |
+| 7 TRIANGULATE — declared set and override | TRIANGULATE | `TestEgressCFDeclaredRegionsSurviveAnOverride` (both regions declared, an override replaced not appended, the closed-set total recomputed, a per-region name split) | Cases pass against the GREEN implementation; teeth proven by C4 (the override is ignored) and C3 (the result names only the first region), each exit 1 | exit 0 after each restore |
+| 8 REFACTOR + GATE | REFACTOR | `strings.Join` extracted for the multi-region target and detail exactly as `local.sshd` reports its three observations; comments re-read | exit 1 on C1 (the split stops after the first region) and C2 (the aggregate hardcoded to pass) before the gate | exit 0: `gofmt -l .` (empty), `go vet ./...`, focused suite, full suite, `-race` suite |
+
+**Strict-TDD integrity note.** (a) Both REDs are registry-constructor failures, because a probe the registry cannot build cannot be measured at all: that is the honest first failing state of these rows, and it is a *behaviour* failure (declared and unbuildable), not a missing symbol in the suite. (b) Rows 3 and 7 are TRIANGULATE rows: their cases were written against the GREEN implementation, which strict TDD allows for triangulation, and every one of them was mutation-checked rather than trusted (ten mutations, all caught). (c) Row 4's refactor was verified by the landed hub suite rather than by new assertions, so the refactor could not change the hub's text: the suite's exact-wording assertions are the gate. (d) No comment, control case or triangulation case was removed or compressed to reach any number; the counts are reported in "Workload and PR boundary".
+
+---
+
+## Mutation evidence (PR 7)
+
+Every mutation was applied to a `/tmp` backup, run against the focused case, and restored; `diff` then confirmed the restore and the package was re-run green.
+
+| # | Mutation | Case that caught it | Observed failure |
+|---|---|---|---|
+| S1 | `bannerFact`'s SSH branch disabled (`case false`) | the five SSH banner cases | exit 1 — a port speaking SSH stopped being a pass |
+| S2 | The dial's name-resolution branch removed from `reachAttempt` | `TestEgressSshProbesDistinguishANameThatDoesNotExistFromAResolverThatDidNotAnswer` (dialer surface) | exit 1 — a name-level dial failure became an internal error instead of `dns_no_such_host`/`dns_unresolved` |
+| S3 | `isAuthoritativeNegative` always false | the same case (resolver surface) | exit 1 — the authoritative negative collapsed into `dns_unresolved` |
+| S4 | The identification-string read set no deadline | `TestEgressSshProbesPreserveAPartialIdentificationString` | exit 1 — `the probe read the identification string without a deadline` |
+| S5 | The read stopped after its first chunk (`for total == 0`) | the two-packet partial-banner case | exit 1 — a partial identification string stopped being recognised |
+| C1 | The region loop stopped after the first region (`targets[:1]`) | the two-region and split cases | exit 1 — the second region had no observation |
+| C2 | `Run` hardcoded `Pass`/`ReasonOK` instead of `Aggregate` | the split and indeterminate cases | exit 1 — a failing region was aggregated as a pass |
+| C3 | `Result.Target` set to the first observation's target | the declared-set assertion | exit 1 — the second region's address disappeared from the result |
+| C4 | `declaredEndpoints` read the declarations instead of the effective set | the override case | exit 1 — the override was ignored |
+| C5 | The per-region connection never closed | the region-pass cases | exit 1 — `the connection to … was left open` |
+
+**Triangulation depth.** Seven independent angles on the SSH probes (the banner as the positive signal against the dialer's own record of the declared address; the non-SSH banner as a measured negative; refusal and reset as two distinct measured negatives; the name-level pair on both the resolver and the dialer surface; two not-measured capabilities kept distinguishable; a chunked, truncated and deadlined read; and fourteen outcome/subject pairs scanned for a transport claim) and six on the Cloudflare probes (per-region observations matched to the declaration; the split in both positions; the blackholed budget with its deadline measured; five unanswered outcomes scanned for a block; the declared set against an override with the closed-set total recomputed; and five outcome sets scanned for a transport claim). **Ten mutations, every one caught.**
+
+---
+
+## Deviations from design (PR 7)
+
+| # | Deviation | Why | Design reference | Follow-up owner |
+|---|---|---|---|---|
+| 1 | **`internal/probe/classify.go` was edited, which is outside the PR 7 file list** (+21/−1): one new observable (`ObsSSHBannerReceived`, `ssh_banner_received`) with its `PurposePortReachability` pass row, and two `PurposeNameResolution` rows for `ObsCapabilityExcluded`/`ObsCommandDenied`. | Design §5.1 prints the negative half only ("TCP connected, banner is not SSH"). The positive half of the same question is inexpressible without an observable of its own, and borrowing `tcp_established` would make two different raw facts share one row. The two name-resolution rows are the same gap: the resolver step is a probe step that can have no capability or a denied seam, and obligation 2 requires those to be not-measured facts with their own codes rather than a fall-through. Purely additive, same package, proven by S1 and by the not-measured controls. | design §5.1 (SSH banner row, obligation 2), PR 2 deviation #2, PR 6 deviation #1 | `sdd-verify` must adjudicate; the orchestrator may prefer to fold the rows into a review of PR 2 |
+| 2 | **`internal/probe/registry.go` was edited beyond the two SSH slots, in the same slice** (+14/−11): all four PR 7 constructors are filled. | Four slots, four constructors, one edit each; the names, kinds and order are untouched and the enumeration test still asserts exactly ten. Filling only the SSH slots and then re-editing the same table in the same slice would add a review hop with no behavioural difference. | design §4, design D10, PR 5 deviation #7 / PR 6 deviation #2 | n/a — the CF half is part of this slice; PR 8 fills the remaining four slots |
+| 3 | The SSH probes **pre-resolve** the declared name through the injected `Resolver` and then dial the **declared** address, so a production dialer resolves the name a second time inside the dial. | The design names `Resolver` as the seam of "probes whose declared target is a name" (§6.1), and the spec's replay scripts dialers **and** resolvers: leaving it unused would make the seam dead and the disambiguation requirement untestable at the probe boundary. Dialing the resolved address instead would put an address into the dialed set that the declaration does not contain, breaking "the dialed set equals the declared set" (R-HR-NF-10, design §6.2 level 2). The cost — one extra lookup per probe in production — is paid deliberately and stated in the code. | design §6.1, design §6.2 level 2, R-HR-NF-10, PRD §1.1 | `sdd-verify` may want the cost restated in `docs/diagnosis-report.md` (PR 17) |
+| 4 | A dialer's **own** name-resolution failure is classified under `PurposeNameResolution` (and so is a resolver-seam failure), while a port-level dial failure stays under `PurposePortReachability`. | A name that does not exist is the same fact whichever seam surfaced it, and letting two seams produce two codes for it is the wrong-classification risk RG-8 names. The hub probe is **not** changed to match: its target is run input, its slice is PR 6, and its tests pin the landed behaviour, so a name-shaped `--hub` that does not resolve still reports `internal_error` today (risk #1). | design §5.1 (the two name-resolution rows, RG-8), design §5.1 obligation 3 | **PR 7's mapping is the one to copy**; the hub's is a residual gap recorded below |
+| 5 | `Result.Target` for a multi-region probe is the declared set rendered in declaration order (`region1…:7844, region2…:7844`), not `null` and not the first region. | design §3.3 types `probes[].target` as one string, and a probe with two endpoints has no single target; naming only the first would hide the region the probe measured, and `null` would read as "no target" for a probe that measured two. Each observation still carries its own exact address, exactly as `local.sshd` does for its three subjects (PR 6 deviation #7). | design §3.1 (`Observation.Target`), design §3.3 (`probes[].target`), design D10, PR 6 deviation #7 | PR 16's payload mapper must echo this string for the two edge probes rather than `null` |
+| 6 | The SSH identification-string read is a **bounded accumulation**: it reads until it holds an identification string, a line terminator, or `sshBannerLimit` bytes, with a deadline from the run's clock (falling back to the wall clock when none was injected). | A single `Read` can return `SSH` before `-2.0-…`, which would classify a real SSH server as `banner_not_ssh`; RFC 4253 permits a server to send other lines first, and the bound and the line scan are what handle both. `net.Conn` carries no context, so the deadline is the only bound a read can be given, and the fallback is what keeps a run with no injected clock from waiting forever. | RFC 4253 §4.2, R-HR-07, design §3.3 | `sdd-verify` may want the bound and the line scan stated in the doc (PR 17) |
+| 7 | `hubText` was renamed `resultText` and its two call sites updated. | The helper joins every string a result carries and is used by three probe groups now; a name that says "hub" on a Cloudflare assertion would mislead a reader of the suite. Two call sites, same file, no assertion changed. | tasks PR 7 file list (this file is assigned to the slice) | n/a |
+| 8 | The two not-measured capabilities are asserted with a `wantContains` word ("no resolver", "no dialer", "denied") rather than by comparing the whole detail string. | The detail carries socket and resolver wording that exists to be quotable, and asserting it in full would make the suite a second copy of the code. The stable assertions stay structural (resolution, verdict, reason, target, the two reasons being different); one word per case proves the text names what was missing. | R-HR-07, design §5.1 obligation 2 | n/a |
+
+---
+
+## Workload and PR boundary (PR 7)
+
+| Field | Value |
+|---|---|
+| Slice | PR 7 of 20 — "the egress reachability probes: public SSH and the Cloudflare edge regions" (WU12 + WU13) |
+| PR 7 estimate in `tasks.md` | 400–600 lines (point ≈500) |
+| Host attempt ceiling | 3,000 counted changed lines |
+| **Actual authored code + tests** | **1,770 counted lines**: `egress.go` +540/−10 (550), `egress_test.go` +1165/−8 (1,173), `classify.go` +21/−1 (22), `registry.go` +14/−11 (25) |
+| Artifact changes | `tasks.md` 8 lines changed (8 + 8 = **16** changed lines) + this appended section |
+| **Total counted changed lines for the work unit** | **≈1,796** (1,770 authored + 16 checkbox + this section) |
+| Chain per-PR cohesion ceiling | 1,000 changed lines (user-approved, revised from 600 on 2026-09-14) |
+| Review budget (session canonical) | 400 changed lines |
+| Budget status | **Over the slice estimate, over the 1,000-line chain ceiling and over the 400-line session budget; inside the 3,000-line attempt ceiling** |
+| PR boundary | Starts at PR 6's branch state (`internal/probe` vocabulary + classification table + seams + declared target set + runner + registry with `local.env`, `local.sshd`, `egress.hub.direct`) and ends at `internal/probe` compiling and passing with the two public-SSH probes and the two per-region Cloudflare edge probes landed and registered (six of the ten constructors filled). **PR 8 is not started**: no `quic.go`, `tls.go`, `internal/diagnosis/`, `internal/transport/`, `internal/report/`, `internal/doctor/`, `cmd/` or `docs/diagnosis-report.md` exists, and the four remaining registry slots (`egress.quic`, `tls.interception`, `tls.truststore`) are still nil |
+| Rollback boundary | Revert `egress.go`'s PR 7 additions (the header, the constants, the `dialFactFor` split, the shared reachability helpers, the `egressSSH` and `egressCF` groups), revert `egress_test.go` to its PR 6 state (including the two `hubText` call sites), revert `classify.go`'s +21/−1 and `registry.go`'s four constructor slots. The module returns to its PR 6 state with the hub probe, `local.env`, `local.sshd`, the vocabulary, the classification table, the seams, the declared target set and the runner still green. `tasks.md` lines 226–233 revert to `- [ ]`; this appended section is the only other PR 7 change |
+| Rollback independence | Nothing outside `internal/probe` consumes either probe group — the doctor wiring lands in PR 18 and the reasoning layer in PR 9+ — so the revert removes no unrelated work and leaves PR 1–PR 6 green |
+
+**Why 1,770 > 1,000, stated honestly, and the boundary the plan already names.** The overage is not padding. 1,173 lines are `egress_test.go` — 272 of them the PR 7 fixtures (a chunked banner connection, an address-scripted dialer, a per-host resolver, the declared-set readers) and the rest thirteen test functions that between them script 53 SSH subtests and 29 Cloudflare subtests over the deny-all base — and 550 are `egress.go`, of which roughly 240 are the comments that carry the *why* of the two purposes, the four dial outcomes, the two name-level outcomes and the per-region split, which is exactly the code a reviewer has to trust. The review-budget rule forbids reaching a number by deleting tests, control cases, triangulation cases, comments, docs or blank lines, and no `size:exception` was assumed, so **nothing was compressed**; the honest count is reported instead.
+
+Measuring the code as written, the boundary the task plan names splits this slice into:
+
+- **PR 7a = WU12 (the two SSH destination probes)** — `egress.go`: the header, the constants, the `dialFactFor` split, the shared reachability helpers (`resolverFact` … `reachAttempt`, 184 lines) and the `egressSSH` group (199 lines), ≈ **442 counted lines**; `egress_test.go`: the PR 7 fixtures (272 lines) and the seven SSH test functions (468 lines), ≈ **740 counted lines**; `classify.go`'s banner observable and name-resolution rows (≈22) and `registry.go`'s two SSH constructors (≈13). Total ≈ **1,217 counted lines**, still ≈22 % above the 1,000-line ceiling — almost entirely because the shared fixtures and the six-way outcome table belong with the first probe group that needs them.
+- **PR 7b = WU13 (the two per-region Cloudflare edge probes)** — `egress.go`'s `egressCF` group (98 lines) and `egress_test.go`'s six Cloudflare test functions (407 lines), ≈ **505 counted lines**, inside the ceiling. PR 7b depends on PR 7a for the shared `reachAttempt`/`declaredEndpoints` helpers and the `resolverFact` mapping, and would target PR 7a's branch.
+
+**This executor did not split the slice or touch branches**: the parent assigned PR 7 as one unit, and a split moves a review boundary rather than the work. Against the 3,000-line attempt ceiling the work unit is comfortably inside it (≈1,796).
+
+---
+
+## Remaining unchecked tasks (PR 7 view)
+
+**Inside this slice: none.** All eight PR 7 checkbox rows are `- [x]` in `openspec/changes/reach-diagnosis-core/tasks.md` (re-read after the edits: **60 checked, 105 unchecked**; 165 rows total; `git diff --stat` on that file shows exactly 8 insertions and 8 deletions). The ownership markers were re-checked: 165 `<!-- sdd-owner: implementation -->` markers for 165 rows, every one terminal.
+
+The change-wide remainder is **105 checkbox lines in PR 8 – PR 20**, which belong to later chained slices on later branches (PR 7 targets PR 6's branch; the chain is `stacked-to-main`) and are **not** part of this work unit. The next unchecked line in the artifact, verbatim, is `tasks.md:240` — PR 8's first row, which is where the next slice resumes:
+
+```
+- [ ] **RED** — write `quic_test.go` with the four D8 outcomes and all four reason codes: any UDP reply ⇒ `(measured, pass, udp_response_received)`; silence ⇒ `(unresolved, udp_silence)`; ICMP port-unreachable ⇒ `(measured, fail, udp_unreachable)`; any other socket error ⇒ `(unresolved, udp_error_unclassified)`; plus the `indeterminate` control case. <!-- sdd-owner: implementation -->
+```
+
+PR 8 adds `internal/probe/quic.go`, `quic_test.go`, `tls.go` and `tls_test.go` (its own files, not this one) and fills the `egress.quic` and `tls.interception` registry slots. PR 9 fills `tls.truststore`, the last of the ten.
+
+---
+
+## Risks (PR 7)
+
+| # | Risk | Status / handling |
+|---|---|---|
+| 1 | A **name-shaped `--hub`** whose name does not resolve is still reported by the hub probe as `internal_error`/unresolved, while the four PR 7 probes report `dns_no_such_host`/`dns_unresolved` for the same fact (deviation #4) | The hub's mapping belongs to PR 6's reviewed slice, so this run did not silently change it. The gap is real: a user with `--hub nosuch.example:22` reads an internal error where the honest answer is "the name does not exist". **Smallest fix**: route the hub's dial errors through the same DNS branch `reachAttempt` uses; it is a three-line change in `egress.go` plus one hub case, and it belongs in the slice that reviews it |
+| 2 | A name-level `dns_no_such_host` is a **measured failure** at the probe layer | Design §5.1 calls it "a fact about the name, not about the network" and the diagnosis layer (PR 10+) must not read it as "the destination is blocked". The probe's detail says exactly that; PR 10's rule table is where the conclusion is worded, and PR 11's counterfactual cases must include this state |
+| 3 | The declared region targets are **constants** (`region1/2.v2.argotunnel.com`) that Cloudflare can change | Measured, not assumed: a changed host reports `dns_no_such_host` with the resolver's own wording, and `--target egress.cf.443=…` replaces the endpoint without a rebuild (asserted). The constants are also repeated as literals in the suite, so a rename in `targets.go` breaks the suite rather than silently moving what is measured |
+| 4 | Two bounded waits per SSH probe inside one runner bound (dial 4 s + banner read 4 s vs the runner's 10 s) | `2*probe.DefaultDialBudget > probe.DefaultProbeTimeout` is asserted, so a future edit to either constant fails the suite instead of turning a blackholed port into `probe_timeout`. Extends PR 6 risk #4 (a caller must not configure `ProbeTimeout` below the probe's own budget) |
+| 5 | The SSH banner bound (255 bytes) and the line scan are local decisions | Each is stated in the code with its reason (RFC 4253 §4.2), and the truncated cases pin the behaviour: `SSH-2.0-OpenS` and `SSH-` classify as SSH, `SSH` alone does not. A server that sends other lines before its identification string is handled; a server that sends more than 255 bytes before it is not, and that is the protocol's own ceiling rather than this bound |
+| 6 | The real socket shapes behind `dialFactFor`, `resolverFact` and `bannerFact` are unexercised | The tests script the errors a real dial, resolver and read return (`ECONNREFUSED`, `ECONNRESET`, a deadline expiry, `net.DNSError` with `IsNotFound`/`IsTimeout`) and assert the probe's own deadlines, but no live banner, live NXDOMAIN or live blackholed region is dialed in this suite — the project's own rule forbids real egress in tests. The verify phase's hand-run on the motivating network is the remaining evidence |
+| 7 | `egress_test.go` now holds three probe groups and its two shared helpers (`resultText`, the `scripted*` seams) are used by all of them | The PR 6 helpers were kept byte-identical apart from the two renamed call sites, so the hub's assertions are unchanged; the new fixtures are additive and named for what they script. A reviewer may still prefer the file split per group, which PR 8 can do when it adds `quic_test.go` and `tls_test.go` |
+| 8 | The artifact's focused filters (`-run 'TestEgressSsh\|TestEgressCF'`) select nothing under RE2 | Reproduced again (run 12) and recorded since PR 4 risk #7 (PR 5 note 12, PR 6 run 13): copy the filters from the map with a **bare** `|`. The eight checkboxes are unaffected |
+| 9 | The per-region result target is a joined string (deviation #5) | PR 16's payload mapper must echo it as one string rather than `null` or the first region, and PR 17's human projection must not read it as a single endpoint. Both observations carry their own address either way, so no consumer loses the split |
+
+### Engram mirror note
+
+This file is the **authoritative** artefact. Its Engram mirror is now split in **six** parts because the merged text exceeds the store's 50,000-character content limit: part 1 — the file header plus the PR 1 and PR 2 sections — under the topic `sdd/reach-diagnosis-core/apply-progress`; part 2 — the PR 3 section — under `sdd/reach-diagnosis-core/apply-progress/part2`; part 3 — the PR 4 section — under `sdd/reach-diagnosis-core/apply-progress/part3`; part 4 — the PR 5 section — under `sdd/reach-diagnosis-core/apply-progress/part4`; part 5 — the PR 6 section — under `sdd/reach-diagnosis-core/apply-progress/part5`; and part 6 — this PR 7 section — under `sdd/reach-diagnosis-core/apply-progress/part6`.
+
+Every part states the artefact path, this file's byte size and its SHA-256 digest **as recorded when that part was saved**, and that the repository file is authoritative. Parts 1–5 therefore carry their own slice's snapshot and their digests no longer match this file, which has grown by one section since; part 6 carries the merged file's size and digest as of this run. A mirror part is a readable convenience copy of this artefact, not a second source of truth: read this file for the complete, current record. The PR 3–PR 6 sections' own older notes still describe the earlier two-, three-, four- and five-part shapes; they are earlier sections of this artefact and are deliberately not rewritten here.
