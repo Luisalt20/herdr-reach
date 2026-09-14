@@ -960,3 +960,221 @@ PR 6 must also fill the `local.sshd` constructor slot in `internal/probe/registr
 This file is the **authoritative** artefact. Its Engram mirror is now split in **four** parts because the merged text exceeds the store's 50,000-character content limit: part 1 — the file header plus the PR 1 and PR 2 sections — under the topic `sdd/reach-diagnosis-core/apply-progress`; part 2 — the PR 3 section — under `sdd/reach-diagnosis-core/apply-progress/part2`; part 3 — the PR 4 section — under `sdd/reach-diagnosis-core/apply-progress/part3`; and part 4 — this PR 5 section — under `sdd/reach-diagnosis-core/apply-progress/part4`.
 
 Every part states the artefact path, this file's byte size and its SHA-256 digest **as recorded when that part was saved**, and that the repository file is authoritative. Parts 1–3 therefore carry their own slice's snapshot and their digests no longer match this file, which has grown by two sections since; part 4 carries the merged file's size and digest as of this run. A mirror part is a readable convenience copy of this artefact, not a second source of truth: read this file for the complete, current record. The PR 3 and PR 4 sections' own older notes still describe the earlier two- and three-part shapes; they are earlier sections of this artefact and are deliberately not rewritten here.
+
+# Apply Progress — PR 6 of 20 — WU10 + WU11 · `local.sshd` and `egress.hub.direct`
+
+**Change**: `reach-diagnosis-core` · **Slice**: **PR 6 of 20** — “`local.sshd` and `egress.hub.direct`” (WU10 + WU11)
+**Branch**: `feat/probe-sshd-hub`, stacked on PR 5's branch `feat/probe-registry-localenv` (chain strategy `stacked-to-main`, so PR 6 targets PR 5's branch and **not** `main`)
+**Date**: 2026-09-14 · **Artifact store**: `both` (this file + Engram mirror, split as the mirror note at the end records)
+**Strict TDD**: active — `openspec/config.yaml` declares `strict_tdd: true` with runner `go test ./...`; RED → GREEN → TRIANGULATE → REFACTOR followed for both halves of this slice
+**Skill resolution**: `paths-injected` — read `/home/luisalt20/.config/opencode/skills/go-testing/SKILL.md` and `/home/luisalt20/.config/opencode/skills/work-unit-commits/SKILL.md` before writing code; no registry fallback was needed
+**Delivery path consumed**: `auto-chain` / `stacked-to-main` — this run implements **only** the assigned slice and stops at its PR boundary; the PR 1–PR 5 sections above are preserved unchanged
+**Commit status**: nothing committed, staged, pushed or branched by this phase; the work is left in the working tree for the orchestrator
+**How to read this file**: PR 6's entry is the section below. The current change-wide remainder is restated at the end of this section.
+
+---
+
+## Structured status consumed (PR 6)
+
+| Field | Value |
+|---|---|
+| `schemaName` / `schemaVersion` | `gentle-ai.sdd-status` / `2` |
+| `changeName` | `reach-diagnosis-core` |
+| `nextRecommended` | `apply` |
+| `applyState` | `ready` |
+| `dependencies.apply` / `.verify` / `.archive` | `ready` / `blocked` / `blocked` |
+| `actionContext.mode` | `repo-local` |
+| `actionContext.workspaceRoot` | `/home/luisalt20/projects/close/herdr-reach` |
+| `actionContext.allowedEditRoots` | `["/home/luisalt20/projects/close/herdr-reach"]` — every file written lives inside it |
+| `artifactStore` | `both` declared by the parent prompt (native `openspec`); files written under `openspec/changes/reach-diagnosis-core/` and mirrored to Engram |
+| `taskProgress` before this run | 165 total / 43 completed / 122 pending (PR 1 + PR 2 + PR 3 + PR 4 + PR 5) |
+| `taskProgress` after this run | 165 total / **52 completed** / 113 pending |
+| `actionContext` warnings | none |
+| Work-unit ownership markers | all nine PR 6 rows carry the terminal `<!-- sdd-owner: implementation -->` marker; the whole file still holds 165 markers for 165 checkbox rows, none malformed, duplicate, unsupported or non-terminal |
+| `applyState: all_done`? | no — implementation continues, so editing was permitted |
+
+**Attempt context**: the harness reports one bounded attempt already active for this work unit (`token sha256:da57554a6e523d04cff6731a570b8cf5cb6f607312b47cb7315deb6640a6a86b`) with a **2,000**-changed-line ceiling. Per the parent prompt the parent owns `sdd-attempt acquire`/`settle`; this executor did **not** call the native attempt command. The counted-line position against that ceiling is in “Workload and PR boundary”.
+
+---
+
+## Completed tasks and their persisted checkbox updates (PR 6)
+
+All nine PR 6 rows were flipped from `- [ ]` to `- [x]` in `openspec/changes/reach-diagnosis-core/tasks.md` (lines 211–219) as the work completed, then re-read to confirm. `git diff --stat` on that file reports exactly `9 insertions(+), 9 deletions(-)` — nine flips and nothing else (52 checked, 113 unchecked of 165).
+
+| # | Task (short) | Persisted update | Evidence |
+|---|---|---|---|
+| 1 | RED — divergence case: written ≠ effective ⇒ `(measured, fail, sshd_config_divergence)` with both configurations in the verbatim detail | `tasks.md:211` → `- [x]` | `go test -count=1 -run 'TestLocalSshd' ./internal/probe/` → exit 1, 13 call sites: `the registry declares "local.sshd" without a constructor, so no run could measure it` — a behaviour RED, not a compile error |
+| 2 | GREEN — `local.sshd` as three separately reportable observations over `CommandRunner`/`FS`, absent binary `(measured, fail, sshd_absent)` with installation named as a later slice | `tasks.md:212` → `- [x]` | Focused run exit 0: `TestLocalSshdReportsThreeSeparateObservations`, `…ReportsWrittenVersusEffectiveDivergence` (both configurations asserted verbatim in observation **and** result detail), `…ReportsAnAbsentBinary` (`not present`, `not part of this run`, `later slice`) |
+| 3 | TRIANGULATE — nil runner ⇒ not-measured/`capability_excluded` with the capability named; deny-all runner ⇒ not-measured/`command_denied`; indeterminate control case | `tasks.md:213` → `- [x]` | `TestLocalSshdDegradesWhenTheCommandCapabilityIsMissing` (both command observations, capability named, result `indeterminate`), `TestLocalSshdDegradesWhenTheCommandSeamDenies` (both `command_denied`, and the two reasons are asserted different) |
+| 4 | TRIANGULATE — the result is never `pass` when any observation was not measured; all local input read through the injected readers | `tasks.md:214` → `- [x]` | `TestLocalSshdNeverPassesWhenAnObservationWasNotMeasured` (six scripts, 0 passes, result == `Aggregate` of the observations every time), `TestLocalSshdReadsOnlyInjectedReaders` (exact filesystem calls and exact commands) |
+| 5 | REFACTOR + GATE — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestLocalSshd` | `tasks.md:215` → `- [x]` | `gofmt -l .` exit 0 (empty output) · `go vet ./...` exit 0 (no output) · focused `TestLocalSshd` exit 0 |
+| 6 | RED — `egress_test.go` with the hub cases: supplied target, no-hub not-measured, refused dial, blackholed port | `tasks.md:216` → `- [x]` | `go test -count=1 -run 'TestEgressHub' ./internal/probe/` → exit 1, `FAIL … [build failed]`: `undefined: probe.DefaultDialBudget` at six sites — the egress vocabulary did not exist |
+| 7 | GREEN — `egress.hub.direct` in `egress.go` over `EffectiveTargets` and the injected `Dialer` | `tasks.md:217` → `- [x]` | Focused run exit 0: supplied target (`203.0.113.10:2222` and the documented default-port case `hub.example.com:22`), no-hub not-measured with empty target, refused `conn_refused`, blackholed `budget_expired` with the probe's own deadline asserted |
+| 8 | TRIANGULATE — not-measured and refused distinguishable, no “blocked” when no attempt was made, no transport viability from hub reachability | `tasks.md:218` → `- [x]` | `TestEgressHubDeniedOrMissingDialCapabilityIsNotMeasured` (the two not-measured reasons differ from each other and from `conn_refused`), `TestEgressHubEstablishesNoTransportViability` (five outcomes, five forbidden tokens, no match) |
+| 9 | REFACTOR + GATE — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestEgressHub` | `tasks.md:219` → `- [x]` | `gofmt -l .` exit 0 (empty) · `go vet ./...` exit 0 · focused `TestEgressHub` exit 0 · full suite and `-race` suite exit 0 |
+
+---
+
+## Files changed (PR 6)
+
+| Path | Status | Authored lines | Purpose |
+|---|---|---|---|
+| `internal/probe/local.go` | modified | +428 / −10 | The `local.sshd` half: the documented local inputs (binary path, written configuration, service query, `sshd -T`), the three observations, `invoke` (the four command outcomes), `sshdServiceActive`, the minimal directive comparison (`parseSSHDConfig`, `sshdDivergences`), plus the shared `runClockNow` and the `newLocalEnv` factory-signature change |
+| `internal/probe/local_test.go` | modified | +701 / −1 | The `local.sshd` suite: `scriptedFS`/`scriptedFileInfo`/`scriptedRunner`, the two build helpers, the provisioning wording guard, and nine test functions (three observations, divergence, absence, six-script never-pass table, missing capability, denying seam, service state ×3, unclassifiable input ×2, reads-only-injected) |
+| `internal/probe/egress.go` | **added** | 243 | `egress.hub.direct`: `DefaultDialBudget`, the probe, `declaredTarget` (through `EffectiveTargets`), `dialFact` and `dialTimedOut` |
+| `internal/probe/egress_test.go` | **added** | 436 | The hub suite: `scriptedConn`/`scriptedDialer`, `hubSeams`/`hubBuild`/`runHub`/`hubText`, and six test functions |
+| `internal/probe/classify.go` | modified (enabling edit — deviation #1) | +40 / −3 | Three new observables (`ObsSSHDBinaryPresent`, `ObsSSHDConfigMatches`, `ObsSSHDServiceRunning`, `ObsSSHDServiceNotRunning`) with their `PurposeSSHDConfiguration` rows, and the two `PurposePortReachability` rows for `ObsCapabilityExcluded`/`ObsCommandDenied` |
+| `internal/probe/registry.go` | modified (enabling edit — deviation #2) | +47 / −18 | `ProbeFactory` widened to `func(seams Seams, targets TargetInput) Probe`, `ProbesFor` added, `Probes(seams)` kept as the zero-input wrapper, and the `local.sshd` + `egress.hub.direct` constructors filled |
+| `openspec/changes/reach-diagnosis-core/tasks.md` | modified | 9 lines changed in place (9 deletions + 9 additions = 18 changed lines) | Nine PR 6 checkboxes `- [ ]` → `- [x]` |
+| `openspec/changes/reach-diagnosis-core/apply-progress.md` | modified | this appended section | Cumulative PR 6 evidence; the PR 1–PR 5 sections are untouched |
+
+**Authored code + tests: 1,927 counted lines** (43 + 438 + 702 + 65 + 243 + 436). No file outside the four assigned paths, the two disclosed enabling paths and the two artifact files was created or modified; `README.md`, `PRD.md`, the proposal, the specs, the design, `explore.md`, `research.md`, `preproposal.md` and `openspec/config.yaml` are untouched. No new dependency was added (production code imports only `context`, `errors`, `fmt`, `io/fs`, `strings`, `syscall`, `time`; the tests add `net`, `os`, `reflect`); no linter, no CI configuration and no `go.sum` was introduced.
+
+---
+
+## Test commands run — exact commands and exit status (PR 6)
+
+| # | Command | Exit | Observed output (abridged) |
+|---|---|---|---|
+| 1 | `go test -count=1 -run 'TestLocalSshd' ./internal/probe/` (task 1 RED) | **1** | `--- FAIL: TestLocalSshdReportsThreeSeparateObservations … the registry declares "local.sshd" without a constructor, so no run could measure it` — 13 such failures across the nine new cases |
+| 2 | `gofmt -w internal/probe/local_test.go` then the same focused run (task 2 GREEN) | **0** | all nine `local.sshd` functions PASS (13 subtests included) |
+| 3 | mutations M1–M7, one at a time against `/tmp` backups (see “Mutation evidence”) | **1** each | every mutation caught by the case it targets; `diff` confirmed each restore and the package was green again afterwards |
+| 4 | `gofmt -l .` · `go vet ./...` · `go test -count=1 -run 'TestLocalSshd' ./internal/probe/` (task 5 gate) | **0** each | `gofmt` empty output; `vet` no output; focused run `ok … 0.009s` |
+| 5 | `go test -count=1 -run 'TestEgressHub' ./internal/probe/` (task 6 RED) | **1** | `# …internal/probe_test [build failed]` — `internal/probe/egress_test.go:330:49: undefined: probe.DefaultDialBudget` (six sites) |
+| 6 | the same focused run (task 7 GREEN) | **0** | all six `egress.hub.direct` functions PASS (ten subtests) |
+| 7 | mutation E7, first attempt: `perl -0pi -e 's/and nothing else/…/'` | **0** | **not caught**, and the reason is instructive: perl's `-0` slurps the file, so an unanchored substitution hit the *header comment* (“…and nothing else egress”) instead of the wording. Re-run anchored on the wording line: exit 1, caught by `TestEgressHubEstablishesNoTransportViability/a_hub_that_accepted_the_connection`. Recorded rather than hidden: a mutation that does not reach the code proves nothing |
+| 8 | mutations E1–E9 (E7 re-anchored), one at a time against `/tmp` backups | **1** each | every mutation caught by the case it targets; restores verified with `diff` and the package re-run green |
+| 9 | `gofmt -l .` · `go vet ./...` · `go test -count=1 -run 'TestEgressHub' ./internal/probe/` (task 9 gate) | **0** each | `gofmt` empty; `vet` silent; focused run `ok … 0.009s` |
+| 10 | `go test -count=1 ./...` (final gate) | **0** | `ok …/internal/probe 0.409s` · `ok …/internal/version 0.007s` |
+| 11 | `go test -race -count=1 ./...` (final gate) | **0** | `ok …/internal/probe 1.478s` · `ok …/internal/version 1.018s` |
+| 12 | `go test -count=1 -run 'TestLocalSshd\|TestEgressHub' ./internal/probe/` (the work-unit map's `Unit verification` command, **bare pipes**) | **0** | `ok …/internal/probe 0.010s` |
+| 13 | `go test -count=1 -run 'TestLocalSshd\|TestEgressHub' ./internal/probe/` (the map's **escaped** form, reproduced as written) | **0** | `ok …/internal/probe 0.009s [no tests to run]` — the artifact's `\|` typo again (PR 4 risk #7, PR 5 note 12): under RE2 it matches a literal pipe and selects nothing |
+| 14 | `go test -count=1 -run 'TestLocalSshd\|TestEgressHub' -v ./internal/probe/` (focused inventory) | **0** | 15 top-level functions PASS, 35 `--- PASS` lines including subtests |
+| 15 | `go test -count=1 -v ./internal/probe/` (final inventory) | **0** | 56 top-level functions PASS across the package, 226 `--- PASS` lines including subtests |
+
+**Runtime harness**: **N/A as an end-to-end run, exercised in process at both probe boundaries.** There is still no CLI (`cmd/herdr-reach` lands in PR 18/19), no `doctor` wiring (PR 18) and no real network: the slices that would make a real machine reachable are PR 18–PR 20. What *is* exercised is the production path a run takes — `Registry()`/`ProbesFor(seams, input)` → the declared entry → its constructor → `Run` — with scripted filesystem, command runner and dialer seams over the deny-all base of design §6.2, which is the first proof level the design names for a probe. The runner is **not** exercised with these two probes yet (no test runs `Runner.Run` over the real registry): PR 18's doctor owns that, and PR 6's halves are proven at the probe boundary the tasks row names. The unmeasured live step remains the production `CommandRunner` (nil by design) and the real socket shapes.
+
+---
+
+## TDD Cycle Evidence (PR 6)
+
+RED → GREEN → TRIANGULATE → REFACTOR per PR 6 task row, in the two halves the slice merges (`local.sshd` first, then `egress.hub.direct`). Two REDs were produced before the code they exercise existed; both are behaviour failures rather than missing-symbol failures inside a file that already exists.
+
+| Task row | Phase | Evidence produced | Observed failure (RED) | Observed pass (GREEN) |
+|---|---|---|---|---|
+| 1 RED — divergence | RED | `local_test.go` gained the whole `local.sshd` suite (nine functions) before any `local.sshd` code existed | exit 1: 13 × `the registry declares "local.sshd" without a constructor, so no run could measure it` | n/a |
+| 2 GREEN — three observations | GREEN | `local.go`: the documented inputs, `observeBinary`/`observeService`/`observeEffectiveConfig`, `invoke`, `sshdServiceActive`, `parseSSHDConfig`, `sshdDivergences`, `runClockNow`; `classify.go`: the four new observables and their rows; `registry.go`: the `local.sshd` constructor | (previous row) | exit 0: three-observation, divergence and absence cases PASS; full suite green |
+| 3 TRIANGULATE — degradation | TRIANGULATE | `TestLocalSshdDegradesWhenTheCommandCapabilityIsMissing`, `…WhenTheCommandSeamDenies` | Cases pass against the GREEN implementation; teeth proven by M2 (capability classified as a pass) and M7 (denial fact dropped), each exit 1 | exit 0 after each restore |
+| 4 TRIANGULATE — never a pass, injected readers only | TRIANGULATE | `TestLocalSshdNeverPassesWhenAnObservationWasNotMeasured` (six scripts, counters asserting the table's composition), `TestLocalSshdReadsOnlyInjectedReaders` (exact calls, `HOME` pointed at an empty temp dir), plus `TestLocalSshdServiceStateIsSeparatelyReportable` and `TestLocalSshdUnclassifiableLocalInputIsUnresolved` under the same row | Cases pass against the GREEN implementation; teeth proven by M3 (stopped service as a pass), M4 (absence reported as presence), M5 (result hardcoded to pass) and M6 (an environment read added), each exit 1 | exit 0 after each restore |
+| 5 REFACTOR + GATE | REFACTOR | `runClockNow` extracted so both local probes take their timestamps one way; `localEnv.now` delegates to it (no behaviour change); comments re-read against the code | n/a — refactor only | exit 0: `gofmt -l .` (empty), `go vet ./...`, focused suite |
+| 6 RED — hub cases | RED | `egress_test.go` written before `egress.go` existed | exit 1: build failure, `undefined: probe.DefaultDialBudget` (six sites) | n/a |
+| 7 GREEN — `egress.hub.direct` | GREEN | `egress.go`: `DefaultDialBudget`, the probe, `declaredTarget`, `dialFact`, `dialTimedOut`; `classify.go`: the two reachability rows; `registry.go`: the hub constructor | (previous row) | exit 0: all six hub functions PASS |
+| 8 TRIANGULATE — distinguishability, no block, no viability | TRIANGULATE | `TestEgressHubDeniedOrMissingDialCapabilityIsNotMeasured`, `TestEgressHubEstablishesNoTransportViability` | Cases pass against the GREEN implementation; teeth proven by E1, E2, E3, E8 and E7 (re-anchored), each exit 1 | exit 0 after each restore |
+| 9 REFACTOR + GATE | REFACTOR | The pass wording rewritten (“…and nothing else”) after the wording guard caught the phrase “nothing about a transport” in the probe's **own** text — the guard was right and the text was fixed, not the guard; comments re-read | exit 1 on the mutation E7 before the wording change (see run 7) | exit 0: `gofmt -l .` (empty), `go vet ./...`, focused suite, full suite, `-race` suite |
+
+**Strict-TDD integrity note.** (a) The `local.sshd` RED is a registry-constructor failure, because a probe the registry cannot build cannot be measured at all: that is the honest first failing state of this task, and it is a *behaviour* failure (the probe is declared and unbuildable), not a missing symbol in the suite. (b) The egress RED is a compile failure — the probe's exported budget constant did not exist — which is the same shape PR 2/PR 3/PR 5 recorded for vocabulary that a slice introduces. (c) Rows 3, 4 and 8 are TRIANGULATE rows: their cases were written against the GREEN implementation, which strict TDD allows for triangulation, and every one of them was mutation-checked rather than trusted (16 mutations, all caught). (d) The wording fix in row 9 was made by changing the probe's text, not by weakening the guard: the test that failed was asserting exactly what the row requires.
+
+---
+
+## Mutation evidence (PR 6)
+
+Every mutation was applied to a `/tmp` backup, run against the focused case, and restored; `diff` then confirmed the restore and the package was re-run green.
+
+| # | Mutation | Case that caught it | Observed failure |
+|---|---|---|---|
+| M1 | `sshdDivergences` result ignored, so divergence is never reported | `TestLocalSshdReportsWrittenVersusEffectiveDivergence` | exit 1 — the observation reported agreement over a divergent file |
+| M2 | `ObsCapabilityExcluded` classified `Measured/Pass` | `TestLocalSshdNeverPassesWhenAnObservationWasNotMeasured`, `…DegradesWhenTheCommandCapabilityIsMissing` | exit 1 — a missing capability was reported as a pass |
+| M3 | `ObsSSHDServiceNotRunning` classified `Measured/Pass` | `TestLocalSshdNeverPassesWhenAnObservationWasNotMeasured`, `…ServiceStateIsSeparatelyReportable` | exit 1 — a stopped service passed |
+| M4 | An absent binary reported with `ObsSSHDBinaryPresent` | `TestLocalSshdReportsAnAbsentBinary`, the never-pass table | exit 1 — absence became a pass |
+| M5 | `Run` hardcoded `Pass`/`ReasonOK` instead of `Aggregate` | three functions | exit 1 — the result disagreed with its observations, including for absent binaries |
+| M6 | A `Getenv` call added to the binary check | `TestLocalSshdReadsOnlyInjectedReaders` | exit 1 — the exact-call assertion saw an environment read |
+| M7 | The denial fact dropped (`CommandFact(command, nil)`) | `TestLocalSshdDegradesWhenTheCommandSeamDenies` | exit 1 — a denied command stopped being reported as denied |
+| E1 | `ObsHubInputMissing` classified `Measured/Fail/conn_refused` | `TestEgressHubWithoutHubInputIsNotMeasuredAsBlocked` | exit 1 — a measurement that never happened became a refusal |
+| E2 | A refused dial mapped to `budget_expired` | `TestEgressHubRefusedDialIsAMeasuredFailure` | exit 1 — refusal and expiry collapsed |
+| E3 | The dial timeout branch disabled | `TestEgressHubBlackholedPortIsTheProbesOwnBudget` | exit 1 — a blackholed port stopped being `budget_expired` |
+| E4 | The probe set no dial deadline (`WithCancel` instead of `WithTimeout`) | same case | exit 1 — `the probe dialed without a deadline, so the expiry cannot be its own` |
+| E5 | `DefaultDialBudget = DefaultProbeTimeout` | same case | exit 1 — the ordering assertion that keeps `budget_expired` distinct from `probe_timeout` failed |
+| E6 | A hardcoded address dialed instead of the resolved target | `TestEgressHubTargetIsExactlyTheSuppliedAddress` and two more | exit 1 — the target and the dialed set disagreed |
+| E7 | The pass wording gained “blocked” (first attempt landed in a comment; re-anchored on the wording line) | `TestEgressHubEstablishesNoTransportViability` | exit 1 — the wording guard found the token |
+| E8 | The `ErrSeamDenied` branch disabled | `TestEgressHubDeniedOrMissingDialCapabilityIsNotMeasured` | exit 1 — a denied dial became an unclassified failure |
+| E9 | The established connection never closed | `TestEgressHubTargetIsExactlyTheSuppliedAddress` | exit 1 — both success subtests reported the connection was left open |
+
+**Triangulation depth.** Five independent angles on `local.sshd` (the three observations with their own outcomes; the written-versus-effective divergence with both texts asserted in two places; absence with its later-slice wording; six different reasons for an observation to be missing, with the result's own reduction re-derived every time; and the exact filesystem/command call list with the process environment pointed somewhere useless) and four on `egress.hub.direct` (the target as supplied **and** after the documented default port, against the dialer's own record; the four outcomes of a reachability question, each distinguishable from the others; the probe's own deadline measured and ordered against the runner's bound; and five outcomes scanned for a viability claim). **Sixteen mutations, every one caught**, including one that had to be re-anchored before it proved anything.
+
+---
+
+## Deviations from design (PR 6)
+
+| # | Deviation | Why | Design reference | Follow-up owner |
+|---|---|---|---|---|
+| 1 | **`internal/probe/classify.go` was edited, which is outside the PR 6 file list** (+40/−3): three new observables and four new `PurposeSSHDConfiguration` rows, plus two `PurposePortReachability` rows for `ObsCapabilityExcluded`/`ObsCommandDenied`. | Design §5.1's sshd rows are only `sshd_absent`, `sshd_config_divergence`, `capability_excluded` and `command_denied`: a healthy binary, a running service, an agreeing configuration, and a **dial** that was never attempted are all inexpressible without them, and the table is the only place a reason code may be chosen (PR 2's own record anticipated this). Purely additive, same package, proven by M2/M3 and by the hub degradation cases. | design §5.1 (sshd and reachability rows), design §5.2 (`SSHD_PRESENT_CONFIGURED` requires a pass), PR 2 deviation #2, PR 5 deviation #1 | `sdd-verify` must adjudicate; the orchestrator may prefer to fold the rows into a review of PR 2 |
+| 2 | **`internal/probe/registry.go` was edited beyond the `local.sshd` slot** (+47/−18): `ProbeFactory` is now `func(seams Seams, targets TargetInput) Probe`, `ProbesFor(seams, targets)` is the input-aware builder, `Probes(seams)` stays as the zero-input wrapper, and both slots are filled. | The hub's target is run input (design D3), and a `ProbeFactory` that took only `Seams` could not deliver it: the alternatives were a package-level copy of the input (which design §6.1 forbids and the AST guard in `seams_test.go` exists to catch) or re-resolving the hub address inside `Run` from nothing. PR 5's risk #9 and PR 3's file note both predicted this widening as “a normal, reviewable edit in the slice that needs it”. `Probes(seams)` is kept so the existing enumeration case compiles unchanged; it builds the hub probe with no input, which the probe reports as `input_missing_hub` rather than inventing a target (asserted). | design §4 (data-flow sketch), design §6.1, design D3, PR 5 deviation #7 / risk #9 | PR 18's doctor must call `ProbesFor(seams, opts)`; `sdd-verify` should re-word design §4's `Probes(seams)` |
+| 3 | A **stopped service** is reported with the `sshd_absent` code, because the closed reason set has no code for “installed but not running”. | Design §3.5 makes adding a code a contract change, and the parent's instruction was explicit: do not invent one. `sshd_absent` is the vocabulary's own “this node is not serving sshd” code; the observation's label (`service state`), its target (`sshd.service,ssh.service`) and its detail (the service manager's verbatim answer) say which half was missing, and the detail deliberately never claims anything needs installing. | design §3.5 (closed set), design §5.1 (sshd rows), design §5.2 (`SSHD_ABSENT`) | **PR 12**: `SSHD_ABSENT`'s conclusion text (“installation is a later slice”) would be wrong for a stopped service; a dedicated `sshd_not_running` code is the honest fix and is recorded as risk #2 |
+| 4 | The service query is `systemctl is-active sshd.service ssh.service` — two unit names in one read-only query — and the answer is interpreted from the **verbatim output**, not from the exit status. | Distributions differ in the unit name (Debian/Ubuntu `ssh.service`, the RHEL family `sshd.service`), and guessing from this process's own signals would classify the machine the test runs on. `is-active` exits non-zero when no queried unit is active, so the answer always arrives beside an error on a stopped service: treating every non-nil error as a denial would report a stopped service as an excluded capability. Hence `invoke` distinguishes “denied” (the sentinel) from “answered with a non-zero status” (output present) from “produced nothing classifiable”. | design §5.1 (`command_denied`, `capability_excluded`), design §6.1 (`CommandRunner` consumer), design §6.2 obligation 2 | PR 12 (the rule layer matches the probe state, not the command); a Linux/macOS hand-run is a verify-phase obligation |
+| 5 | `DefaultDialBudget = 4s` is a new exported constant, and the ordering `DefaultDialBudget < DefaultProbeTimeout` is asserted by test rather than by construction. | The design requires the probe's own budget to be shorter than the runner's bound (obligation 3, RG-8) but names no value for it. Exporting it lets the later reachability probes share one budget, and the test makes the ordering a checked property instead of a comment. The probe cannot read the runner's *effective* bound (probes never see `Options`), so the claim is a property of the defaults — recorded as risk #4. | design §5.1 obligation 3, design §5.1 (`budget_expired` row), design D9 | PR 7 must reuse the constant; PR 18 must not configure `ProbeTimeout` below it |
+| 6 | The written-versus-effective comparison is a **minimal directive-set comparison**: first occurrence wins, names case-insensitive, whitespace collapsed; `Include` is not followed and compiled-in defaults are not modelled. | The design asks for “written ≠ effective” and “show both”, not for a configuration parser. Comparing every directive `sshd -T` prints would report a divergence on every real machine (it prints its defaults too), and inventing include-following or quoting rules would add unverifiable semantics. A directive the written file sets whose effective value differs — or which the effective configuration does not mention at all, which is the “the file in force is not this file” case — is a divergence. | design §5.2 (`SSHD_PRESENT_CONFIG_DIVERGENT`: “names both configurations”), PRD §13 (“Report that the written config is not the effective config, and show both”), R-HR-18 | `sdd-verify` may want the limitation stated in `docs/diagnosis-report.md` (PR 17) |
+| 7 | `Result.Target` for `local.sshd` is the documented binary path, while each observation carries the path or unit it actually read. | A probe with three local subjects has no single remote target, and `probe.go` says only a *not-measured* observation carries an empty target. The binary path is the probe's subject and is stable; the per-observation targets are the precise values. | design §3.1 (`Observation.Target`), design §3.3 (`probes[].target`), PR 4 deviation #2 | PR 16's payload mapper must echo this value for `local.sshd` rather than `null` |
+| 8 | A **nil `FS`** resolves to `not_measured`/`capability_excluded` for the observations that needed it (binary presence, written configuration), where PR 5's nil `Platform` resolves to `unresolved`/`platform_unknown`. | The table's `ObsCapabilityExcluded` row is scoped to `PurposeSSHDConfiguration`, which is exactly this probe's purpose, so the honest not-measured row already exists here — unlike the platform case, where a platform-scoped row would have been a larger edit to another slice's file. | design §5.1 obligation 2, PR 5 deviation #5 | n/a — the asymmetry is deliberate and now explicit |
+| 9 | The two new test files are **external** test packages (`package probe_test`), as in PR 1–PR 5, and the probe's local inputs (paths, command lines, unit names) are repeated as literals in the test. | Reaching the probes through `Registry()`/`ProbesFor` is the production path, and repeating the documented inputs means a rename in `local.go` breaks the suite instead of silently moving what the probe reads. The exact-call assertions are what make “reads only injected readers” checkable. | tasks PR 6 file list; design §8 test plan | n/a |
+| 10 | `sshdServiceActive` compares the answer line to `"active"` case-insensitively, i.e. it interprets the service manager's own vocabulary. | Something has to decide whether the answer means a running service, and the alternative (the exit status) is unavailable without an `ExitCode()` accessor the seam does not have. The reason code is still chosen by the classification table, and the verbatim answer is carried in the detail, so the interpretation is visible rather than hidden. | R-HR-07, design §5.1 | PR 12/PR 17 may want a structured service-state field if the reasoning layer must match it |
+| 11 | `runClockNow` now backs both local probes, and `newLocalEnv` takes the widened factory signature. | Small dedup inside the same file, no behaviour change: the two probes need the same clock rule (only an injected clock moves a timestamp) and the same constructor shape. Asserted by the existing `TestLocalEnvElapsedComesFromTheInjectedClock`. | design §3.3, PR 5 code | n/a |
+
+---
+
+## Workload and PR boundary (PR 6)
+
+| Field | Value |
+|---|---|
+| Slice | PR 6 of 20 — “`local.sshd` and `egress.hub.direct`” (WU10 + WU11) |
+| PR 6 estimate in `tasks.md` | 410–630 lines (point ≈520) |
+| Host attempt ceiling | 2,000 counted changed lines |
+| **Actual authored code + tests** | **1,927 counted lines**: `local.go` +428/−10 (438), `local_test.go` +701/−1 (702), `egress.go` 243 (new), `egress_test.go` 436 (new), `classify.go` +40/−3 (43), `registry.go` +47/−18 (65) |
+| Artifact changes | `tasks.md` 9 lines changed (9 + 9 = **18** changed lines) + this appended section |
+| **Total counted changed lines for the work unit** | **≈2,175** (1,927 authored + 18 checkbox + this section) |
+| Chain per-PR cohesion ceiling | 1,000 changed lines (user-approved, revised from 600 on 2026-09-14) |
+| Review budget (session canonical) | 400 changed lines |
+| Budget status | **Over the slice estimate, over the 1,000-line chain ceiling, over the 400-line session budget and over the 2,000-line attempt ceiling** |
+| PR boundary | Starts at PR 5's branch state (`internal/probe` vocabulary + classification table + seams + declared target set + runner + registry with `local.env`) and ends at `internal/probe` compiling and passing with `local.sshd` and `egress.hub.direct` landed and registered. **PR 7 is not started**: no `egress.ssh.*`, `egress.cf.*`, `quic.go`, `tls.go`, `internal/diagnosis/`, `internal/transport/`, `internal/report/`, `internal/doctor/`, `cmd/` or `docs/diagnosis-report.md` exists |
+| Rollback boundary | Revert the `local.sshd` additions in `local.go`/`local_test.go` and delete `egress.go`/`egress_test.go`; revert `classify.go`'s +40/−3 and `registry.go`'s +47/−18. The module returns to its PR 5 state with `local.env`, the vocabulary, the classification table, the seams, the declared target set and the runner still green. `tasks.md` lines 211–219 revert to `- [ ]`; this appended section is the only other PR 6 change |
+| Rollback independence | Nothing outside `internal/probe` consumes either probe — the doctor wiring lands in PR 18 and the reasoning layer in PR 9+ — so the revert removes no unrelated work and leaves PR 1–PR 5 green |
+
+**Why 1,927 > 1,000, stated honestly, and the boundary the plan already names.** The overage is not padding. 702 lines are `local_test.go` (nine functions: the three-observation case, the divergence case with both configurations asserted twice, absence with its later-slice wording, a six-script never-pass table, the two degradation cases, the ×3 service-state table, the ×2 unclassifiable-input table, and the exact-call isolation case), 436 are `egress_test.go` (six functions covering the target, the not-measured outcome, refusal, the probe's own budget with its deadline measured, the two degradations, and the no-viability wording guard), and 416 of `local.go`'s 428 added lines are the `local.sshd` half — of which roughly 190 are the comments that carry the *why* of the three observations, the four command outcomes and the comparison's stated limits, which is exactly the code a reviewer has to trust. The review-budget rule forbids reaching a number by deleting tests, control cases, triangulation cases, comments, docs or blank lines, and no `size:exception` was assumed, so **nothing was compressed**; the honest count is reported instead.
+
+The boundary the task plan already names is therefore reported rather than applied, measured from the code as written: **PR 6a = WU10 (`local.sshd`)** — `local.go`'s `local.sshd` block (416 lines), `local_test.go`'s `local.sshd` block (696), the sshd rows and observables in `classify.go` (≈25), the `local.sshd` slot and the `ProbeFactory`/`ProbesFor` widening in `registry.go` (≈40) ≈ **1,180 counted lines** (still ≈18 % above the 1,000-line ceiling, almost entirely because the suite that proves the three observations and their degradations belongs with the probe); **PR 6b = WU11 (`egress.hub.direct`)** — `egress.go` (243), `egress_test.go` (436), the two reachability rows in `classify.go` (≈8) and the hub slot in `registry.go` (≈1) ≈ **688 counted lines**, inside the ceiling. The split is strictly ordered: PR 6b's probe resolves its target through the declared target set that PR 3 landed and is registered in the same `registry` table PR 6a extends with the `ProbeFactory`/`ProbesFor` widening, and PR 6b would target PR 6a's branch. **This executor did not split the slice or touch branches**: the parent assigned PR 6 as one unit, and a split moves a review boundary rather than the work. Against the 2,000-line attempt ceiling the work unit is ≈175 lines over; nothing was trimmed to reach it.
+
+---
+
+## Remaining unchecked tasks (PR 6 view)
+
+**Inside this slice: none.** All nine PR 6 checkbox rows are `- [x]` in `openspec/changes/reach-diagnosis-core/tasks.md` (re-read after the edits: **52 checked, 113 unchecked**; 165 rows total; `git diff --stat` on that file shows exactly 9 insertions and 9 deletions). The ownership markers were re-checked: 165 `<!-- sdd-owner: implementation -->` markers for 165 rows, every one terminal.
+
+The change-wide remainder is **113 checkbox lines in PR 7 – PR 20**, which belong to later chained slices on later branches (PR 6 targets PR 5's branch; the chain is `stacked-to-main`) and are **not** part of this work unit. The next unchecked line in the artifact, verbatim, is `tasks.md:226` — PR 7's first row, which is where the next slice resumes:
+
+```
+- [ ] **RED** — add one case per outcome for both probes: banner received; a non-SSH banner ⇒ measured fail/`banner_not_ssh`; refused and reset ⇒ measured fail; authoritative resolver negative ⇒ measured fail/`dns_no_such_host` while a resolver timeout ⇒ unresolved/`dns_unresolved` (the two must not collapse); plus each probe's `indeterminate` control case. <!-- sdd-owner: implementation -->
+```
+
+PR 7 extends `internal/probe/egress.go` and `egress_test.go` (both now exist) and fills the two SSH-probe registry slots; PR 8 fills the remaining four (`egress.cf.7844`, `egress.cf.443`, `egress.quic`, `tls.interception`, `tls.truststore`).
+
+---
+
+## Risks (PR 6)
+
+| # | Risk | Status / handling |
+|---|---|---|
+| 1 | 1,927 authored lines against a 1,000-line chain ceiling and ≈175 lines over the 2,000-line attempt ceiling | Disclosed above with the composition, the measured PR 6a/PR 6b boundary the plan already names (≈1,180 / ≈688), and the explicit statement that nothing was compressed to fit |
+| 2 | A stopped sshd service reuses `sshd_absent` (deviation #3) | The closed reason set has no code for “installed but not running”, and inventing one is a contract change. The observation's label, target and verbatim detail disambiguate it, and the detail never claims installation. **PR 12's `SSHD_ABSENT` conclusion text must not say “installation is a later slice” for a stopped service**; a dedicated code is the honest fix |
+| 3 | The service unit names are a distribution-level guess | Two names, one read-only query, verbatim answer in the detail. A machine that names its unit differently reports a measured negative that the detail explains; the alternative (guessing from process signals) would measure the wrong machine |
+| 4 | The `DefaultDialBudget < DefaultProbeTimeout` ordering holds for the **defaults**; a caller could configure a shorter `ProbeTimeout` | Probes never see the runner's `Options`, so the ordering cannot be enforced from inside the probe. Asserted for the defaults, and flagged for PR 18: the doctor must not configure a per-probe bound below `DefaultDialBudget`, or a blackholed hub would be reported as `probe_timeout` instead of `budget_expired` |
+| 5 | The written-versus-effective comparison does not follow `Include`, model quoting, or compiled-in defaults | Stated in the code beside the comparison and recorded as deviation #6. PR 17's `docs/diagnosis-report.md` should state the limitation where a user reads what the probe claims |
+| 6 | The real socket shapes behind `dialFact` are unexercised | The tests script the errors a real dial returns (`ECONNREFUSED`, `ECONNRESET`, a deadline expiry) and the probe's own deadline is measured, but no live blackholed port or refused connection is dialed in this suite — the project's own rule forbids real egress in tests. The verify phase's hand-run on the motivating network is the remaining evidence, and it already exists for the wider probe suite |
+| 7 | `ProbeFactory`'s signature change (deviation #2) | `Probes(seams)` keeps the old call sites compiling, but a future caller that forgets `ProbesFor` gets a hub probe that honestly reports `input_missing_hub` — visible in `run.not_measured`, not silent. PR 18 must use `ProbesFor(seams, opts)` |
+| 8 | `Probes(seams)`'s zero-input path is a convenience that can hide a wiring mistake | Documented on the function, asserted by the hub's no-input case, and the honest outcome (not measured, never blocked) is what a forgotten input produces. A reviewer may prefer removing it once `probe_test.go` can be edited |
+| 9 | `sshdServiceActive` interprets the service manager's vocabulary (deviation #10) | The reason code still comes from the table and the verbatim answer travels in the detail. If PR 12 needs to match a structured service state, the probe must grow a field rather than the rule grow string parsing |
+| 10 | The artifact's focused filters (`-run 'TestLocalSshd\|TestEgressHub'`, and the map's `\|` forms) select nothing under RE2 | Reproduced again (run 13) and recorded since PR 4 risk #7: copy the filters with bare `|`. The nine checkboxes are unaffected |
+
+### Engram mirror note
+
+This file is the **authoritative** artefact. Its Engram mirror is now split in **five** parts because the merged text exceeds the store's 50,000-character content limit: part 1 — the file header plus the PR 1 and PR 2 sections — under the topic `sdd/reach-diagnosis-core/apply-progress`; part 2 — the PR 3 section — under `sdd/reach-diagnosis-core/apply-progress/part2`; part 3 — the PR 4 section — under `sdd/reach-diagnosis-core/apply-progress/part3`; part 4 — the PR 5 section — under `sdd/reach-diagnosis-core/apply-progress/part4`; and part 5 — this PR 6 section — under `sdd/reach-diagnosis-core/apply-progress/part5`.
+
+Every part states the artefact path, this file's byte size and its SHA-256 digest **as recorded when that part was saved**, and that the repository file is authoritative. Parts 1–4 therefore carry their own slice's snapshot and their digests no longer match this file, which has grown by one section since; part 5 carries the merged file's size and digest as of this run. A mirror part is a readable convenience copy of this artefact, not a second source of truth: read this file for the complete, current record. The PR 3, PR 4 and PR 5 sections' own older notes still describe the earlier two-, three- and four-part shapes; they are earlier sections of this artefact and are deliberately not rewritten here.

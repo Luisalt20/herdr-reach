@@ -103,9 +103,25 @@ const (
 	ObsTrustStoreVerifierBypassed Observable = "truststore_verifier_bypassed"
 	// ObsSSHDBinaryAbsent is an sshd binary that is not installed.
 	ObsSSHDBinaryAbsent Observable = "sshd_binary_absent"
+	// ObsSSHDBinaryPresent is an sshd binary at the documented path. It is the
+	// positive counterpart of ObsSSHDBinaryAbsent: the presence of the binary is
+	// a measurement of this machine in its own right (R-HR-18), and a measured
+	// pass is only expressible if the table has a row for it.
+	ObsSSHDBinaryPresent Observable = "sshd_binary_present"
 	// ObsSSHDConfigDivergent is a written configuration that differs from the
 	// effective one.
 	ObsSSHDConfigDivergent Observable = "sshd_config_divergent"
+	// ObsSSHDConfigMatches is a written configuration the effective
+	// configuration agrees with for every directive the written file sets. It is
+	// the positive counterpart design §5.1 does not print: §5.2's
+	// `SSHD_PRESENT_CONFIGURED` requires a healthy sshd to be reportable, and
+	// the table is the only place a reason code may be chosen.
+	ObsSSHDConfigMatches Observable = "sshd_config_matches"
+	// ObsSSHDServiceRunning is the service manager reporting an active sshd unit.
+	ObsSSHDServiceRunning Observable = "sshd_service_running"
+	// ObsSSHDServiceNotRunning is the service manager answering that no queried
+	// sshd unit is active. It is a measured negative about this machine's sshd.
+	ObsSSHDServiceNotRunning Observable = "sshd_service_not_running"
 	// ObsCapabilityExcluded is a capability this slice's zero-execution
 	// boundary never attempts, such as `sshd -T` with no production command
 	// runner wired.
@@ -173,6 +189,13 @@ var classificationTable = []classificationRow{
 	// No hub was supplied, so the attempt was not made: not measured, and
 	// never a blocked hub.
 	{PurposePortReachability, ObsHubInputMissing, Classification{NotMeasured, Indeterminate, ReasonInputMissingHub}},
+	// A reachability probe may also be unable to attempt its dial at all: the run
+	// may never have been given a dialer, or the dial seam may have refused. Both
+	// are attempts that were not made, with the two reason codes design §5.1
+	// obligation 2 requires to stay distinguishable, and the same two rows are
+	// what every later reachability probe needs for the deny-all test default.
+	{PurposePortReachability, ObsCapabilityExcluded, Classification{NotMeasured, Indeterminate, ReasonCapabilityExcluded}},
+	{PurposePortReachability, ObsCommandDenied, Classification{NotMeasured, Indeterminate, ReasonCommandDenied}},
 
 	// Name resolution: an authoritative negative is a measurement of the name;
 	// a resolver that did not answer measured nothing.
@@ -208,10 +231,24 @@ var classificationTable = []classificationRow{
 	{PurposeTLSTrustStore, ObsTrustStoreVerifierUnavailable, Classification{Unresolved, Indeterminate, ReasonTrustStorePlatformUnavailable}},
 	{PurposeTLSTrustStore, ObsTrustStoreVerifierBypassed, Classification{Unresolved, Indeterminate, ReasonTrustStoreOverridePlatformBypass}},
 
-	// The local sshd: an absent binary and a divergent configuration are
-	// measurements; a capability this slice never attempts and a denied
-	// command are attempts that were not made, never failures.
+	// The local sshd: the presence of the binary, the service state and the
+	// configuration in force are measured facts, and each has a positive and a
+	// negative row. The two absences design §5.1 prints last — a capability this
+	// slice never attempts and a denied command — are attempts that were not made,
+	// never failures.
+	//
+	// The not-running row reuses `sshd_absent` deliberately: the closed reason set
+	// holds no code for "installed but not running", and adding one is a contract
+	// change (design §3.5). `sshd_absent` is the vocabulary's own "this node is not
+	// serving sshd" code, and the observation's label and detail name which half
+	// was missing, so a consumer can still tell a stopped service from an absent
+	// binary. A dedicated code is the honest home for it; the gap is recorded in
+	// PR 6's apply evidence.
+	{PurposeSSHDConfiguration, ObsSSHDBinaryPresent, Classification{Measured, Pass, ReasonOK}},
 	{PurposeSSHDConfiguration, ObsSSHDBinaryAbsent, Classification{Measured, Fail, ReasonSSHDAbsent}},
+	{PurposeSSHDConfiguration, ObsSSHDServiceRunning, Classification{Measured, Pass, ReasonOK}},
+	{PurposeSSHDConfiguration, ObsSSHDServiceNotRunning, Classification{Measured, Fail, ReasonSSHDAbsent}},
+	{PurposeSSHDConfiguration, ObsSSHDConfigMatches, Classification{Measured, Pass, ReasonOK}},
 	{PurposeSSHDConfiguration, ObsSSHDConfigDivergent, Classification{Measured, Fail, ReasonSSHDConfigDivergence}},
 	{PurposeSSHDConfiguration, ObsCapabilityExcluded, Classification{NotMeasured, Indeterminate, ReasonCapabilityExcluded}},
 	{PurposeSSHDConfiguration, ObsCommandDenied, Classification{NotMeasured, Indeterminate, ReasonCommandDenied}},

@@ -11,7 +11,10 @@ package probe_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -78,7 +81,7 @@ func localEnvBuild(t *testing.T, seams probe.Seams) probe.Probe {
 		if entry.New == nil {
 			t.Fatalf("the registry declares %q without a constructor, so no run could measure it", entry.Name)
 		}
-		built := entry.New(seams)
+		built := entry.New(seams, probe.TargetInput{})
 		if built.Name() != entry.Name {
 			t.Fatalf("the local.env constructor built %q, the registry declares %q", built.Name(), entry.Name)
 		}
@@ -602,4 +605,701 @@ func TestLocalEnvElapsedComesFromTheInjectedClock(t *testing.T) {
 	if unfilled.Elapsed != 0 {
 		t.Fatalf("elapsed without a clock = %s, want 0 so the runner fills it", unfilled.Elapsed)
 	}
+}
+
+// --- local.sshd ---------------------------------------------------------------
+//
+// The suite below is the `local.sshd` half of this slice (PRD §5.1, R-HR-18).
+// Every case starts from the deny-all seam set of design §6.2 and replaces the
+// two seams this probe is allowed to read — the filesystem and the command
+// runner — so a case describes one machine's sshd instead of the machine the
+// test happens to run on.
+//
+// The documented local inputs are repeated here as literals on purpose. What the
+// probe reads — one binary path, one written configuration file, one service
+// query and one effective-configuration command — is part of its contract, so a
+// rename in local.go has to break this suite rather than silently move the
+// probe's inputs. The commands are also asserted exactly, which is the strongest
+// statement available here that this probe runs nothing that could change the
+// machine.
+const (
+	// testSSHDBinaryPath is where local.sshd looks for the sshd binary.
+	testSSHDBinaryPath = "/usr/sbin/sshd"
+	// testSSHDConfigPath is the written sshd configuration local.sshd reads.
+	testSSHDConfigPath = "/etc/ssh/sshd_config"
+	// testSSHDConfigCommand is the command that reports the effective
+	// configuration.
+	testSSHDConfigCommand = "sshd -T"
+	// testSSHDServiceCommand is the service-manager query for the sshd unit. It
+	// is a read-only query: it asks the service manager for the unit's state and
+	// changes nothing.
+	testSSHDServiceCommand = "systemctl is-active sshd.service ssh.service"
+)
+
+// writtenConfigAgreeingWithEffect is a written configuration the effective
+// configuration of runningSSHDRunner agrees with: the same directives with the
+// same values, parsed case-insensitively by name.
+const writtenConfigAgreeingWithEffect = "PermitRootLogin no\nPasswordAuthentication no\n"
+
+// scriptedFileInfo is the os.FileInfo a scriptedFS reports for a path it holds.
+// Only existence matters to this probe, so every other attribute is the zero
+// value: a case must not be able to pass because of a size or a mode it never
+// stated.
+type scriptedFileInfo struct {
+	path string
+}
+
+// Name reports the scripted path.
+func (i scriptedFileInfo) Name() string { return i.path }
+
+// Size reports zero: this probe reads existence, not size.
+func (scriptedFileInfo) Size() int64 { return 0 }
+
+// Mode reports a regular file's permission bits.
+func (scriptedFileInfo) Mode() fs.FileMode { return 0o644 }
+
+// ModTime reports the zero time: no case measures a timestamp through the FS.
+func (scriptedFileInfo) ModTime() time.Time { return time.Time{} }
+
+// IsDir reports false: every scripted path is a file.
+func (scriptedFileInfo) IsDir() bool { return false }
+
+// Sys reports no underlying data.
+func (scriptedFileInfo) Sys() any { return nil }
+
+// scriptedFS is the FS seam a local.sshd case injects. It records every call, so
+// a case can assert exactly which local inputs the probe read, and it can be
+// scripted to fail for a reason other than absence, which is a different fact
+// from "this path is not there".
+type scriptedFS struct {
+	// files maps each path that exists to the contents ReadFile returns.
+	files map[string]string
+	// statErrs maps a path to a Stat failure that is not "not exist".
+	statErrs map[string]error
+	// readErrs maps a path to a ReadFile failure that is not "not exist".
+	readErrs map[string]error
+	// calls records every seam call in order.
+	calls []string
+}
+
+// ReadFile records the attempt and returns the scripted contents or a failure.
+func (f *scriptedFS) ReadFile(path string) ([]byte, error) {
+	f.calls = append(f.calls, "ReadFile "+path)
+	if err, ok := f.readErrs[path]; ok {
+		return nil, err
+	}
+	contents, ok := f.files[path]
+	if !ok {
+		return nil, fmt.Errorf("%s: %w", path, fs.ErrNotExist)
+	}
+	return []byte(contents), nil
+}
+
+// Stat records the attempt and reports the scripted existence or a failure.
+func (f *scriptedFS) Stat(path string) (os.FileInfo, error) {
+	f.calls = append(f.calls, "Stat "+path)
+	if err, ok := f.statErrs[path]; ok {
+		return nil, err
+	}
+	if _, ok := f.files[path]; !ok {
+		return nil, fmt.Errorf("%s: %w", path, fs.ErrNotExist)
+	}
+	return scriptedFileInfo{path: path}, nil
+}
+
+// Getenv records the attempt and answers "": this probe reads no environment
+// variable, and the record is what proves it.
+func (f *scriptedFS) Getenv(name string) string {
+	f.calls = append(f.calls, "Getenv "+name)
+	return ""
+}
+
+// scriptedAnswer is what one scripted command invocation returned.
+type scriptedAnswer struct {
+	stdout string
+	stderr string
+	err    error
+}
+
+// scriptedRunner is the CommandRunner seam a local.sshd case injects. It is
+// keyed by the exact command line, so a case states what the probe runs and
+// fails loudly for any invocation the case did not script.
+type scriptedRunner struct {
+	answers map[string]scriptedAnswer
+	calls   []string
+}
+
+// Run records the invocation and returns the scripted answer.
+func (r *scriptedRunner) Run(_ context.Context, name string, args ...string) ([]byte, []byte, error) {
+	line := strings.Join(append([]string{name}, args...), " ")
+	r.calls = append(r.calls, line)
+	answer, ok := r.answers[line]
+	if !ok {
+		return nil, nil, fmt.Errorf("the scripted runner has no answer for %q", line)
+	}
+	return []byte(answer.stdout), []byte(answer.stderr), answer.err
+}
+
+// sshdFiles is a scripted filesystem for a machine where sshd is installed and
+// the written configuration is the one the case supplies.
+func sshdFiles(written string) *scriptedFS {
+	return &scriptedFS{files: map[string]string{
+		testSSHDBinaryPath: "",
+		testSSHDConfigPath: written,
+	}}
+}
+
+// sshdRunner is a scripted command runner for a machine whose sshd service is
+// active and whose effective configuration is the caller's.
+func sshdRunner(effective string) *scriptedRunner {
+	return &scriptedRunner{answers: map[string]scriptedAnswer{
+		testSSHDServiceCommand: {stdout: "active\ninactive\n"},
+		testSSHDConfigCommand:  {stdout: effective},
+	}}
+}
+
+// localSSHDSeams builds the seam set one case describes: the deny-all set of
+// design §6.2 with the filesystem and the command runner replaced.
+func localSSHDSeams(fsSeam probe.FS, runner probe.CommandRunner) probe.Seams {
+	seams := probe.DenyAllSeams()
+	seams.FS = fsSeam
+	seams.CommandRunner = runner
+	return seams
+}
+
+// localSSHDBuild looks up the registry entry for local.sshd and builds the probe
+// through it, exactly as a run reaches it.
+func localSSHDBuild(t *testing.T, seams probe.Seams) probe.Probe {
+	t.Helper()
+	for _, entry := range probe.Registry() {
+		if entry.Name != "local.sshd" {
+			continue
+		}
+		if entry.New == nil {
+			t.Fatalf("the registry declares %q without a constructor, so no run could measure it", entry.Name)
+		}
+		built := entry.New(seams, probe.TargetInput{})
+		if built.Name() != entry.Name {
+			t.Fatalf("the local.sshd constructor built %q, the registry declares %q", built.Name(), entry.Name)
+		}
+		if built.Kind() != entry.Kind {
+			t.Fatalf("local.sshd reports kind %q, the registry declares %q", built.Kind(), entry.Kind)
+		}
+		return built
+	}
+	t.Fatal("the registry does not declare local.sshd")
+	return nil
+}
+
+// runLocalSSHD runs local.sshd over one scripted machine.
+func runLocalSSHD(t *testing.T, seams probe.Seams) probe.Result {
+	t.Helper()
+	return localSSHDBuild(t, seams).Run(context.Background())
+}
+
+// sshdProvisioningTokens is the wording guard for this probe: the strings that
+// would show local.sshd offering or claiming a change to the machine. It is
+// `provisioningTokens` without "systemctl", because measuring the service state
+// reads the service manager through a read-only query — which the exact-command
+// assertion of TestLocalSshdReadsOnlyInjectedReaders pins — so the word itself
+// is part of the measurement's own detail rather than an offer to change
+// anything.
+var sshdProvisioningTokens = []string{
+	"sudo",
+	"apt",
+	"brew",
+	"chmod",
+	"chown",
+	"wsl --",
+	"will install",
+	"will enable",
+	"will configure",
+	"will create",
+	"will write",
+	"will modify",
+	"has been applied",
+	"is enforced",
+}
+
+// assertNoSSHDProvisioningAction fails the case if the probe's text offers or
+// claims a change to the machine.
+func assertNoSSHDProvisioningAction(t *testing.T, detail string) {
+	t.Helper()
+	for _, token := range sshdProvisioningTokens {
+		if strings.Contains(detail, token) {
+			t.Errorf("local.sshd detail offers or claims a provisioning action: %q appears in %q", token, detail)
+		}
+	}
+}
+
+// TestLocalSshdReportsThreeSeparateObservations is R-HR-18's first sentence: the
+// binary's presence, the service's state and the effective configuration are
+// three observations, each with its own outcome, and all three measured means
+// the probe passes.
+func TestLocalSshdReportsThreeSeparateObservations(t *testing.T) {
+	result := runLocalSSHD(t, localSSHDSeams(
+		sshdFiles(writtenConfigAgreeingWithEffect),
+		sshdRunner("permitrootlogin no\npasswordauthentication no\n"),
+	))
+
+	if result.Probe != "local.sshd" {
+		t.Fatalf("result names the probe %q, want %q", result.Probe, "local.sshd")
+	}
+	if result.Kind != probe.ProbeLocal {
+		t.Fatalf("result kind = %q, want %q", result.Kind, probe.ProbeLocal)
+	}
+	wantLabels := []string{"binary present", "service state", "effective config"}
+	if len(result.Observations) != len(wantLabels) {
+		t.Fatalf("local.sshd reported %d observations, want the %d it must report separately (binary presence, service state, effective configuration)",
+			len(result.Observations), len(wantLabels))
+	}
+	for i, want := range wantLabels {
+		observation := result.Observations[i]
+		if observation.Label != want {
+			t.Errorf("observation %d label = %q, want %q", i, observation.Label, want)
+		}
+		if !holds(observation) {
+			t.Errorf("observation %q does not satisfy the measurement vocabulary's invariant: %+v", observation.Label, observation)
+		}
+		if observation.Resolution != probe.Measured {
+			t.Errorf("observation %q resolution = %q, want %q: a scripted healthy machine was fully measured", observation.Label, observation.Resolution, probe.Measured)
+		}
+		if observation.Verdict != probe.Pass || observation.Reason != probe.ReasonOK {
+			t.Errorf("observation %q = (%q, %q), want (%q, %q)", observation.Label, observation.Verdict, observation.Reason, probe.Pass, probe.ReasonOK)
+		}
+		if strings.TrimSpace(observation.Detail) == "" {
+			t.Errorf("observation %q carries no verbatim detail", observation.Label)
+		}
+		assertNoSSHDProvisioningAction(t, observation.Detail)
+	}
+	if result.Verdict != probe.Pass || result.Reason != probe.ReasonOK {
+		t.Fatalf("result = (%q, %q), want (%q, %q) for a machine whose three observations all measured", result.Verdict, result.Reason, probe.Pass, probe.ReasonOK)
+	}
+	if result.Target != testSSHDBinaryPath {
+		t.Errorf("result target = %q, want the probe's local subject %q", result.Target, testSSHDBinaryPath)
+	}
+	verdict, reason := probe.Aggregate(result.Observations)
+	if result.Verdict != verdict || result.Reason != reason {
+		t.Fatalf("the result's reduction %s/%s disagrees with Aggregate over its observations %s/%s", result.Verdict, result.Reason, verdict, reason)
+	}
+	assertNoSSHDProvisioningAction(t, result.Detail)
+}
+
+// TestLocalSshdReportsWrittenVersusEffectiveDivergence is R-HR-18's central
+// case: a written configuration the effective configuration does not agree with
+// is a measured failure, both configurations appear in the verbatim detail, and
+// the probe never reports success.
+func TestLocalSshdReportsWrittenVersusEffectiveDivergence(t *testing.T) {
+	written := "PermitRootLogin no\nPasswordAuthentication no\n"
+	effective := "permitrootlogin yes\npasswordauthentication no\n"
+
+	result := runLocalSSHD(t, localSSHDSeams(sshdFiles(written), sshdRunner(effective)))
+
+	observation, ok := observationByLabel(result, "effective config")
+	if !ok {
+		t.Fatalf("local.sshd reported no effective-configuration observation: %+v", result.Observations)
+	}
+	if observation.Resolution != probe.Measured {
+		t.Errorf("divergence resolution = %q, want %q: the divergence is a measured fact, not an ambiguity", observation.Resolution, probe.Measured)
+	}
+	if observation.Verdict != probe.Fail || observation.Reason != probe.ReasonSSHDConfigDivergence {
+		t.Errorf("divergence = (%q, %q), want (%q, %q)", observation.Verdict, observation.Reason, probe.Fail, probe.ReasonSSHDConfigDivergence)
+	}
+	if result.Verdict != probe.Fail || result.Reason != probe.ReasonSSHDConfigDivergence {
+		t.Errorf("result = (%q, %q), want (%q, %q): a divergent configuration must not be reported as success", result.Verdict, result.Reason, probe.Fail, probe.ReasonSSHDConfigDivergence)
+	}
+	if result.Verdict == probe.Pass {
+		t.Fatal("a divergent configuration was reported as a pass")
+	}
+
+	for _, want := range []string{"PermitRootLogin no", "permitrootlogin yes", "permitrootlogin"} {
+		if !strings.Contains(observation.Detail, want) {
+			t.Errorf("the divergence detail does not carry %q verbatim: %q", want, observation.Detail)
+		}
+	}
+	if !strings.Contains(result.Detail, "PermitRootLogin no") || !strings.Contains(result.Detail, "permitrootlogin yes") {
+		t.Errorf("the result detail does not carry both configurations: %q", result.Detail)
+	}
+	assertNoSSHDProvisioningAction(t, observation.Detail)
+}
+
+// TestLocalSshdReportsAnAbsentBinary is R-HR-18's absence case: an absent sshd
+// binary is a measurement — a definite negative answer — and its text states
+// that installing it is not part of this run.
+func TestLocalSshdReportsAnAbsentBinary(t *testing.T) {
+	files := &scriptedFS{files: map[string]string{testSSHDConfigPath: writtenConfigAgreeingWithEffect}}
+	result := runLocalSSHD(t, localSSHDSeams(files, sshdRunner("permitrootlogin no\npasswordauthentication no\n")))
+
+	observation, ok := observationByLabel(result, "binary present")
+	if !ok {
+		t.Fatalf("local.sshd reported no binary observation: %+v", result.Observations)
+	}
+	if observation.Resolution != probe.Measured {
+		t.Errorf("absence resolution = %q, want %q", observation.Resolution, probe.Measured)
+	}
+	if observation.Verdict != probe.Fail || observation.Reason != probe.ReasonSSHDAbsent {
+		t.Errorf("absence = (%q, %q), want (%q, %q)", observation.Verdict, observation.Reason, probe.Fail, probe.ReasonSSHDAbsent)
+	}
+	if observation.Target != testSSHDBinaryPath {
+		t.Errorf("absence target = %q, want %q: the path that was checked", observation.Target, testSSHDBinaryPath)
+	}
+	if !strings.Contains(observation.Detail, "not present") {
+		t.Errorf("the absence detail does not state what it looked for: %q", observation.Detail)
+	}
+	if !strings.Contains(observation.Detail, "not part of this run") {
+		t.Errorf("the absence detail does not state that installing sshd is not part of this run: %q", observation.Detail)
+	}
+	if !strings.Contains(observation.Detail, "later slice") {
+		t.Errorf("the absence detail does not name a later slice as the owner of the installation: %q", observation.Detail)
+	}
+	if result.Verdict != probe.Fail || result.Reason != probe.ReasonSSHDAbsent {
+		t.Errorf("result = (%q, %q), want (%q, %q)", result.Verdict, result.Reason, probe.Fail, probe.ReasonSSHDAbsent)
+	}
+	assertNoSSHDProvisioningAction(t, observation.Detail)
+}
+
+// TestLocalSshdNeverPassesWhenAnObservationWasNotMeasured triangulates the
+// honesty rule the whole slice rests on: the probe may only pass when every one
+// of its observations was measured, and its result is exactly the reduction of
+// those observations. Each case scripts a different reason for an observation to
+// be missing, and none of them may produce a pass.
+func TestLocalSshdNeverPassesWhenAnObservationWasNotMeasured(t *testing.T) {
+	agreeing := writtenConfigAgreeingWithEffect
+	agreeingEffective := "permitrootlogin no\npasswordauthentication no\n"
+	withoutBinary := &scriptedFS{files: map[string]string{testSSHDConfigPath: agreeing}}
+	failingStat := &scriptedFS{
+		files:    map[string]string{testSSHDConfigPath: agreeing},
+		statErrs: map[string]error{testSSHDBinaryPath: errors.New("stat /usr/sbin/sshd: permission denied")},
+	}
+	inactiveService := &scriptedRunner{answers: map[string]scriptedAnswer{
+		testSSHDServiceCommand: {stdout: "inactive\ninactive\n"},
+		testSSHDConfigCommand:  {stdout: agreeingEffective},
+	}}
+
+	cases := []struct {
+		name  string
+		seams probe.Seams
+	}{
+		{"no command runner is injected", localSSHDSeams(&scriptedFS{files: sshdFiles(agreeing).files}, nil)},
+		{"the command seam denies everything", localSSHDSeams(&scriptedFS{files: sshdFiles(agreeing).files}, probe.DenyAllSeams().CommandRunner)},
+		{"no filesystem seam is injected", localSSHDSeams(nil, sshdRunner(agreeingEffective))},
+		{"the binary is absent", localSSHDSeams(withoutBinary, sshdRunner(agreeingEffective))},
+		{"the binary check fails for a reason other than absence", localSSHDSeams(failingStat, sshdRunner(agreeingEffective))},
+		{"the service is not running", localSSHDSeams(&scriptedFS{files: sshdFiles(agreeing).files}, inactiveService)},
+	}
+
+	passes := 0
+	unmeasured := 0
+	failures := 0
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := runLocalSSHD(t, tc.seams)
+
+			measured := true
+			for _, observation := range result.Observations {
+				if !holds(observation) {
+					t.Errorf("observation %q does not satisfy the measurement vocabulary's invariant: %+v", observation.Label, observation)
+				}
+				if observation.Resolution != probe.Measured {
+					measured = false
+				}
+				if strings.TrimSpace(observation.Detail) == "" {
+					t.Errorf("observation %q carries no verbatim detail", observation.Label)
+				}
+				assertNoSSHDProvisioningAction(t, observation.Detail)
+			}
+			if !measured && result.Verdict == probe.Pass {
+				t.Fatalf("the probe passed while an observation was not measured: %+v", result.Observations)
+			}
+			verdict, reason := probe.Aggregate(result.Observations)
+			if result.Verdict != verdict || result.Reason != reason {
+				t.Fatalf("the result's reduction %s/%s disagrees with Aggregate over its observations %s/%s", result.Verdict, result.Reason, verdict, reason)
+			}
+		})
+		// The case-level counters are read after the sub-test so the table's
+		// composition is itself asserted: a table where every case failed would
+		// not exercise the pass rule at all.
+		result := runLocalSSHD(t, tc.seams)
+		if result.Verdict == probe.Pass {
+			passes++
+		} else {
+			if result.Verdict == probe.Fail {
+				failures++
+			}
+			unmeasured++
+		}
+	}
+
+	if passes != 0 {
+		t.Errorf("%d of the %d unmeasured cases produced a pass, want 0", passes, len(cases))
+	}
+	if unmeasured != len(cases) {
+		t.Errorf("%d of the %d cases were expected to report a gap, got %d", unmeasured, len(cases), unmeasured)
+	}
+	if failures == 0 {
+		t.Error("no case in the table produced a measured failure, so the table does not cover the failure path")
+	}
+}
+
+// TestLocalSshdDegradesWhenTheCommandCapabilityIsMissing is the first half of
+// the degradation row: with no command runner injected the two command-derived
+// observations are not measured, the capability each needed is named, and the
+// probe is never a pass (design §6.2, design §5.1 obligation 2).
+func TestLocalSshdDegradesWhenTheCommandCapabilityIsMissing(t *testing.T) {
+	result := runLocalSSHD(t, localSSHDSeams(
+		&scriptedFS{files: sshdFiles(writtenConfigAgreeingWithEffect).files},
+		nil,
+	))
+
+	if result.Verdict == probe.Pass {
+		t.Fatal("the probe passed with no command capability at all")
+	}
+	if result.Verdict != probe.Indeterminate {
+		t.Errorf("result verdict = %q, want %q: an excluded capability is not a negative answer", result.Verdict, probe.Indeterminate)
+	}
+
+	for _, want := range []struct{ label, capability string }{
+		{"service state", testSSHDServiceCommand},
+		{"effective config", testSSHDConfigCommand},
+	} {
+		observation, ok := observationByLabel(result, want.label)
+		if !ok {
+			t.Fatalf("local.sshd reported no %q observation: %+v", want.label, result.Observations)
+		}
+		if observation.Resolution != probe.NotMeasured || observation.Verdict != probe.Indeterminate {
+			t.Errorf("%q = (%q, %q), want (%q, %q)", want.label, observation.Resolution, observation.Verdict, probe.NotMeasured, probe.Indeterminate)
+		}
+		if observation.Reason != probe.ReasonCapabilityExcluded {
+			t.Errorf("%q reason = %q, want %q", want.label, observation.Reason, probe.ReasonCapabilityExcluded)
+		}
+		if !strings.Contains(observation.Detail, want.capability) {
+			t.Errorf("%q detail does not name the missing capability %q: %q", want.label, want.capability, observation.Detail)
+		}
+	}
+
+	binaryObservation, ok := observationByLabel(result, "binary present")
+	if !ok {
+		t.Fatalf("local.sshd reported no binary observation: %+v", result.Observations)
+	}
+	if binaryObservation.Resolution != probe.Measured || binaryObservation.Verdict != probe.Pass {
+		t.Errorf("the filesystem-derived observation = (%q, %q), want (%q, %q): its capability was injected", binaryObservation.Resolution, binaryObservation.Verdict, probe.Measured, probe.Pass)
+	}
+}
+
+// TestLocalSshdDegradesWhenTheCommandSeamDenies is the second half of the
+// degradation row: an injected runner that denies the execution must be
+// distinguishable from a capability that was never injected, and neither may be
+// reported as a pass.
+func TestLocalSshdDegradesWhenTheCommandSeamDenies(t *testing.T) {
+	missing := runLocalSSHD(t, localSSHDSeams(&scriptedFS{files: sshdFiles(writtenConfigAgreeingWithEffect).files}, nil))
+	denied := runLocalSSHD(t, localSSHDSeams(
+		&scriptedFS{files: sshdFiles(writtenConfigAgreeingWithEffect).files},
+		probe.DenyAllSeams().CommandRunner,
+	))
+
+	if denied.Verdict == probe.Pass {
+		t.Fatal("the probe passed with a deny-all command seam")
+	}
+	for _, label := range []string{"service state", "effective config"} {
+		observation, ok := observationByLabel(denied, label)
+		if !ok {
+			t.Fatalf("local.sshd reported no %q observation: %+v", label, denied.Observations)
+		}
+		if observation.Resolution != probe.NotMeasured || observation.Verdict != probe.Indeterminate {
+			t.Errorf("%q = (%q, %q), want (%q, %q)", label, observation.Resolution, observation.Verdict, probe.NotMeasured, probe.Indeterminate)
+		}
+		if observation.Reason != probe.ReasonCommandDenied {
+			t.Errorf("%q reason = %q, want %q: the seam denied the execution", label, observation.Reason, probe.ReasonCommandDenied)
+		}
+		if !strings.Contains(observation.Detail, "denied") {
+			t.Errorf("%q detail does not name the denial: %q", label, observation.Detail)
+		}
+	}
+
+	if missing.Reason == denied.Reason {
+		t.Fatalf("a missing capability and a denying seam report the same reason %q; design §5.1 obligation 2 requires two", missing.Reason)
+	}
+}
+
+// TestLocalSshdServiceStateIsSeparatelyReportable asserts that the service
+// observation answers on its own: an active unit passes, and a unit that is not
+// running is a measured negative rather than a guess.
+//
+// The closed reason-code set holds no code for "installed but not running", so
+// the not-running answer reuses `sshd_absent`, the vocabulary's own "this node
+// is not serving sshd" code; the observation's label and detail name the service
+// state verbatim, and the detail deliberately does not claim that anything needs
+// installing. Recorded as a deviation, not as a silent choice.
+func TestLocalSshdServiceStateIsSeparatelyReportable(t *testing.T) {
+	effective := "permitrootlogin no\npasswordauthentication no\n"
+
+	cases := []struct {
+		name        string
+		service     scriptedAnswer
+		wantVerdict probe.Verdict
+		wantReason  probe.ReasonCode
+	}{
+		{
+			name:        "the service manager reports the unit active",
+			service:     scriptedAnswer{stdout: "active\ninactive\n"},
+			wantVerdict: probe.Pass, wantReason: probe.ReasonOK,
+		},
+		{
+			// `systemctl is-active` exits non-zero when no queried unit is
+			// active, so the answer arrives with an error beside it. The output
+			// is still the measurement.
+			name:        "the unit is not running and the query exits non-zero",
+			service:     scriptedAnswer{stdout: "inactive\ninactive\n", err: errors.New("exit status 3")},
+			wantVerdict: probe.Fail, wantReason: probe.ReasonSSHDAbsent,
+		},
+		{
+			name:        "the unit is not running and the query exits zero",
+			service:     scriptedAnswer{stdout: "inactive\ninactive\n"},
+			wantVerdict: probe.Fail, wantReason: probe.ReasonSSHDAbsent,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &scriptedRunner{answers: map[string]scriptedAnswer{
+				testSSHDServiceCommand: tc.service,
+				testSSHDConfigCommand:  {stdout: effective},
+			}}
+			result := runLocalSSHD(t, localSSHDSeams(sshdFiles(writtenConfigAgreeingWithEffect), runner))
+
+			observation, ok := observationByLabel(result, "service state")
+			if !ok {
+				t.Fatalf("local.sshd reported no service-state observation: %+v", result.Observations)
+			}
+			if observation.Resolution != probe.Measured {
+				t.Errorf("service state resolution = %q, want %q: the service manager answered", observation.Resolution, probe.Measured)
+			}
+			if observation.Verdict != tc.wantVerdict || observation.Reason != tc.wantReason {
+				t.Errorf("service state = (%q, %q), want (%q, %q)", observation.Verdict, observation.Reason, tc.wantVerdict, tc.wantReason)
+			}
+			if tc.wantVerdict == probe.Fail {
+				if !strings.Contains(observation.Detail, "inactive") {
+					t.Errorf("the not-running detail does not carry the service manager's own answer: %q", observation.Detail)
+				}
+				if strings.Contains(observation.Detail, "install") {
+					t.Errorf("the not-running detail claims something needs installing: %q", observation.Detail)
+				}
+			}
+			assertNoSSHDProvisioningAction(t, observation.Detail)
+		})
+	}
+}
+
+// TestLocalSshdUnclassifiableLocalInputIsUnresolved asserts the error path the
+// table's internal-failure row exists for: a local input that fails for a reason
+// other than absence is an attempt that produced nothing classifiable, never a
+// fabricated absence and never a pass.
+func TestLocalSshdUnclassifiableLocalInputIsUnresolved(t *testing.T) {
+	agreeing := writtenConfigAgreeingWithEffect
+	effective := "permitrootlogin no\npasswordauthentication no\n"
+
+	cases := []struct {
+		name     string
+		fsSeam   probe.FS
+		wantText string
+	}{
+		{
+			name: "the binary check fails for a reason other than absence",
+			fsSeam: &scriptedFS{
+				files:    map[string]string{testSSHDConfigPath: agreeing},
+				statErrs: map[string]error{testSSHDBinaryPath: errors.New("stat /usr/sbin/sshd: permission denied")},
+			},
+			wantText: "permission denied",
+		},
+		{
+			name: "the written configuration cannot be read",
+			fsSeam: &scriptedFS{
+				files:    map[string]string{testSSHDBinaryPath: ""},
+				readErrs: map[string]error{testSSHDConfigPath: errors.New("open /etc/ssh/sshd_config: permission denied")},
+			},
+			wantText: "permission denied",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := runLocalSSHD(t, localSSHDSeams(tc.fsSeam, sshdRunner(effective)))
+
+			found := false
+			for _, observation := range result.Observations {
+				if observation.Reason != probe.ReasonInternalError {
+					continue
+				}
+				found = true
+				if observation.Resolution != probe.Unresolved {
+					t.Errorf("%q resolution = %q, want %q: the attempt was made and produced no classifiable answer", observation.Label, observation.Resolution, probe.Unresolved)
+				}
+				if observation.Verdict == probe.Pass {
+					t.Errorf("%q was reported as a pass", observation.Label)
+				}
+				if !strings.Contains(observation.Detail, tc.wantText) {
+					t.Errorf("%q detail does not carry the failure verbatim: %q", observation.Label, observation.Detail)
+				}
+			}
+			if !found {
+				t.Fatalf("no observation reported the unclassifiable input: %+v", result.Observations)
+			}
+			if result.Verdict == probe.Pass {
+				t.Fatal("the probe passed while a local input failed")
+			}
+		})
+	}
+}
+
+// TestLocalSshdReadsOnlyInjectedReaders asserts the second half of the
+// triangulation row. The probe's entire local input is the two seams, so the
+// calls it makes are asserted exactly: one existence check of the documented
+// binary path, one read-only service query, one read of the documented written
+// configuration and one effective-configuration command. Nothing else is
+// touched — no environment variable, no other path — and the answers a case
+// scripts are the answers the probe reports, which is what proves the seams are
+// the only inputs.
+func TestLocalSshdReadsOnlyInjectedReaders(t *testing.T) {
+	// A real home directory would tempt a probe to look outside its seams; the
+	// case makes one that contains nothing the probe could use.
+	t.Setenv("HOME", t.TempDir())
+
+	written := "Port 2222\nPermitRootLogin no\n"
+	effective := "port 2222\npermitrootlogin no\n"
+	files := sshdFiles(written)
+	runner := sshdRunner(effective)
+
+	result := runLocalSSHD(t, localSSHDSeams(files, runner))
+
+	wantFilesystem := []string{
+		"Stat " + testSSHDBinaryPath,
+		"ReadFile " + testSSHDConfigPath,
+	}
+	if !reflect.DeepEqual(files.calls, wantFilesystem) {
+		t.Errorf("the probe's filesystem calls = %v, want exactly %v in that order", files.calls, wantFilesystem)
+	}
+	wantCommands := []string{testSSHDServiceCommand, testSSHDConfigCommand}
+	if !reflect.DeepEqual(runner.calls, wantCommands) {
+		t.Errorf("the probe's commands = %v, want exactly %v in that order", runner.calls, wantCommands)
+	}
+
+	if !strings.Contains(result.Detail, "Port 2222") {
+		t.Errorf("the probe's detail does not carry the written configuration it was handed: %q", result.Detail)
+	}
+	if !strings.Contains(result.Detail, "port 2222") {
+		t.Errorf("the probe's detail does not carry the effective configuration it was handed: %q", result.Detail)
+	}
+	if result.Verdict != probe.Pass {
+		t.Errorf("result verdict = %q, want %q: the two handed configurations agree", result.Verdict, probe.Pass)
+	}
+}
+
+// observationByLabel finds one observation of a result by its label.
+func observationByLabel(result probe.Result, label string) (probe.Observation, bool) {
+	for _, observation := range result.Observations {
+		if observation.Label == label {
+			return observation, true
+		}
+	}
+	return probe.Observation{}, false
 }
