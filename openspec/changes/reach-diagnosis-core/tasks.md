@@ -251,13 +251,13 @@ Second-split boundary if this group lands above 600: the QUIC probe (WU14) first
 `Files`: `internal/probe/tls.go`, `internal/probe/tls_test.go` (additions); `internal/diagnosis/facts.go`, `internal/diagnosis/rules_test.go` (accessor cases). `Depends on`: PR 8.
 **Budget-forced merge** (disclosed in the consolidation record): the last probe and the measurement→reasoning bridge — the accessors that turn `[]probe.Result` into matchable reasoning states. Second-split boundary if disputed or above 600: `tls.truststore` first, then `facts.go`.
 
-- [ ] **RED** — add the Linux controls: an accepting pool ⇒ `(measured, pass, ok)`; a rejected chain ⇒ `(measured, fail, truststore_rejects_chain)`. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `tls.truststore`: macOS ⇒ `(unresolved, truststore_platform_unavailable)` with the documented limitation in the result detail; `SSL_CERT_FILE`/`SSL_CERT_DIR` override set ⇒ `(unresolved, truststore_override_platform_bypass)`. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert the macOS limitation text is in the result itself (RG-3), and that the override case is `indeterminate` and never `pass`. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestTLSTruststore`, then the full probe suite with the ten probes registered. <!-- sdd-owner: implementation -->
-- [ ] **RED** — add the accessor cases to `internal/diagnosis/rules_test.go`: a multi-observation probe exposes every observation's own state (DEV-2), and a not-measured observation maps to `NOT_MEASURED` rather than to a `fail` or `pass` state; prove the failure first (compile-level `RED` is expected here, as the package is new). <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `internal/diagnosis/facts.go`: accessors turning `[]probe.Result` into matchable `(probe, resolution, verdict)` states. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — accessors only in `facts.go`; `gofmt -l .`, `go vet ./...`, `go test ./internal/diagnosis/`. <!-- sdd-owner: implementation -->
+- [x] **RED** — add the Linux controls: an accepting pool ⇒ `(measured, pass, ok)`; a rejected chain ⇒ `(measured, fail, truststore_rejects_chain)`. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `tls.truststore`: macOS ⇒ `(unresolved, truststore_platform_unavailable)` with the documented limitation in the result detail; `SSL_CERT_FILE`/`SSL_CERT_DIR` override set ⇒ `(unresolved, truststore_override_platform_bypass)`. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert the macOS limitation text is in the result itself (RG-3), and that the override case is `indeterminate` and never `pass`. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestTLSTruststore`, then the full probe suite with the ten probes registered. <!-- sdd-owner: implementation -->
+- [x] **RED** — add the accessor cases to `internal/diagnosis/rules_test.go`: a multi-observation probe exposes every observation's own state (DEV-2), and a not-measured observation maps to `NOT_MEASURED` rather than to a `fail` or `pass` state; prove the failure first (compile-level `RED` is expected here, as the package is new). <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `internal/diagnosis/facts.go`: accessors turning `[]probe.Result` into matchable `(probe, resolution, verdict)` states. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — accessors only in `facts.go`; `gofmt -l .`, `go vet ./...`, `go test ./internal/diagnosis/`. <!-- sdd-owner: implementation -->
 
 ### PR 10 — WU17a + WU18 · Rule-id vocabulary, the rule mechanism and the derived fact rules
 
