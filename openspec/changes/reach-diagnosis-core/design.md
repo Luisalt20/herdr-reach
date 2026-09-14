@@ -281,7 +281,9 @@ Rules: probes in registry order; `observations` in declaration order; `transport
 
 A not-measured observation alone never changes the exit code but always appears in `run.not_measured`. A default live run **with no `--hub`** on Linux therefore exits `0` with a named coverage gap (hub not measured; `sshd -T` not measured by this slice's boundary). A default live run on **macOS exits `1`**, because `tls.truststore` is attempted and unresolved there by decision (RG-3) — stated here explicitly so nobody reads the Linux expectation as universal.
 
-### 3.5 Reason codes — closed set (27), `internal/probe/reason.go`
+### 3.5 Reason codes — closed set (28), `internal/probe/reason.go`
+
+_Count reconciled 2026-09-14: this heading said 27 while the enumeration below lists 28 distinct codes, and the classification table needs all of them (`ok` is the only code two rows share). The enumeration is authoritative; the PR 2 apply evidence records the check._
 
 `ok`, `conn_refused`, `conn_reset`, `budget_expired`, `dns_no_such_host`, `dns_unresolved`, `banner_not_ssh`, `probe_timeout`, `run_cancelled`, `run_budget_exceeded`, `udp_response_received`, `udp_silence`, `udp_unreachable`, `udp_error_unclassified`, `tls_verify_failed`, `tls_issuer_unexpected`, `tls_handshake_unresolved`, `truststore_rejects_chain`, `truststore_platform_unavailable`, `truststore_override_platform_bypass`, `sshd_absent`, `sshd_config_divergence`, `capability_excluded`, `command_denied`, `input_missing_hub`, `platform_unknown`, `node_platform_unsupported`, `internal_error`.
 
@@ -407,7 +409,7 @@ A default live invocation on Linux exits `0` with a healthy environment: `local.
 
 ### 5.4 Obligation 4 — reason codes and rule ids have one documented home
 
-`docs/diagnosis-report.md` documents the exit codes, the stdout/stderr split, the payload shape with its `schema_version`, the 27 reason codes, and the rule-id scheme, with the statement that adding a code or rule id is a contract change. `internal/report/docs_test.go` parses the two tables and asserts equality with `probe.AllReasonCodes()` and `diagnosis.AllRuleIDs()`. The `cloudflared` pin note has its own single home in code (`internal/transport/pin_note.go`), and the HTTP/2 trade-off text has one home in `internal/transport/cloudflare.go`, so the human and machine projections cannot drift.
+`docs/diagnosis-report.md` documents the exit codes, the stdout/stderr split, the payload shape with its `schema_version`, the 28 reason codes, and the rule-id scheme, with the statement that adding a code or rule id is a contract change. `internal/report/docs_test.go` parses the two tables and asserts equality with `probe.AllReasonCodes()` and `diagnosis.AllRuleIDs()`. The `cloudflared` pin note has its own single home in code (`internal/transport/pin_note.go`), and the HTTP/2 trade-off text has one home in `internal/transport/cloudflare.go`, so the human and machine projections cannot drift.
 
 ---
 
