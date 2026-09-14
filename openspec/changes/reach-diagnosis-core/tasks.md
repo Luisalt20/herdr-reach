@@ -133,12 +133,12 @@ main ← PR 1        bootstrap: module + version
 
 `Files`: `go.mod`, `internal/version/version.go`, `internal/version/version_test.go`. `Depends on`: nothing (main).
 
-- [ ] **BOOTSTRAP (enabling artifact — no failing test can precede it)** — create `go.mod` with `module github.com/Luisalt20/herdr-reach`, `go 1.25.10`, no `toolchain` line and zero requires; do not run `go mod tidy` against the empty module. <!-- sdd-owner: implementation -->
-- [ ] **RED** — write `internal/version/version_test.go` asserting the unset defaults (`Version` = `"0.0.0-dev"`, `String()` returns the documented `name version` shape) and run `go test ./...`; the failure must be a compile/assert failure inside `internal/version`, proving the package exists and the test can fail for the right reason. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `internal/version/version.go` with `Version`, `Commit`, `Date` and `String()`; run `go test ./...` and record the first honest pass. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add the ldflags-injection shape (non-default `Commit`/`Date`) and a dev-build case where an unset `Commit` never renders a fabricated commit. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — tidy comments and package doc; run `go test ./...`, `go vet ./...`, `gofmt -l .` and record the exact commands, exit status and the `go.sum` situation (absent, or toolchain-created and empty). <!-- sdd-owner: implementation -->
-- [ ] Record in the unit evidence that `go 1.25.10` with no `toolchain` line is the deliberate audience decision (D4, RG-12) and that `README.md` is out of this change's scope. <!-- sdd-owner: implementation -->
+- [x] **BOOTSTRAP (enabling artifact — no failing test can precede it)** — create `go.mod` with `module github.com/Luisalt20/herdr-reach`, `go 1.25.10`, no `toolchain` line and zero requires; do not run `go mod tidy` against the empty module. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `internal/version/version_test.go` asserting the unset defaults (`Version` = `"0.0.0-dev"`, `String()` returns the documented `name version` shape) and run `go test ./...`; the failure must be a compile/assert failure inside `internal/version`, proving the package exists and the test can fail for the right reason. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `internal/version/version.go` with `Version`, `Commit`, `Date` and `String()`; run `go test ./...` and record the first honest pass. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add the ldflags-injection shape (non-default `Commit`/`Date`) and a dev-build case where an unset `Commit` never renders a fabricated commit. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — tidy comments and package doc; run `go test ./...`, `go vet ./...`, `gofmt -l .` and record the exact commands, exit status and the `go.sum` situation (absent, or toolchain-created and empty). <!-- sdd-owner: implementation -->
+- [x] Record in the unit evidence that `go 1.25.10` with no `toolchain` line is the deliberate audience decision (D4, RG-12) and that `README.md` is out of this change's scope. <!-- sdd-owner: implementation -->
 
 ### PR 2 — WU2 + WU3 · Measurement types, the closed reason-code set, and the classification table
 
