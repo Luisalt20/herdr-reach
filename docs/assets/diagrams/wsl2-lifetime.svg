@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 780" width="1200" height="780" role="img" aria-label="Why a healthy sshd is not enough on WSL2. Three independent mechanisms shut the instance down: instance teardown when no child of Microsoft's init remains, a sixty second vmIdleTimeout, and any forced wsl shutdown. Systemd services do not count as init children, which is why the failure looks like a network fault. Three layers keep it alive: the documented vmIdleTimeout setting, a keepalive that is a real init child, and a watchdog that relaunches. Measured recovery: killed at zero seconds, relaunched at ten, services up at fifteen, tunnel back at twenty, all without intervention.">
+  <style>
+    .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .panel  { fill: #1f2335; stroke: #3b4261; stroke-width: 1.5; }
+    .attack { fill: #1f2335; stroke: #cb7c94; stroke-width: 1.5; }
+    .defend { fill: #1f2335; stroke: #b7cc85; stroke-width: 1.5; }
+    .atitle { fill: #cb7c94; font-size: 15px; font-weight: 700; }
+    .dtitle { fill: #b7cc85; font-size: 15px; font-weight: 700; }
+    .body   { fill: #a9b1d6; font-size: 12px; }
+    .dimb   { fill: #565f89; font-size: 12px; }
+    .seclab { fill: #c0caf5; font-size: 15px; }
+  </style>
+
+  <rect x="0" y="0" width="1200" height="780" rx="18" fill="#1a1b26"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="778.5" rx="17.25" fill="none" stroke="#3b4261" stroke-width="1.5"/>
+
+  <text class="mono" x="56" y="54" font-size="27" font-weight="700" fill="#e0c15a">WSL2 has a lifetime problem</text>
+  <text class="sans" x="56" y="82" font-size="15" fill="#565f89">Why a perfectly healthy sshd is not enough.</text>
+
+  <!-- attackers -->
+  <text class="mono seclab" x="56" y="124">Three independent mechanisms shut the instance down</text>
+
+  <rect class="attack" x="56" y="140" width="340" height="76" rx="10"/>
+  <text class="mono atitle" x="80" y="172">instance teardown</text>
+  <text class="sans body" x="80" y="196">no process left that is a child of /init</text>
+
+  <rect class="attack" x="430" y="140" width="340" height="76" rx="10"/>
+  <text class="mono atitle" x="454" y="172">vmIdleTimeout</text>
+  <text class="sans body" x="454" y="196">default 60000 ms, in .wslconfig</text>
+
+  <rect class="attack" x="804" y="140" width="340" height="76" rx="10"/>
+  <text class="mono atitle" x="828" y="172">wsl --shutdown</text>
+  <text class="sans body" x="828" y="196">a user, an update, another application</text>
+
+  <!-- the insight -->
+  <rect x="56" y="244" width="1088" height="84" rx="12" fill="#1f2335" stroke="#e0c15a" stroke-width="1.5" opacity="0.95"/>
+  <rect x="76" y="262" width="4" height="48" rx="2" fill="#e0c15a"/>
+  <text class="mono" x="100" y="278" font-size="17" fill="#e0c15a">systemd services do not count.</text>
+  <text class="sans" x="100" y="304" font-size="12.5" fill="#a9b1d6">A healthy sshd running as a systemd unit does not keep the instance alive &#8212; only children of Microsoft's /init do.</text>
+  <text class="sans dimb" x="100" y="320" font-size="12">That is why the failure looks like a network fault.</text>
+
+  <!-- defenders -->
+  <text class="mono seclab" x="56" y="360">Three layers keep it alive</text>
+
+  <rect class="defend" x="56" y="376" width="340" height="100" rx="10"/>
+  <text class="mono dtitle" x="80" y="408">1 &#183; vmIdleTimeout=-1</text>
+  <text class="sans body" x="80" y="432">the documented knob &#8212; but</text>
+  <text class="sans dimb" x="80" y="452">one layer of three, not the answer</text>
+
+  <rect class="defend" x="430" y="376" width="340" height="100" rx="10"/>
+  <text class="mono dtitle" x="454" y="408">2 &#183; keepalive</text>
+  <text class="sans body" x="454" y="432">a child of /init that must never exit</text>
+  <text class="sans dimb" x="454" y="452">dumb by design: it does no work</text>
+
+  <rect class="defend" x="804" y="376" width="340" height="100" rx="10"/>
+  <text class="mono dtitle" x="828" y="408">3 &#183; watchdog</text>
+  <text class="sans body" x="828" y="432">relaunches it when anything kills it</text>
+  <text class="sans dimb" x="828" y="452">back in &#8804; 10 s, unassisted</text>
+
+  <!-- timeline -->
+  <text class="mono seclab" x="56" y="512">Verified by measurement: a forced wsl --shutdown</text>
+
+  <line x1="150" y1="572" x2="1060" y2="572" stroke="#3b4261" stroke-width="2"/>
+
+  <circle cx="210" cy="572" r="7" fill="#cb7c94"/>
+  <text class="mono" x="210" y="546" font-size="13" fill="#cb7c94" text-anchor="middle">killed</text>
+  <text class="mono dimb" x="210" y="600" font-size="12" text-anchor="middle">+0 s</text>
+
+  <circle cx="490" cy="572" r="7" fill="#e0c15a"/>
+  <text class="mono" x="490" y="546" font-size="13" fill="#e0c15a" text-anchor="middle">relaunched</text>
+  <text class="mono dimb" x="490" y="600" font-size="12" text-anchor="middle">+10 s</text>
+
+  <circle cx="760" cy="572" r="7" fill="#7fb4ca"/>
+  <text class="mono" x="760" y="546" font-size="13" fill="#7fb4ca" text-anchor="middle">services up</text>
+  <text class="mono dimb" x="760" y="600" font-size="12" text-anchor="middle">+15 s</text>
+
+  <circle cx="1030" cy="572" r="7" fill="#b7cc85"/>
+  <text class="mono" x="1030" y="546" font-size="13" fill="#b7cc85" text-anchor="middle">tunnel back</text>
+  <text class="mono dimb" x="1030" y="600" font-size="12" text-anchor="middle">+20 s</text>
+
+  <text class="sans" x="600" y="634" font-size="13" fill="#c0caf5" text-anchor="middle">Herdr retries with bounded backoff &#8212; a 20 second outage never reaches you.</text>
+
+  <!-- payoff -->
+  <rect x="56" y="668" width="1088" height="84" rx="12" fill="#1f2335" stroke="#3b4261" stroke-width="1.5"/>
+  <rect x="76" y="686" width="4" height="48" rx="2" fill="#b7cc85"/>
+  <text class="mono" x="100" y="702" font-size="16" fill="#b7cc85">Not "up until something kills it" &#8212; up again before you notice.</text>
+  <text class="sans dimb" x="100" y="728" font-size="12">The keepalive holds the instance, systemd restarts the services inside it, and each layer is one the layer below already knows how to start.</text>
+</svg>

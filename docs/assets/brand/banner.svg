@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" width="1200" height="260" role="img" aria-label="herdr-reach: make a locked-down machine reachable to your Herdr. A hub and a locked-down node cannot reach each other directly over SSH, but both reach the Cloudflare edge, which connects them with no inbound port on either side.">
+  <style>
+    .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .box  { fill: #1f2335; stroke: #3b4261; stroke-width: 1.5; }
+    .lbl  { fill: #c0caf5; }
+    .dim  { fill: #565f89; }
+    .gold { fill: #e0c15a; }
+    .red  { fill: #cb7c94; }
+    .blue { fill: #7fb4ca; }
+    .line-red  { stroke: #cb7c94; stroke-width: 2; stroke-dasharray: 6 5; }
+    .line-good { stroke: #b7cc85; stroke-width: 2.5; fill: none; }
+  </style>
+
+  <rect x="0" y="0" width="1200" height="260" rx="18" fill="#1a1b26"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="258.5" rx="17.25" fill="none" stroke="#3b4261" stroke-width="1.5"/>
+
+  <!-- identity -->
+  <text class="mono gold" x="64" y="110" font-size="54" font-weight="700">herdr-reach</text>
+  <rect x="66" y="128" width="298" height="3" rx="1.5" fill="#e0c15a" opacity="0.5"/>
+  <text class="sans lbl" x="64" y="168" font-size="20">Make a locked-down machine reachable to your Herdr.</text>
+  <text class="mono dim" x="64" y="202" font-size="14">diagnose  &#183;  provision  &#183;  verify  &#183;  persist</text>
+
+  <!-- motif: hub and node -->
+  <rect class="box" x="700" y="72" width="132" height="58" rx="10"/>
+  <text class="mono lbl" x="766" y="99" font-size="16" text-anchor="middle">hub</text>
+  <text class="sans dim" x="766" y="117" font-size="11" text-anchor="middle">your herdr</text>
+
+  <rect class="box" x="1008" y="72" width="132" height="58" rx="10"/>
+  <text class="mono lbl" x="1074" y="99" font-size="16" text-anchor="middle">node</text>
+  <text class="sans dim" x="1074" y="117" font-size="11" text-anchor="middle">locked down</text>
+
+  <line class="line-red" x1="840" y1="101" x2="1000" y2="101"/>
+  <line x1="914" y1="95" x2="926" y2="107" stroke="#cb7c94" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="926" y1="95" x2="914" y2="107" stroke="#cb7c94" stroke-width="2.5" stroke-linecap="round"/>
+  <text class="mono red" x="920" y="130" font-size="11" text-anchor="middle">blocked</text>
+
+  <!-- real path, through the edge -->
+  <path class="line-good" d="M 1074 130 V 186 H 984"/>
+  <path class="line-good" d="M 856 186 H 766 V 130"/>
+  <rect x="856" y="164" width="128" height="44" rx="8" fill="#1a1b26" stroke="#7fb4ca" stroke-width="1.5"/>
+  <text class="mono blue" x="920" y="191" font-size="12" text-anchor="middle">Cloudflare edge</text>
+  <text class="sans dim" x="920" y="232" font-size="11" text-anchor="middle">outbound only &#8212; no inbound ports</text>
+</svg>

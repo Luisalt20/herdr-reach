@@ -1,0 +1,8 @@
+# Binaries
+/herdr-reach
+/dist/
+*.exe
+
+# Editor / OS
+.DS_Store
+*.swp
