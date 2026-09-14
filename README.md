@@ -99,9 +99,9 @@ Having picked a transport, an ordinary setup still runs into all of this:
 - **A named tunnel needs a domain of your own** in a Cloudflare account &mdash; and a
   borrowed subdomain with a DNS record is *not* enough, as you will discover halfway
   through a favour from a friend.
-- **`cloudflared` at or above `2026.6.0` ignores service tokens** on `access ssh`
-  ([#1673](https://github.com/cloudflare/cloudflared/issues/1673)), so a headless
-  connection falls into a browser flow that can never complete.
+- **`cloudflared` `2026.6.0` is reported to ignore service tokens** on `access ssh`
+  ([#1673](https://github.com/cloudflare/cloudflared/issues/1673) &mdash; open, unlabelled and
+  single-source), so a headless connection falls into a browser flow that can never complete.
 - **Herdr cannot target native Windows**, so the real target is WSL2 &mdash; and systemd
   services **do not** keep a WSL2 instance alive. Only children of Microsoft's `/init` do.
 - **`vmIdleTimeout` defaults to 60 seconds** and is a second, independent shutdown.

@@ -28,7 +28,7 @@ The people who own these machines are exactly the people who want agents running
 2. Learn that inbound is hopeless and you need an outbound tunnel — and that the obvious free option (Cloudflare Quick Tunnels) is HTTP-only and cannot carry SSH.
 3. Realize an SSH tunnel needs **a domain of your own** in a Cloudflare account. Buy one, or borrow a subdomain and find out that a DNS record is not enough: you need membership in the account that owns the zone.
 4. Create a named tunnel, add a published application route with service type SSH, create an Access application, create a service token, and hope the policy action is `Service Auth` and not `Emails`.
-5. Discover that `cloudflared access ssh` ignores service tokens on current versions ([#1673](https://github.com/cloudflare/cloudflared/issues/1673)), so every headless connection falls into a browser flow that can never complete. Pin an older version and verify its SHA256 by hand.
+5. Discover that `cloudflared access ssh` is reported to ignore service tokens on `2026.6.0` ([#1673](https://github.com/cloudflare/cloudflared/issues/1673), open and single-source), so a headless connection falls into a browser flow that can never complete. Pin the last release the report does not implicate and verify its SHA256 by hand.
 6. Discover that Herdr cannot target Windows natively, so the real target is WSL2 — then install and harden an `sshd` inside it.
 7. Discover that systemd services do **not** keep a WSL2 instance alive; only children of Microsoft's `/init` do. Build a keepalive.
 8. Discover that `vmIdleTimeout` defaults to 60 seconds and is a second, independent shutdown mechanism.
@@ -967,11 +967,11 @@ So the tool's QUIC probe exists to decide, not to report: if UDP/QUIC fails and 
 
 ### 8.3 A pinned dependency, with an exit criterion
 
-`cloudflared` versions at or above `2026.6.0` ignore service tokens for `access ssh` and `access tcp`, falling through to an interactive browser flow on every connection ([#1673](https://github.com/cloudflare/cloudflared/issues/1673), open and unassigned). For a headless forwarder this is fatal: the SSH banner never arrives and the connection times out.
+Upstream issue [#1673](https://github.com/cloudflare/cloudflared/issues/1673) reports that `cloudflared` `2026.6.0` ignores service tokens for `access ssh` and `access tcp`, falling through to an interactive browser flow on every connection. The report is open, unlabelled, uncommented and single-source: it names `2026.6.0` only, no maintainer has confirmed it, and no release note documents a fix, so the affected range is **not established**. For a headless forwarder the reported failure is fatal: the SSH banner never arrives and the connection times out. The tool repeats this wording verbatim in its own output: it names the issue, names the version the report names, and never generalizes the range.
 
 The tool therefore:
 
-1. **Pins `2026.5.1`** for the client side.
+1. **Pins `2026.5.1`** for the client side — the last release the open report does not implicate.
 2. **Verifies the SHA256** against the published release checksum before installing.
 3. **Verifies the binary's self-reported version** as a second, independent check.
 4. **Fails loudly** if either check disagrees, and installs nothing.
