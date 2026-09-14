@@ -746,3 +746,217 @@ The change-wide remainder is **131 checkbox lines in PR 5 – PR 20**, which bel
 ### Engram mirror note
 
 This file is the **authoritative** artefact. Its Engram mirror is split in **three** parts, because the merged text does not fit the store's 50,000-character content limit in two: part 1 — the file header plus the PR 1 and PR 2 sections — is saved under the topic `sdd/reach-diagnosis-core/apply-progress`; part 2 — the PR 3 section — under `sdd/reach-diagnosis-core/apply-progress/part2`; and part 3 — this PR 4 section — under `sdd/reach-diagnosis-core/apply-progress/part3`. Each mirror part states the artefact path, this file's byte size and its SHA-256 digest, so the mirror can be checked against the repository copy, and each states that the repository file is authoritative. The PR 3 section's own older note still describes the earlier two-part shape; it is an earlier section of this artefact and is deliberately not rewritten here.
+
+---
+
+# Apply Progress — PR 5 of 20 — WU8 + WU9 · `local.env`: registry, platform classification, native-Windows refusal and WSL2 limits
+
+**Change**: `reach-diagnosis-core` · **Slice**: **PR 5 of 20** — “`local.env`: registry, platform classification, native-Windows refusal and WSL2 limits” (WU8 + WU9)
+**Branch**: `feat/probe-registry-localenv`, stacked on PR 4's branch `feat/probe-runner` (chain strategy `stacked-to-main`, so PR 5 targets PR 4's branch and **not** `main`)
+**Date**: 2026-09-14 · **Artifact store**: `both` (this file + Engram mirror, split as the mirror note at the end records)
+**Strict TDD**: active — `openspec/config.yaml` declares `strict_tdd: true` with runner `go test ./...`; RED → GREEN → TRIANGULATE → REFACTOR followed for every row of this slice, and two REDs were **re-created** rather than recorded after the fact (see “Strict-TDD integrity note”)
+**Skill resolution**: `paths-injected` — read `/Users/jack.smith/.config/opencode/skills/go-testing/SKILL.md` and `/Users/jack.smith/.config/opencode/skills/work-unit-commits/SKILL.md` before writing code; no registry fallback was needed
+**Delivery path consumed**: `auto-chain` / `stacked-to-main` — this run implements **only** the assigned slice and stops at its PR boundary; the PR 1, PR 2, PR 3 and PR 4 sections above are preserved unchanged
+**Commit status**: nothing committed, staged, pushed or branched by this phase; the work is left in the working tree for the orchestrator
+**How to read this file**: PR 5's entry is the section below. The current change-wide remainder is restated at the end of this section.
+
+---
+
+## Structured status consumed (PR 5)
+
+| Field | Value |
+|---|---|
+| `schemaName` / `schemaVersion` | `gentle-ai.sdd-status` / `2` |
+| `changeName` | `reach-diagnosis-core` |
+| `nextRecommended` | `apply` |
+| `applyState` | `ready` |
+| `dependencies.apply` / `.verify` / `.archive` | `ready` / `blocked` / `blocked` |
+| `actionContext.mode` | `repo-local` |
+| `actionContext.workspaceRoot` | `/Users/jack.smith/projects/work/herdr-reach` |
+| `actionContext.allowedEditRoots` | `["/Users/jack.smith/projects/work/herdr-reach"]` — every file written lives inside it |
+| `artifactStore` | `both` declared by the parent prompt (native `openspec`); files written under `openspec/changes/reach-diagnosis-core/` and mirrored to Engram |
+| `taskProgress` before this run | 165 total / 34 completed / 131 pending (PR 1 + PR 2 + PR 3 + PR 4) |
+| `taskProgress` after this run | 165 total / **43 completed** / 122 pending |
+| `actionContext` warnings | none |
+| Work-unit ownership markers | all nine PR 5 rows carry the terminal `<!-- sdd-owner: implementation -->` marker; the whole file still holds 165 markers for 165 checkbox rows, none malformed, duplicate, unsupported or non-terminal |
+| `applyState: all_done`? | no — implementation continues, so editing was permitted |
+
+**Attempt context**: the harness reports one bounded attempt already active for this work unit (`token sha256:71b2aa5283a109d2c0fab439c60273886ac562cd3342be3332b5156a2150b2ca`) with a **2,000**-changed-line ceiling, generous because the ledger charges every file the work unit touches. Per the parent prompt the parent owns `sdd-attempt acquire`/`settle`; this executor did **not** call the native attempt command. The counted-line position against that ceiling is in “Workload and PR boundary”.
+
+---
+
+## Completed tasks and their persisted checkbox updates (PR 5)
+
+All nine PR 5 rows were flipped from `- [ ]` to `- [x]` in `openspec/changes/reach-diagnosis-core/tasks.md` (lines 196–204) as the work completed, then re-read to confirm. `git diff --stat` on that file reports exactly `9 insertions(+), 9 deletions(-)` — nine flips and nothing else.
+
+| # | Task (short) | Persisted update | Evidence |
+|---|---|---|---|
+| 1 | RED — registry enumeration case in `probe_test.go` (ten probes, four kinds, stable order, no eleventh entry) | `tasks.md:196` → `- [x]` | `go test ./...` → `FAIL … [build failed]`: `undefined: probe.Registry` (`:241`, `:287`, `:301`, `:329`, `:345`), `undefined: probe.ProbeRegistration` (`:300`), `undefined: probe.Probes` (`:339`) — the registry vocabulary did not exist |
+| 2 | GREEN — `registry.go` with the ordered registry and a constructor per probe, `local.env` only | `tasks.md:197` → `- [x]` | `go test -count=1 -run 'TestRegistry' -v ./internal/probe/` exit 0: `TestRegistryEnumeratesTheDeclaredProbes` and `TestRegistryBuildsOnlyRegisteredProbes` PASS; ten entries, one built (`local.env`) |
+| 3 | GREEN — `local.env` classification in `local.go` (Linux, macOS, WSL2, native Windows plus architecture) over the injected `Platform` seam | `tasks.md:198` → `- [x]` | The four-seam case is green (run 6 below): every classification asserted with its architecture; `gofmt -l .` empty and `go vet ./...` clean at each step |
+| 4 | RED + TRIANGULATE — script all four platform seams with their arch; assert no provisioning action (R-HR-29) | `tasks.md:199` → `- [x]` | `go test -count=1 -run 'TestLocalEnv'` exit 1: `--- FAIL: TestLocalEnvClassifiesEachPlatform/native_windows` — `a scripted native windows machine measured "unresolved", want "measured"`; then green. Five further cases (unknown/degrade ×5, no-provisioning guard over 8 platforms, FS tripwire + `WSL_DISTRO_NAME`/`WSL_INTEROP` isolation, scripted-clock elapsed, identity round-trip) |
+| 5 | REFACTOR + GATE — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/` | `tasks.md:200` → `- [x]` | `gofmt -l .` exit 0 (empty output) · `go vet ./...` exit 0 (no output) · `go test -count=1 ./internal/probe/` exit 0 |
+| 6 | RED — refusal case: native Windows ⇒ `(measured, fail, node_platform_unsupported)` naming WSL2 as the supported path | `tasks.md:201` → `- [x]` | `go test -count=1 -run 'TestLocalEnvRefusesNativeWindows'` exit 1: both subtests `verdict = "pass", want "fail"` — a genuine behaviour RED, not a compile error |
+| 7 | GREEN — implement the refusal plus the degrade path to `(unresolved, platform_unknown)` with no default guess | `tasks.md:202` → `- [x]` | `go test -count=1 ./...` exit 0 after the refusal; the degrade path is asserted by the five unclassified cases (deny-all seam, `freebsd`, linux with unknown arch, linux with empty arch, nil seam) and `TestLocalEnvRefusesNativeWindows` passes with both measured and unreported architectures |
+| 8 | TRIANGULATE — WSL2 detail limited to documented semantics (milliseconds, 60000, Windows 11), no child-of-init rule and no `-1` sentinel (RG-4); WSL2 without systemd is detection-only and names a later slice | `tasks.md:203` → `- [x]` | `go test -count=1 -run 'TestLocalEnvWSL2TextIsDocumentedSemanticsOnly'` exit 1 first (7 failures: `milliseconds`, `60000`, `Windows 11` in both systemd states, plus the missing later-slice clause), then exit 0; nine mutations M1–M9 prove the guards can fail |
+| 9 | REFACTOR + GATE — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/` | `tasks.md:204` → `- [x]` | Review added the macOS architecture-guard case and the identity round-trip case (both mutation-checked) and one `Run` doc sentence; final gates: `gofmt -l .` empty · `go vet ./...` clean · `go test -count=1 ./...` exit 0 · `go test -race -count=1 ./...` exit 0 |
+
+---
+
+## Files changed (PR 5)
+
+| Path | Status | Authored lines | Purpose |
+|---|---|---|---|
+| `internal/probe/registry.go` | added | 134 (46 code, 81 comment, 7 blank) | The ten probe-name constants, `ProbeFactory`, `ProbeRegistration`, the ordered ten-entry `registry` declaration (one constructor filled), `Registry()` returning a copy, and `Probes(seams)` building the landed subset in registry order |
+| `internal/probe/local.go` | added | 345 (148 code, 167 comment, 30 blank) | `NodePlatform` and its five values, `NodePlatformIdentity`/`SplitNodePlatformIdentity`, `platformSignals`, the `localEnv` probe (`Name`/`Kind`/`Run`/`now`/`observe`), `classifyPlatform` with the four classifications and the degrade, and the per-platform wording builders |
+| `internal/probe/local_test.go` | added | 605 (439 code, 117 comment, 49 blank) | `scriptedPlatform`, `tripwireFS`, `localEnvBuild`, `runLocalEnv`, `provisioningTokens`; nine test functions: four-platform classification, five unclassified/degrade cases, the native-Windows refusal (2 subtests), the RG-4 WSL2 guard, the no-provisioning guard over 8 platforms, the seam-isolation tripwire, the scripted-clock elapsed case, and the identity round-trip |
+| `internal/probe/probe_test.go` | modified | +166 / −0 | `declaredProbeRegistry` (PRD §5.1 transcribed), `probeKinds`, `TestRegistryEnumeratesTheDeclaredProbes`, `TestRegistryBuildsOnlyRegisteredProbes` |
+| `internal/probe/classify.go` | modified (enabling edit — see deviation #1) | +14 / −3 | `ObsPlatformSignalsClassified` and the positive `PurposePlatformClassification` row the design's table omits while §5.3 requires `local.env` to pass |
+| `openspec/changes/reach-diagnosis-core/tasks.md` | modified | 9 lines changed in place (9 deletions + 9 additions = 18 changed lines) | Nine PR 5 checkboxes `- [ ]` → `- [x]` |
+| `openspec/changes/reach-diagnosis-core/apply-progress.md` | modified | this appended section | Cumulative PR 5 evidence; the PR 1–PR 4 sections are untouched |
+
+**Authored code + tests: 1,264 additions and 3 deletions = 1,267 counted changed lines** (134 + 345 + 605 + 166 additions; `classify.go` +14/−3). No file outside the four assigned paths, the one disclosed enabling path and the two artifact files was created or modified; `README.md`, `PRD.md`, the proposal, the specs, the design, `explore.md`, `research.md`, `preproposal.md` and `openspec/config.yaml` are untouched. No new dependency was added (production code imports only `context`, `fmt`, `strings` and `time`; the tests add `context`, `errors`, `os`, `strings`, `testing`, `time`); no linter or CI configuration was introduced.
+
+---
+
+## Test commands run — exact commands and exit status (PR 5)
+
+| # | Command | Exit | Observed output (abridged) |
+|---|---|---|---|
+| 1 | `go test ./...` (task 1 RED) | non-zero — `FAIL … [build failed]` | `internal/probe/probe_test.go:241:20: undefined: probe.Registry` (five sites), `:300:22: undefined: probe.ProbeRegistration`, `:339:17: undefined: probe.Probes`. (The invocation piped into `head`, so the printed shell status was `head`'s; the `FAIL … [build failed]` line is `go test`'s own verdict, which is non-zero on a build failure.) |
+| 2 | `go test -count=1 -run 'TestRegistry' -v ./internal/probe/` (task 2 GREEN) | **0** | `--- PASS: TestRegistryEnumeratesTheDeclaredProbes`, `--- PASS: TestRegistryBuildsOnlyRegisteredProbes` |
+| 3 | `gofmt -l .` · `go vet ./...` · `go test -count=1 ./...` (task 2/3 gate) | **0** each | `gofmt` empty output; `vet` no output; `ok …/internal/probe 0.405s` · `ok …/internal/version 0.006s` |
+| 4 | `go test -count=1 -run 'TestLocalEnv' ./internal/probe/` (task 4 RED) | **1** | `--- FAIL: TestLocalEnvClassifiesEachPlatform/native_windows` — `local_test.go:208: a scripted native windows machine measured "unresolved", want "measured"`. Every other case passed: the three supported platforms, the five unclassified cases, the guards and the clock case |
+| 5 | `gofmt -w internal/probe/local_test.go` + `gofmt -l .` · `go vet ./...` · `go test -count=1 ./...` (task 4 GREEN) | **0** each | Full suite green; `gofmt` empty output |
+| 6 | `go test -count=1 -run 'TestLocalEnvRefusesNativeWindows' ./internal/probe/` (task 6 RED) | **1** | `--- FAIL: TestLocalEnvRefusesNativeWindows/a_measured_architecture` and `…/an_architecture_the_seam_did_not_report` — `verdict = "pass", want "fail"` |
+| 7 | `gofmt -l .` · `go vet ./...` · `go test -count=1 ./...` (task 7 GREEN) | **0** each | `ok …/internal/probe 0.406s` · `ok …/internal/version 0.008s` |
+| 8 | `go test -count=1 -run 'TestLocalEnvWSL2TextIsDocumentedSemanticsOnly' ./internal/probe/` (task 8 RED) | **1** | Seven failures: `the WSL2 text does not state the documented semantics "milliseconds"`, `…"60000"`, `…"Windows 11"` — each in both the systemd-present and systemd-absent states — plus `the WSL2 text without systemd does not state that enabling it belongs to a later slice` |
+| 9 | `gofmt -l .` · `go vet ./...` · `go test -count=1 ./...` (task 8 GREEN) | **0** each | `ok …/internal/probe 0.414s` · `ok …/internal/version 0.007s` |
+| 10 | mutations M1–M9, one at a time, each against a `/tmp` backup (see “Mutation evidence”) | **1** each | Every mutation was caught by the case it targets; after each restore `diff` confirmed the file was byte-identical to the backup and the suite was green again |
+| 11 | `go test -count=1 -run 'TestRegistry\|TestLocalEnv\|TestNodePlatformIdentity' ./internal/probe/` (the work-unit map's `Unit verification` command, **bare pipes**) | **0** | `ok …/internal/probe 0.009s` — note 12 below |
+| 12 | `go test -count=1 -run 'TestRegistry\|TestLocalEnv\|TestNodePlatformIdentity' -v ./internal/probe/` | **0** | Nine top-level functions PASS (23 `--- PASS` lines including subtests): the two registry cases and the seven `local.env` cases listed above plus the identity round-trip |
+| 13 | `gofmt -l .` (final gate) | **0** | empty output — nothing unformatted |
+| 14 | `go vet ./...` (config `quality.typecheck`) | **0** | no output |
+| 15 | `go test -count=1 ./...` (final gate) | **0** | `ok …/internal/probe 0.406s` · `ok …/internal/version 0.007s` |
+| 16 | `go test -race -count=1 ./...` (final gate) | **0** | `ok …/internal/probe 1.461s` · `ok …/internal/version 1.019s` |
+| 17 | `go test -count=1 -v ./internal/probe/` (final inventory) | **0** | 41 top-level test functions, 191 `--- PASS` lines including subtests across the package |
+
+**Note on the map's focused command (2).** `tasks.md`'s work-unit map writes PR 5's unit-verification filter as `-run 'TestRegistry\|TestLocalEnv'`, and Go's RE2 engine reads `\|` as a **literal pipe**, so that exact string matches no test — run 12's first form reproduced it (`ok … [no tests to run]`, exit 0) before the working form with bare `|` was used. This is the same artifact typo PR 4 recorded as risk #7; the nine checkboxes are unaffected.
+
+**Runtime harness**: **N/A as an end-to-end run, with the probe-level harness now reachable in process.** There is still no CLI (`cmd/herdr-reach` lands in PR 18/19), no `doctor` wiring (PR 18) and no network measurement: the two probes that exist for a real machine are this one and the runner. What *is* exercised is the production path a run takes to this probe — `Registry()` → the declared entry → its constructor → `Run` — driven with scripted platform seams and the deny-all capability set, which is design §6.2's first proof level for a probe. PR 6 onward adds the transport probes; PR 20 owns the writes-nothing and zero-exec proof.
+
+---
+
+## TDD Cycle Evidence (PR 5)
+
+RED → GREEN → TRIANGULATE → REFACTOR per PR 5 task row. Four REDs were produced before the behaviour they exercise existed, and three of them are genuine *behaviour* failures rather than compile errors: the native-Windows classification (`unresolved`, want `measured`), the refusal (`pass`, want `fail`) and the WSL2 documented semantics (missing text).
+
+| Task row | Phase | Evidence produced | Observed failure (RED) | Observed pass (GREEN) |
+|---|---|---|---|---|
+| 1 RED — registry enumeration | RED | `probe_test.go` gained `declaredProbeRegistry` (PRD §5.1 transcribed literally), `probeKinds`, `TestRegistryEnumeratesTheDeclaredProbes` and `TestRegistryBuildsOnlyRegisteredProbes` before any `registry.go` existed | exit non-zero: `undefined: probe.Registry` (×5), `probe.ProbeRegistration`, `probe.Probes` / `FAIL … [build failed]` | n/a |
+| 2 GREEN — `registry.go` | GREEN | The ten name constants, `ProbeFactory`, `ProbeRegistration`, the ordered ten-entry table (only `local.env` built), `Registry()` as a copy, `Probes(seams)` in registry order | (previous row) | exit 0: both registry cases PASS |
+| 3 GREEN — `local.env` classification | GREEN | `local.go`: the classification vocabulary, the identity helpers, the probe and `classifyPlatform`; `classify.go` gained the positive platform row it needed (deviation #1) | (previous row) | exit 0 after GREEN 2 below; `gofmt`/`vet` clean at every step |
+| 4 RED + TRIANGULATE — four platform seams, no provisioning | RED → TRIANGULATE | `local_test.go`: `scriptedPlatform`, `tripwireFS`, `localEnvBuild`, `runLocalEnv`, `TestLocalEnvClassifiesEachPlatform`, `TestLocalEnvUnknownPlatformIsNotGuessed`, `TestLocalEnvOffersNoProvisioningAction`, `TestLocalEnvReadsOnlyInjectedSeams`, `TestLocalEnvElapsedComesFromTheInjectedClock` | exit 1: `--- FAIL: TestLocalEnvClassifiesEachPlatform/native_windows` — `measured "unresolved", want "measured"`; the other cases passed against the classification that existed, which is what makes the RED specific | exit 0 after GREEN 2 added the Windows classification branch |
+| 5 REFACTOR + GATE | REFACTOR | No code restructured; comments reviewed and the gates run | n/a | exit 0: `gofmt -l .` (empty), `go vet ./...`, `go test -count=1 ./internal/probe/` |
+| 6 RED — the refusal | RED | `TestLocalEnvRefusesNativeWindows` written first, with two subtests (a measured architecture, an unreported one) | exit 1: both subtests `verdict = "pass", want "fail"` | n/a |
+| 7 GREEN — refusal + degrade | GREEN | `classifyPlatform`'s Windows branch now returns `ObsNodePlatformUnsupported` and `windowsWording` names WSL2 as the supported path; the degrade path implemented with the classification is asserted by the five unclassified cases | (previous row) | exit 0: the refusal case passes; the full suite is green |
+| 8 TRIANGULATE — WSL2 documented semantics | TRIANGULATE (own RED→GREEN) | `TestLocalEnvWSL2TextIsDocumentedSemanticsOnly` written first: required tokens (`milliseconds`, `60000`, `Windows 11`), forbidden tokens (`-1`, child-of-init spellings, `/init`, `keepalive`, `watchdog`, `persist`), and the systemd-absent detection-only clause | exit 1: seven failures — the three documented-semantics tokens missing in both systemd states, plus the missing later-slice clause | exit 0 after `wsl2Wording` implemented the documented sentence and the later-slice clause; teeth proven by M1 and M2 |
+| 9 REFACTOR + GATE | REFACTOR | Review pass: one `Run` doc sentence about the target, the macOS architecture-guard case and the identity round-trip case added (both mutation-checked as M9 and by the splitter's malformed-value assertions), comments re-read against the code; no behaviour change | n/a | exit 0: `gofmt -l .` (empty), `go vet ./...`, `go test -count=1 ./...`, `go test -race -count=1 ./...` |
+
+**Strict-TDD integrity note.** Two rows are recorded honestly rather than flatteringly. (a) The registry cannot compile without a probe constructor — `tasks.md`'s own sequencing note 2 says so — so rows 2 and 3 landed in one GREEN after RED 1; rows 6–8 then each got their own RED. (b) The refusal text and the WSL2 documented semantics were **first written with the classification**, which would have made rows 6 and 8 test-after-code; both were deliberately backed out, the REDs were re-run and observed (runs 6 and 8), and only then were they implemented again. The final code is byte-identical to the intent; the evidence above is the honest record of the sequence, not a reconstruction.
+
+---
+
+## Mutation evidence (PR 5)
+
+Every mutation was applied to a `/tmp` backup of the file, run against the focused case, and restored; `diff` then confirmed the restore and the package was re-run green.
+
+| # | Mutation | Case that caught it | Observed failure |
+|---|---|---|---|
+| M1 | The WSL2 text gained `, and only children of /init keep the instance alive` | `TestLocalEnvWSL2TextIsDocumentedSemanticsOnly` | exit 1 — `the WSL2 text states the undocumented "child of init"` and `"/init"` |
+| M2 | The WSL2 text gained `(set vmIdleTimeout=-1 to disable)` | `TestLocalEnvWSL2TextIsDocumentedSemanticsOnly` | exit 1 — the `-1` sentinel is caught as a substring |
+| M3 | The Windows branch reported `ObsPlatformSignalsClassified` instead of `ObsNodePlatformUnsupported` | `TestLocalEnvRefusesNativeWindows` | exit 1 — both subtests `verdict = "pass", want "fail"` |
+| M4 | The Linux branch dropped its `archReported()` guard | `TestLocalEnvUnknownPlatformIsNotGuessed` | exit 1 — the unknown-architecture and empty-architecture cases classified as Linux |
+| M5 | The registry's `egress.cf.7844` and `egress.cf.443` entries were swapped | `TestRegistryEnumeratesTheDeclaredProbes` | exit 1 — both positions and the declared-target-set cross-check disagree |
+| M6 | `Registry()` returned the package slice instead of a copy | `TestRegistryEnumeratesTheDeclaredProbes` | exit 1 — `Registry() handed out the package's own registry slice` |
+| M7 | `egress.quic` was registered with kind `ProbeEgress` | `TestRegistryEnumeratesTheDeclaredProbes` | exit 1 — the kind disagrees with the transcribed PRD §5.1 table |
+| M8 | The positive `PurposePlatformClassification` row was removed from `classify.go` | `TestLocalEnvClassifiesEachPlatform` | exit 1 — all five supported-platform subtests fell to the table's total row |
+| M9 | The macOS branch dropped its `archReported()` guard | `TestLocalEnvUnknownPlatformIsNotGuessed` | exit 1 — the new macOS-unknown-architecture case classified as macOS |
+
+**Triangulation depth.** Four independent angles on the registry (positional transcription, four-kind closure, stability plus copy isolation, and every built probe matching its declaration) and five on the probe (four platform classifications read back through the package's splitter, five distinct unclassified gaps, the refusal with two architecture states, the RG-4 text guard in both systemd states, and the seam-isolation tripwire with the process environment set to look like WSL2). **Nine mutations, every one caught**, and three genuine behaviour REDs.
+
+---
+
+## Deviations from design (PR 5)
+
+| # | Deviation | Why | Design reference | Follow-up owner |
+|---|---|---|---|---|
+| 1 | **`internal/probe/classify.go` was edited, which is outside the PR 5 file list.** One observable (`ObsPlatformSignalsClassified`) and one row (`PurposePlatformClassification` → measured/pass/`ok`) were added, +14/−3. | Design §5.1's platform rows are only “signals match no supported classification” and “classified native Windows”. Neither can express a healthy machine, yet §5.3 requires `local.env` to **pass** on Linux. Without the row the probe could only report `internal_error` through the table's total row, and the table is the only place a reason code may be chosen. PR 2's own record anticipated this (“later probe PRs must declare the purpose and observable that match their real declared question”). The edit is purely additive, in the same package, and the row's coverage is proven by M8. | design §5.1 (platform rows), design §5.3 (“`local.env` passes”), PR 2 apply-progress deviation #2 | `sdd-verify` must adjudicate; the orchestrator may prefer to move this row into a PR 5a/PR 5b boundary or to fold it into a review of PR 2 |
+| 2 | `Registry()` returns `[]ProbeRegistration` (name, kind, constructor), not `[]Probe`, and `Probes(seams)` builds the landed subset. | Design §4's sketch says `probe.Registry() // exactly ten probes`, which cannot hold while nine probes have no implementation: returning nine placeholder probes would fabricate results for probes no slice has written, and returning only `local.env` would fail the “exactly ten” scenario. The declaration carries the enumeration contract instead, and `Probes` can never produce an eleventh entry (asserted). | design §4 (data flow sketch), design §7 (`registry.go` row), diagnosis spec “exactly the ten declared probes” | PR 18's doctor wiring calls `Probes(seams)`; `sdd-verify` may want the sketch re-worded |
+| 3 | `NodePlatform`, its five values, and the identity pair `NodePlatformIdentity`/`SplitNodePlatformIdentity` (with `PlatformIdentitySeparator`) are exported although no consumer exists yet. | The payload's `node.platform` and `node.arch` (design §3.3) are exactly the two halves, and PR 9's accessors and PR 12's `NODE_*` rules need them apart. A format known only to `local.go` would be re-derived by string surgery in another package, which is what the single-home rule exists to prevent. The round-trip and the malformed-value cases are asserted now. | design §3.3 (`node` object), design §5.2 (`node.platform` rules) | PR 10/PR 12/PR 16 consume them; `sdd-verify` may treat the pair as a refinement |
+| 4 | A supported platform whose architecture was **not** reported degrades to `(unresolved, platform_unknown)` naming the missing half. The refusal is the exception: it rests on the operating system alone. | R-HR-29 requires the classification *and* the architecture, and a node whose architecture was not measured is exactly the node whose binaries cannot be chosen (PRD §13: “Hub and node architectures differ — detect and report. Never copy a binary between them”). Calling it supported would present a classification whose binary-compatibility half is missing. The refusal is a statement about the operating system, so an unreported architecture neither weakens nor fabricates it. | R-HR-29, PRD §13, design §5.1 (`platform_unknown` row) | `sdd-verify` |
+| 5 | A **nil** `Platform` seam resolves to `(unresolved, platform_unknown)`, not to `not_measured`/`capability_excluded`. | The table's `ObsCapabilityExcluded` row is scoped to `PurposeSSHDConfiguration`; a platform-scoped variant is a larger contract change than this slice should make on another slice's file. The detail says a seam was never injected, so the gap is named rather than hidden, and nothing is guessed. | design §5.1 (attempted-vs-not-attempted rule), design §6.2 | PR 6/PR 9 own the `capability_excluded` shape; a verifier may prefer not-measured here |
+| 6 | WSL2's **systemd state lives in the verbatim detail**, not in a machine-readable field, and the observation's target carries only `<platform>/<arch>`. | The reason-code set is closed and holds no code for “systemd is not the running service manager”; a second observation would need a new code, which is a documented contract change (design §3.5). The text is asserted (RG-4, detection-only) but the reasoning layer cannot yet match it structurally. | design §5.2 (`NODE_WSL2_SYSTEMD_ABSENT`: “WSL2 ∧ systemd not enabled”), design §3.5 (closed set) | **PR 12 must extend the match** — either `Need` gains an observation label/observable, or the probe gains a structured systemd field. Recorded as risk 3 |
+| 7 | The nine unlanded registry entries carry **nil** constructors, and every later probe slice must fill one in — an edit to `registry.go` that PR 6–PR 9's file lists do not name. | The full ten-entry declaration is what the enumeration contract needs, and a nil constructor is the honest representation of “no slice has written this probe yet”. The alternative (a placeholder probe) would fabricate a measurement. | design §7 (`registry.go` row), tasks.md sequencing note 2 | PR 6–PR 9: one line each; the enumeration case keeps the names, kinds and order honest |
+| 8 | `local.env` reads **no** FS seam, although design §6.1 lists `FS` among its consumers. | The classification needs no file and no environment variable: WSL2 and systemd are Platform signals, and reading `/proc/version` or `WSL_DISTRO_NAME` directly would classify the machine the test runs on. The tripwire case proves the FS seam was never called and that the process environment (`WSL_DISTRO_NAME`, `WSL_INTEROP`, `WSLENV` set) cannot move the classification. | design §6.1 (seam table), design §6.2 (deny-all default) | A later slice that wants env-based corroboration goes through `FS.Getenv`; recorded so the table and the code are not silently inconsistent |
+| 9 | Both new test files are **external** test packages (`package probe_test`), as in PR 1–PR 4. | The probe is reached through `Registry()` → constructor → `Run`, which is the production path, and the helpers (`holds`) and the guards are readable as a consumer would read them. | tasks PR 5 file list; design §8 test plan | n/a |
+
+---
+
+## Workload and PR boundary (PR 5)
+
+| Field | Value |
+|---|---|
+| Slice | PR 5 of 20 — “`local.env`: registry, platform classification, native-Windows refusal and WSL2 limits” (WU8 + WU9) |
+| PR 5 estimate in `tasks.md` | 380–570 lines (point ≈475) |
+| Host attempt ceiling | 2,000 counted changed lines |
+| **Actual authored code + tests** | **1,264 additions / 3 deletions = 1,267 counted lines**: `registry.go` 134, `local.go` 345, `local_test.go` 605, `probe_test.go` +166, `classify.go` +14/−3 |
+| Artifact changes | `tasks.md` 9 lines changed (9 + 9 = **18** changed lines) + this appended section |
+| **Total counted changed lines for the work unit** | **1,499** (1,264 authored + 3 deletions + 18 checkbox + 214 this section) |
+| Chain per-PR cohesion ceiling | 1,000 changed lines (user-approved, revised from 600 on 2026-09-14) |
+| Review budget (session canonical) | 400 changed lines |
+| Budget status | **Over the slice estimate, over the 1,000-line chain ceiling and over the 400-line session budget; inside the 2,000-line attempt ceiling** |
+| PR boundary | Starts at PR 4's branch state (`internal/probe` vocabulary + classification table + seams + declared target set + runner) and ends at `internal/probe` compiling and passing with the ordered registry and `local.env` in place. PR 6 (`local.sshd` + `egress.hub.direct`) is **not** started: no `internal/probe/egress.go`, `quic.go`, `tls.go`, `internal/diagnosis/`, `internal/transport/`, `internal/report/`, `internal/doctor/`, `cmd/` or `docs/diagnosis-report.md` exists |
+| Rollback boundary | Delete `internal/probe/registry.go`, `local.go` and `local_test.go`; revert `probe_test.go`'s two added test functions plus their two transcription variables and `classify.go`'s +14/−3. The module returns to its PR 4 state with the vocabulary, the classification table, the seams, the declared target set and the runner still green. `tasks.md` lines 196–204 revert to `- [ ]`; this appended section is the only other PR 5 change |
+| Rollback independence | Nothing consumes the registry or `local.env` yet — the doctor wiring lands in PR 18 and the other probes in PR 6–PR 9 — so the revert removes no unrelated work and leaves PR 1–PR 4 green |
+
+**Why 1,267 > 1,000, stated honestly, and the boundary the plan already names.** The overage is the probe suite and its comments, not padding: 605 of the 1,264 lines are `local_test.go` (nine test functions, eight platforms in the wording guard, the FS tripwire, the clock case and the identity round-trip), 166 are the transcription and guards of the enumeration case, and 430 of `local.go`/`registry.go` are the comments that carry the *why* of each classification branch and of the registry's declaration-not-construction shape — exactly the code a reviewer has to trust. The review-budget rule forbids reaching a number by deleting tests, control cases, triangulation cases, comments, docs or blank lines, and no `size:exception` was assumed, so **nothing was compressed**; the honest count is reported instead.
+
+Per the parent's instruction, the boundary the task plan already names is reported rather than applied here: **PR 5a = WU8** — the registry plus the platform classifications (`registry.go` 134 + `probe_test.go` 166 + `classify.go` 17 + the classification parts of `local.go` ≈ 291 and `local_test.go` ≈ 448) ≈ **1,056 counted lines**; **PR 5b = WU9** — the refusal, the unknown-platform degrade and the documented WSL2 limits (the Windows branch and `windowsWording`, `wsl2Wording`, and their two cases, ≈ 54 + 157) ≈ **211 counted lines**. The split is strictly ordered (the refusal and the WSL2 text are branches of the classification WU8 introduces), and PR 5b would target PR 5a's branch. The first half is still marginally above the 1,000-line ceiling (by ≈ 5 %), almost entirely because the 166-line enumeration case belongs with the registry; moving that case to the second half would put WU8 at ≈ 890 and WU9 at ≈ 377, which is the only adjustment that would bring both halves inside the ceiling. **This executor did not split the slice or touch branches**: the parent assigned PR 5 as one unit, and a split moves a review boundary rather than the work.
+
+---
+
+## Remaining unchecked tasks (PR 5 view)
+
+**Inside this slice: none.** All nine PR 5 checkbox rows are `- [x]` in `openspec/changes/reach-diagnosis-core/tasks.md` (re-read after the edits: **43 checked, 122 unchecked**; 165 rows total; `git diff --stat` on that file shows exactly 9 insertions and 9 deletions). The ownership markers were re-checked: 165 `<!-- sdd-owner: implementation -->` markers for 165 rows, every one terminal.
+
+The change-wide remainder is **122 checkbox lines in PR 6 – PR 20**, which belong to later chained slices on later branches (PR 5 targets PR 4's branch; the chain is `stacked-to-main`) and are **not** part of this work unit. The next unchecked line in the artifact, verbatim, is `tasks.md:211` — PR 6's first row, which is where the next slice resumes:
+
+```
+- [ ] **RED** — add the divergence case: written ≠ effective configuration ⇒ `(measured, fail, sshd_config_divergence)` with both configurations in the verbatim detail (R-HR-18). <!-- sdd-owner: implementation -->
+```
+
+PR 6 must also fill the `local.sshd` constructor slot in `internal/probe/registry.go` (deviation #7) and add `internal/probe/egress.go`; PR 7–PR 9 do the same for the remaining eight entries.
+
+---
+
+## Risks (PR 5)
+
+| # | Risk | Status / handling |
+|---|---|---|
+| 1 | 1,267 counted lines against a 1,000-line chain ceiling (2,000-line attempt ceiling satisfied) | Disclosed above with the composition and the named WU8/WU9 boundary, including the measurement that shows the first half still lands at ≈ 1,056. The orchestrator owns the split decision; nothing was compressed to fit |
+| 2 | `classify.go` was edited although it is outside the assigned file list (deviation #1) | Disclosed with the exact reason (design §5.3 requires a pass the table cannot express), the size (+14/−3, additive), and the mutation that proves the new row is covered (M8). `sdd-verify` must adjudicate the boundary |
+| 3 | WSL2's systemd state has no machine-readable home (deviation #6) | The text is asserted in both states, but PR 12's `NODE_WSL2_SYSTEMD_ABSENT` rule cannot match it structurally yet. The exact interface gap is recorded with two candidate shapes; until then the finding would have to rest on an observation label or on detail text, and the latter is what R-HR-07 forbids |
+| 4 | `Registry()` returns registrations, not `[]Probe` (deviation #2) | The design's sketch is narrower than the slice can be; the enumeration scenario is still asserted in full. If the maintainer prefers `Registry() []Probe`, the change is small but would reintroduce the placeholder-probe problem the declaration avoids |
+| 5 | Nine registry entries have nil constructors, and later slices' file lists do not name `registry.go` (deviation #7) | Flagged for PR 6–PR 9 with the one-line edit each needs. The enumeration case fails if a later slice moves a name, a kind or a position, so the wiring cannot drift silently |
+| 6 | A nil `Platform` seam resolves to `platform_unknown` rather than not-measured (deviation #5) | Disclosed; the detail names the missing seam so the gap is visible. The alternative needs a platform-scoped `capability_excluded` row in `classify.go`, which is a larger edit to the file this slice already had to touch once |
+| 7 | The provisioning-token guard is a wording guard, not a proof | Stated in the test's own doc comment: it catches text that offers or claims a change, and the structural proof (tree digests, zero-exec counter, closed dialed set) is PR 20's per design §6.3. The probe also reads nothing through the FS seam (tripwire case), so it has no path to change anything |
+| 8 | `local.env`'s observation target is an identity (`linux/aarch64`), not an address | Deliberate and documented on `Run`: a local probe dials nothing, so the identity is what it measured. PR 16's payload mapper must echo `probes[].target` for a local probe as this value rather than as `null`; the payload's `node.platform`/`node.arch` come from splitting it |
+| 9 | `ProbeFactory` takes only `Seams`, so a probe needing run input (the hub address, overrides) must widen the signature in its own slice | Accepted for this slice because `local.env` needs nothing else, and the widening is a normal, reviewable edit in the slice that needs it. Recorded so PR 6–PR 9 do not silently add package-level run input instead |
+| 10 | Real-platform classification is only exercised through seams | Intended: the suite never runs on Windows, so the refusal is proven without a Windows host. A production `Platform` (PR 19, `real.go`) reading `runtime.GOOS`/`GOARCH` is the remaining unverified step, and it lands with the no-real-network guard |
+
+### Engram mirror note
+
+This file is the **authoritative** artefact. Its Engram mirror is now split in **four** parts because the merged text exceeds the store's 50,000-character content limit: part 1 — the file header plus the PR 1 and PR 2 sections — under the topic `sdd/reach-diagnosis-core/apply-progress`; part 2 — the PR 3 section — under `sdd/reach-diagnosis-core/apply-progress/part2`; part 3 — the PR 4 section — under `sdd/reach-diagnosis-core/apply-progress/part3`; and part 4 — this PR 5 section — under `sdd/reach-diagnosis-core/apply-progress/part4`.
+
+Every part states the artefact path, this file's byte size and its SHA-256 digest **as recorded when that part was saved**, and that the repository file is authoritative. Parts 1–3 therefore carry their own slice's snapshot and their digests no longer match this file, which has grown by two sections since; part 4 carries the merged file's size and digest as of this run. A mirror part is a readable convenience copy of this artefact, not a second source of truth: read this file for the complete, current record. The PR 3 and PR 4 sections' own older notes still describe the earlier two- and three-part shapes; they are earlier sections of this artefact and are deliberately not rewritten here.
