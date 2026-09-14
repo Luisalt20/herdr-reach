@@ -58,10 +58,17 @@ const (
 	probeNameTLSTrustStore = "tls.truststore"
 )
 
-// ProbeFactory builds one probe from the seams of the run it belongs to. It is
-// the constructor type of a registry entry: a probe is built per run, never per
-// process, so two runs cannot share the seams of one machine's measurement.
-type ProbeFactory func(seams Seams) Probe
+// ProbeFactory builds one probe from the seams of the run it belongs to and the
+// run's declared target input. It is the constructor type of a registry entry: a
+// probe is built per run, never per process, so two runs cannot share the seams
+// of one machine's measurement.
+//
+// The target input travels with the seams because a probe's declared target may
+// be run input rather than a constant (design D3: the hub address is supplied with
+// --hub). A probe that measures this machine ignores it; a probe whose target is
+// run input resolves it through EffectiveTargets here, at construction, so the
+// probe's Run performs exactly its declared measurement.
+type ProbeFactory func(seams Seams, targets TargetInput) Probe
 
 // ProbeRegistration is one probe's place in the registry: the name and kind the
 // enumeration contract fixes, and the constructor that builds it.
@@ -83,14 +90,19 @@ type ProbeRegistration struct {
 // registry is the ordered probe registry: exactly the ten probes of PRD §5.1, in
 // specification order, with a constructor on each probe whose slice has landed.
 //
-// This slice lands local.env only (PR 5). Every later probe slice replaces one
-// nil constructor with its own, which is the only edit to this table those
-// slices need: the names, the kinds and the order are already the contract, and
-// the enumeration test fails if any of them moves.
+// This slice lands local.env, local.sshd and egress.hub.direct (PR 5 and PR 6).
+// Every later probe slice replaces one nil constructor with its own, which is the
+// only edit to this table those slices need: the names, the kinds and the order
+// are already the contract, and the enumeration test fails if any of them moves.
+//
+// The three landed probes are not the same shape: local.env and local.sshd
+// measure this machine and ignore the target input, while egress.hub.direct has
+// no declared host of its own — its address is run input — and resolves it here.
+// That is why the factory takes both values rather than seams alone.
 var registry = []ProbeRegistration{
 	{Name: probeNameLocalEnv, Kind: ProbeLocal, New: newLocalEnv},
-	{Name: probeNameLocalSSHD, Kind: ProbeLocal},
-	{Name: probeNameEgressHub, Kind: ProbeEgress},
+	{Name: probeNameLocalSSHD, Kind: ProbeLocal, New: newLocalSSHD},
+	{Name: probeNameEgressHub, Kind: ProbeEgress, New: newEgressHub},
 	{Name: probeNameEgressSSHKnown, Kind: ProbeEgress},
 	{Name: probeNameEgressSSH443, Kind: ProbeEgress},
 	{Name: probeNameEgressCF7844, Kind: ProbeEgress},
@@ -114,21 +126,40 @@ func Registry() []ProbeRegistration {
 	return entries
 }
 
-// Probes builds the probes the registry can construct, in registry order.
+// Probes builds the probes the registry can construct, in registry order, for a
+// run whose declared target input is empty.
+//
+// A run with run input — a hub address, target overrides — must call ProbesFor
+// instead: this function exists for the callers that have no input to hand over
+// (and for the registry's own enumeration case), and a probe whose target is run
+// input reports the missing input as a not-measured observation rather than
+// inventing a target, so the omission is visible in the run's output instead of
+// silently measuring something else.
+func Probes(seams Seams) []Probe {
+	return ProbesFor(seams, TargetInput{})
+}
+
+// ProbesFor builds the probes the registry can construct, in registry order, from
+// the run's seams and its declared target input.
 //
 // A registry entry with no constructor is skipped rather than replaced by a
-// placeholder: this slice's registry builds local.env, and the probes that
-// follow are built by the slices that implement them. Callers that need to know
-// what a run is missing read Registry and compare the entries whose New is nil,
-// so a gap is reported as a declared probe that was not built instead of as a
-// probe that answered with nothing.
-func Probes(seams Seams) []Probe {
+// placeholder: this slice's registry builds the probes whose slices have landed,
+// and the probes that follow are built by the slices that implement them.
+// Callers that need to know what a run is missing read Registry and compare the
+// entries whose New is nil, so a gap is reported as a declared probe that was not
+// built instead of as a probe that answered with nothing.
+//
+// The target input is handed to each probe as a value, so no probe can rebind the
+// run's input for the probe after it. The overrides inside it are a slice: a probe
+// must read them and never edit them, which is the same rule the declared set's
+// accessors follow.
+func ProbesFor(seams Seams, targets TargetInput) []Probe {
 	var built []Probe
 	for _, entry := range registry {
 		if entry.New == nil {
 			continue
 		}
-		built = append(built, entry.New(seams))
+		built = append(built, entry.New(seams, targets))
 	}
 	return built
 }

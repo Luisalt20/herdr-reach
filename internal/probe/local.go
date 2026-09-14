@@ -1,7 +1,9 @@
 package probe
 
-// This file is the local probe group of design §7. This slice lands `local.env`
-// and nothing else local; `local.sshd` follows in its own slice.
+// This file is the local probe group of design §7: `local.env` (what this machine
+// is) and `local.sshd` (what this machine's sshd is). The two halves answer two
+// different questions and share only the rule that shapes the whole package:
+// every local fact is read through an injected seam, never from the process.
 //
 // `local.env` answers one question: what is this machine? It classifies the
 // platform the run is happening on — Linux, macOS, WSL2 or native Windows — and
@@ -31,7 +33,9 @@ package probe
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"strings"
 	"time"
 )
@@ -147,8 +151,10 @@ type localEnv struct {
 
 // newLocalEnv builds the probe from the run's injected seams. Only the platform
 // seam is read; the rest travel with the run and are simply not this probe's
-// question.
-func newLocalEnv(seams Seams) Probe { return &localEnv{seams: seams} }
+// question. The run's declared target input is ignored: a probe that measures this
+// machine declares the local protocol and no remote target (targets.go), so the
+// hub address and the target overrides are nothing to do with it.
+func newLocalEnv(seams Seams, _ TargetInput) Probe { return &localEnv{seams: seams} }
 
 // Name is the probe's stable identifier, declared once in registry.go.
 func (p *localEnv) Name() string { return probeNameLocalEnv }
@@ -192,12 +198,7 @@ func (p *localEnv) Run(context.Context) Result {
 // seam. The runner fills an elapsed value the probe left unset, so a probe
 // without a clock reports zero rather than reaching for the wall clock, which
 // would put an uninjectable timestamp into the output.
-func (p *localEnv) now() time.Time {
-	if p.seams.Clock == nil {
-		return time.Time{}
-	}
-	return p.seams.Clock.Now()
-}
+func (p *localEnv) now() time.Time { return runClockNow(p.seams) }
 
 // observe reads the platform seam once and classifies what it reported.
 //
@@ -342,4 +343,421 @@ func unknownPlatformObservation(wording string) Observation {
 		NodePlatformIdentity(NodePlatformUnknown, unknownSignal),
 		PurposePlatformClassification,
 		RawObservation{Kind: ObsPlatformSignalsUnknown, Wording: wording})
+}
+
+// --- `local.sshd` -------------------------------------------------------------
+//
+// `local.sshd` answers one question about this machine (R-HR-18): is an sshd
+// serving here, and is the configuration in force the one that was written? It
+// answers it as three separately reportable observations, because the three
+// answers fail differently and a reader has to be able to tell them apart (DEV-2):
+//
+//  1. `binary present` — an sshd binary at the documented path, read through the
+//     injected FS seam. Absence is a measured negative, and its detail states that
+//     installing sshd is not part of this run: this slice detects, it does not
+//     provision (R-HR-02, R-HR-29).
+//  2. `service state` — a read-only service-manager query through the injected
+//     CommandRunner. The query asks for the unit's state and changes nothing.
+//  3. `effective config` — the written configuration read through the FS seam
+//     compared with the configuration actually in force as `sshd -T` reports it
+//     through the CommandRunner. When the two disagree the observation is a
+//     measured negative and the detail carries both configurations verbatim,
+//     which is what R-HR-18 requires and PRD §13's "show both" means.
+//
+// Degradation is the point of this half of the file (design §5.1 obligation 2). A
+// run with no command runner was never given the capability, so the two
+// command-derived observations are not measured and name the capability they
+// needed. A run whose command seam denies the execution is not measured either,
+// with a *different* reason code, so "the capability was never there" and "the
+// capability refused" stay distinguishable. Either way the probe is never a pass:
+// it passes only when all three observations were measured, which the aggregate
+// order makes structural rather than a matter of care.
+//
+// The closed reason-code set holds no code for "installed but not running". The
+// service-state negative therefore reuses `sshd_absent` — the vocabulary's own
+// "this node is not serving sshd" code — while the observation's label and detail
+// say which half was missing. That is a deliberate reuse of a closed set rather
+// than an invented code (design §3.5: adding a code is a contract change), and it
+// is recorded in this slice's apply evidence with the gap named: a dedicated code
+// is the honest home for a stopped service.
+//
+// The comparison is deliberately minimal. sshd's configuration grammar is larger
+// than one file, so the probe compares the directive names and values the written
+// file sets — first occurrence wins, names case-insensitive — against the values
+// `sshd -T` reports for the same names. It does not follow `Include`, does not
+// model quoting and does not apply compiled-in defaults: a directive the written
+// file does not set cannot disagree with the configuration in force, and PRD §13's
+// case is exactly a written directive whose effective value differs or is absent.
+
+const (
+	// localSSHDBinaryPath is the documented location of the sshd binary. One path
+	// keeps "where did you look" answerable from the detail, and it is where every
+	// supported platform installs it.
+	localSSHDBinaryPath = "/usr/sbin/sshd"
+	// localSSHDConfigPath is the written configuration this probe reads.
+	localSSHDConfigPath = "/etc/ssh/sshd_config"
+	// localSSHDCommand and localSSHDConfigFlag are the effective-configuration
+	// question: `sshd -T` prints the configuration in force and runs as the
+	// invoking user. A configuration it cannot print is not a divergence, which is
+	// why the invocation has its own outcome below.
+	localSSHDCommand    = "sshd"
+	localSSHDConfigFlag = "-T"
+	// localSSHDServiceCommand and localSSHDServiceQuery are the service-state
+	// question. `is-active` reports a unit's state and changes nothing.
+	localSSHDServiceCommand = "systemctl"
+	localSSHDServiceQuery   = "is-active"
+	// The two unit names a distribution may ship, queried together: Debian and
+	// Ubuntu name the unit `ssh.service` and the RHEL family names it
+	// `sshd.service`. One query with both names asks the service manager the actual
+	// question — "is either serving?" — instead of guessing a distribution.
+	localSSHDServiceUnitSSHD = "sshd.service"
+	localSSHDServiceUnitSSH  = "ssh.service"
+	// The three observation labels. They are the separately reportable answers
+	// R-HR-18 names, and they are stable because the reasoning layer and the human
+	// projection both quote them.
+	labelSSHDBinary  = "binary present"
+	labelSSHDService = "service state"
+	labelSSHDConfig  = "effective config"
+)
+
+// sshdServiceUnits is the unit list the service query asks about, in the order the
+// command carries it. It is read-only: nothing here is ever written to.
+var sshdServiceUnits = []string{localSSHDServiceUnitSSHD, localSSHDServiceUnitSSH}
+
+// runClockNow reads the run's clock, or the zero time when the run injected no
+// clock seam. Both local probes take their timestamps this way, so only an
+// injected clock can move an elapsed value (design §3.3), and a probe without a
+// clock leaves the value to the runner rather than reaching for the wall clock.
+func runClockNow(seams Seams) time.Time {
+	if seams.Clock == nil {
+		return time.Time{}
+	}
+	return seams.Clock.Now()
+}
+
+// localSSHD is the `local.sshd` probe. It carries the run's seams and nothing
+// else, and it reads only two of them: the filesystem and the command runner. A
+// probe that reached the filesystem or executed a binary directly would measure
+// the machine the test runs on instead of the machine the case describes, and
+// would put an exec outside the run's capability set (R-HR-02).
+type localSSHD struct {
+	seams Seams
+}
+
+// newLocalSSHD builds the probe from the run's injected seams. The run's declared
+// target input is ignored, for the same reason `local.env` ignores it: this probe
+// measures this machine and declares no remote target.
+func newLocalSSHD(seams Seams, _ TargetInput) Probe { return &localSSHD{seams: seams} }
+
+// Name is the probe's stable identifier, declared once in registry.go.
+func (p *localSSHD) Name() string { return probeNameLocalSSHD }
+
+// Kind is the question family the probe belongs to.
+func (p *localSSHD) Kind() ProbeKind { return ProbeLocal }
+
+// Run performs the three measurements in declaration order and reports them as
+// three observations plus the reduction of all three.
+//
+// The result's target is the probe's local subject, the documented binary path: a
+// probe that measures this machine dials nothing, and each observation carries the
+// path or unit it actually read, so the caller can tell which local fact the
+// result is about.
+//
+// The context travels into the two command invocations, so a run that is cancelled
+// or that exhausts its budget stops waiting on a command rather than leaving one
+// behind. The commands themselves are bounded by the runner's per-probe bound; a
+// probe-level budget would add a second, invisible deadline to the same question.
+func (p *localSSHD) Run(ctx context.Context) Result {
+	started := p.now()
+	observations := []Observation{
+		p.observeBinary(),
+		p.observeService(ctx),
+		p.observeEffectiveConfig(ctx),
+	}
+	verdict, reason := Aggregate(observations)
+	details := make([]string, 0, len(observations))
+	for _, observation := range observations {
+		details = append(details, observation.Detail)
+	}
+	return Result{
+		Probe:        p.Name(),
+		Kind:         p.Kind(),
+		Target:       localSSHDBinaryPath,
+		Verdict:      verdict,
+		Reason:       reason,
+		Detail:       strings.Join(details, "\n"),
+		Elapsed:      p.now().Sub(started),
+		Observations: observations,
+	}
+}
+
+// now reads the run's clock, or the zero time when none was injected, exactly as
+// `local.env` does.
+func (p *localSSHD) now() time.Time { return runClockNow(p.seams) }
+
+// observeBinary reports whether an sshd binary is installed at the documented
+// path.
+//
+// Absence is a measurement, not a skip: the filesystem answered, and the answer is
+// that nothing is there. It is a definite negative for a node that is supposed to
+// serve SSH, and the detail states that installing sshd is work owned by a later
+// slice rather than by this run, so the report is honest about the boundary
+// instead of offering a change this slice will not make.
+//
+// A check that fails for any other reason is not absence: nothing answered about
+// the path itself, so the observation is unresolved and carries the failure
+// verbatim. Reporting it as absent would be a fabricated measurement.
+func (p *localSSHD) observeBinary() Observation {
+	if p.seams.FS == nil {
+		return Observe(labelSSHDBinary, localSSHDBinaryPath, PurposeSSHDConfiguration, RawObservation{
+			Kind:    ObsCapabilityExcluded,
+			Wording: localSSHDBinaryPath + ": no filesystem seam is injected for this run, so the sshd binary cannot be checked",
+		})
+	}
+	if _, err := p.seams.FS.Stat(localSSHDBinaryPath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return Observe(labelSSHDBinary, localSSHDBinaryPath, PurposeSSHDConfiguration, RawObservation{
+				Kind: ObsSSHDBinaryAbsent,
+				Wording: fmt.Sprintf("the sshd binary is not present at %s: no sshd is installed here, and installing it is not part of this run but work owned by a later slice; nothing was changed",
+					localSSHDBinaryPath),
+			})
+		}
+		return Observe(labelSSHDBinary, localSSHDBinaryPath, PurposeSSHDConfiguration, RawObservation{
+			Kind:    ObsInternalFailure,
+			Wording: fmt.Sprintf("%s: %v (the path could not be checked, so its absence is not claimed)", localSSHDBinaryPath, err),
+		})
+	}
+	return Observe(labelSSHDBinary, localSSHDBinaryPath, PurposeSSHDConfiguration, RawObservation{
+		Kind:    ObsSSHDBinaryPresent,
+		Wording: fmt.Sprintf("the sshd binary is present at %s", localSSHDBinaryPath),
+	})
+}
+
+// observeService asks the service manager whether an sshd unit is active.
+//
+// The answer decides the observation, not the exit status: `systemctl is-active`
+// exits 3 when no queried unit is active, so a stopped service arrives as output
+// beside an error, and the verbatim answer is what a reader compares against their
+// own `systemctl` run. An answer naming an active unit is a measured pass; an
+// answer naming none is a measured negative about this machine's sshd.
+func (p *localSSHD) observeService(ctx context.Context) Observation {
+	target := strings.Join(sshdServiceUnits, ",")
+	args := append([]string{localSSHDServiceQuery}, sshdServiceUnits...)
+	stdout, denial := p.invoke(ctx, localSSHDServiceCommand, args...)
+	if denial.Kind != "" {
+		return Observe(labelSSHDService, target, PurposeSSHDConfiguration, denial)
+	}
+	answer := strings.TrimSpace(string(stdout))
+	if sshdServiceActive(string(stdout)) {
+		return Observe(labelSSHDService, target, PurposeSSHDConfiguration, RawObservation{
+			Kind: ObsSSHDServiceRunning,
+			Wording: fmt.Sprintf("the sshd service is running: %s reported %q for %s",
+				commandLine(localSSHDServiceCommand, args...), answer, target),
+		})
+	}
+	return Observe(labelSSHDService, target, PurposeSSHDConfiguration, RawObservation{
+		Kind: ObsSSHDServiceNotRunning,
+		Wording: fmt.Sprintf("the sshd service is not running: %s answered %q for %s, so no sshd unit is active on this machine; this run reports the state it read and changes nothing",
+			commandLine(localSSHDServiceCommand, args...), answer, target),
+	})
+}
+
+// sshdServiceActive reports whether the service manager named an active unit.
+//
+// `systemctl is-active` prints one state per queried unit, so the rule is "any
+// line is active" rather than "the whole answer is active": with both unit names
+// queried, a machine that ships either one is a machine serving sshd. The
+// comparison is case-insensitive because the state the service manager prints is
+// its own vocabulary, not this package's.
+func sshdServiceActive(answer string) bool {
+	for _, line := range strings.Split(answer, "\n") {
+		if strings.EqualFold(strings.TrimSpace(line), "active") {
+			return true
+		}
+	}
+	return false
+}
+
+// observeEffectiveConfig compares the written configuration with the
+// configuration in force.
+//
+// Three boundaries are deliberate. First, the written file is read before the
+// command runs: if it cannot be read, nothing was compared and the observation
+// says so instead of running a command whose answer would be unused. Second, a
+// missing written file is not a divergence — sshd then runs on its compiled-in
+// defaults — so the effective configuration is reported with the absence stated,
+// and no divergence is claimed. Third, a check that fails for a reason other than
+// absence is unresolved: nothing was compared, and the failure is carried
+// verbatim.
+//
+// The two configurations appear verbatim in the detail of both the divergent and
+// the agreeing case, so a reader can check the comparison rather than trust it
+// (R-HR-07).
+func (p *localSSHD) observeEffectiveConfig(ctx context.Context) Observation {
+	command := commandLine(localSSHDCommand, localSSHDConfigFlag)
+	if p.seams.FS == nil {
+		return Observe(labelSSHDConfig, localSSHDConfigPath, PurposeSSHDConfiguration, RawObservation{
+			Kind:    ObsCapabilityExcluded,
+			Wording: localSSHDConfigPath + ": no filesystem seam is injected for this run, so the written configuration cannot be read",
+		})
+	}
+	writtenBytes, err := p.seams.FS.ReadFile(localSSHDConfigPath)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return Observe(labelSSHDConfig, localSSHDConfigPath, PurposeSSHDConfiguration, RawObservation{
+			Kind:    ObsInternalFailure,
+			Wording: fmt.Sprintf("%s: %v (the written configuration could not be read, so it was not compared with the configuration in force)", localSSHDConfigPath, err),
+		})
+	}
+	writtenPresent := err == nil
+
+	stdout, denial := p.invoke(ctx, localSSHDCommand, localSSHDConfigFlag)
+	if denial.Kind != "" {
+		return Observe(labelSSHDConfig, localSSHDConfigPath, PurposeSSHDConfiguration, denial)
+	}
+	effectiveText := strings.TrimSpace(string(stdout))
+
+	if !writtenPresent {
+		return Observe(labelSSHDConfig, localSSHDConfigPath, PurposeSSHDConfiguration, RawObservation{
+			Kind: ObsSSHDConfigMatches,
+			Wording: fmt.Sprintf("the written configuration file %s is not present, so no written directive disagrees with the configuration in force; the effective configuration reported by %s is: %s",
+				localSSHDConfigPath, command, effectiveText),
+		})
+	}
+
+	written := parseSSHDConfig(string(writtenBytes))
+	effective := parseSSHDConfig(effectiveText)
+	if diverged := sshdDivergences(written, effective); len(diverged) > 0 {
+		return Observe(labelSSHDConfig, localSSHDConfigPath, PurposeSSHDConfiguration, RawObservation{
+			Kind: ObsSSHDConfigDivergent,
+			Wording: fmt.Sprintf("the written configuration at %s is not the configuration in force: %s disagrees with it on %d of the %d directive(s) the written file sets (%s); written configuration of %s: %s; effective configuration reported by %s: %s",
+				localSSHDConfigPath, command, len(diverged), len(written.names), strings.Join(diverged, ", "),
+				localSSHDConfigPath, string(writtenBytes), command, effectiveText),
+		})
+	}
+	return Observe(labelSSHDConfig, localSSHDConfigPath, PurposeSSHDConfiguration, RawObservation{
+		Kind: ObsSSHDConfigMatches,
+		Wording: fmt.Sprintf("%s agrees with the configuration in force reported by %s for every one of the %d directive(s) the written file sets; written configuration of %s: %s; effective configuration reported by %s: %s",
+			localSSHDConfigPath, command, len(written.names), localSSHDConfigPath, string(writtenBytes), command, effectiveText),
+	})
+}
+
+// invoke runs one command through the run's command seam and reports either its
+// answer or the fact that explains why no answer exists.
+//
+// Four outcomes are deliberately distinguished, because they are four different
+// facts (design §5.1 obligation 2):
+//
+//   - no command runner is injected: the capability was never given to this run,
+//     so the fact is ObsCapabilityExcluded and the command is named;
+//   - the seam denied the execution: the capability was given and refused, so the
+//     fact is ObsCommandDenied — a different fact with a different code;
+//   - the command answered, including with a non-zero exit status such as
+//     `systemctl is-active` returning 3 for a stopped unit: the answer is returned
+//     and the caller judges it;
+//   - the command produced nothing classifiable (an error without an answer): the
+//     fact is ObsInternalFailure with the verbatim error.
+//
+// The captured streams are folded into a denial's wording so a reader sees what
+// the command said instead of only that it failed, and the exit status is never
+// used to choose a reason code: R-HR-07 puts every code in the classification
+// table, and the verbatim text is what a reader quotes.
+func (p *localSSHD) invoke(ctx context.Context, name string, args ...string) ([]byte, RawObservation) {
+	command := commandLine(name, args...)
+	if p.seams.CommandRunner == nil {
+		return nil, p.seams.CommandFact(command, nil)
+	}
+	stdout, stderr, err := p.seams.CommandRunner.Run(ctx, name, args...)
+	if err == nil {
+		return stdout, RawObservation{}
+	}
+	if errors.Is(err, ErrSeamDenied) {
+		fact := p.seams.CommandFact(command, err)
+		fact.Wording = withCapturedOutput(fact.Wording, stdout, stderr)
+		return nil, fact
+	}
+	if len(stdout) > 0 {
+		// The command ran and answered with a non-zero status. Treating every
+		// non-nil error as a denial would report a stopped service as an excluded
+		// capability, which is a different fact about a different capability.
+		return stdout, RawObservation{}
+	}
+	return nil, RawObservation{
+		Kind:    ObsInternalFailure,
+		Wording: withCapturedOutput(fmt.Sprintf("%s: %v (the command produced no answer to classify)", command, err), stdout, stderr),
+	}
+}
+
+// commandLine renders an invocation the way the detail text and the tests quote
+// it: the command name and its arguments separated by single spaces.
+func commandLine(name string, args ...string) string {
+	return strings.Join(append([]string{name}, args...), " ")
+}
+
+// withCapturedOutput appends the streams a command captured to its wording. An
+// empty stream adds nothing, so a denial that captured nothing reads as the
+// denial alone instead of as an empty label.
+func withCapturedOutput(wording string, stdout, stderr []byte) string {
+	if len(stdout) > 0 {
+		wording += "; stdout: " + strings.TrimSpace(string(stdout))
+	}
+	if len(stderr) > 0 {
+		wording += "; stderr: " + strings.TrimSpace(string(stderr))
+	}
+	return wording
+}
+
+// sshdConfig is one sshd configuration text reduced to the directives it sets.
+// names keeps the order the directives first appear in, so a comparison's detail
+// text is stable rather than map-ordered.
+type sshdConfig struct {
+	names  []string
+	values map[string]string
+}
+
+// parseSSHDConfig reduces a configuration text to the directive values it sets.
+//
+// The grammar modelled here is the part this probe needs and no more: one
+// directive per line, the name first and the value after it, a line whose first
+// non-space character is `#` being a comment, blank lines ignored, directive names
+// case-insensitive, whitespace inside a value collapsed, and the first occurrence
+// of a name winning (sshd keeps the first value it reads). It does not follow
+// `Include`, does not model quoting or escapes, and does not apply compiled-in
+// defaults: a configuration larger than this question would need more, and stating
+// the limit is better than inventing semantics silently.
+func parseSSHDConfig(text string) sshdConfig {
+	config := sshdConfig{values: map[string]string{}}
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		name := strings.ToLower(fields[0])
+		value := strings.Join(fields[1:], " ")
+		if _, seen := config.values[name]; seen {
+			continue
+		}
+		config.values[name] = value
+		config.names = append(config.names, name)
+	}
+	return config
+}
+
+// sshdDivergences returns the directives the written file sets whose value the
+// effective configuration does not agree with, in the order the written file sets
+// them. A written directive the effective configuration does not mention at all is
+// a divergence too: the configuration in force did not come from this file, which
+// is exactly PRD §13's "the written config is not the effective config".
+func sshdDivergences(written, effective sshdConfig) []string {
+	var diverged []string
+	for _, name := range written.names {
+		effectiveValue, reported := effective.values[name]
+		if !reported || effectiveValue != written.values[name] {
+			diverged = append(diverged, name)
+		}
+	}
+	return diverged
 }
