@@ -55,6 +55,12 @@ const (
 	// ObsBannerNotSSH is a reachable port whose banner is not an SSH
 	// identification string, which is what an intercepting proxy looks like.
 	ObsBannerNotSSH Observable = "banner_not_ssh"
+	// ObsSSHBannerReceived is an SSH identification string read from a reachable
+	// port: the far end answered and answered as an SSH server. It is the positive
+	// counterpart of ObsBannerNotSSH, and it is a stronger fact than
+	// ObsTCPEstablished — a connection that completed says the port is reachable,
+	// while this says what is listening on it.
+	ObsSSHBannerReceived Observable = "ssh_banner_received"
 	// ObsProbeBudgetExpired is the probe's own budget expiring with no
 	// response to its declared port.
 	ObsProbeBudgetExpired Observable = "probe_budget_expired"
@@ -185,6 +191,14 @@ var classificationTable = []classificationRow{
 	{PurposePortReachability, ObsTCPRefused, Classification{Measured, Fail, ReasonConnRefused}},
 	{PurposePortReachability, ObsTCPReset, Classification{Measured, Fail, ReasonConnReset}},
 	{PurposePortReachability, ObsBannerNotSSH, Classification{Measured, Fail, ReasonBannerNotSSH}},
+	// A port that answered with an SSH identification string is the positive half of
+	// the same question, and it has its own observable rather than borrowing
+	// `tcp_established`: a completed connection says the port is reachable, while the
+	// identification string says what answered. Design §5.1 prints the negative row
+	// ("banner is not SSH") and not this one, which the sshd and platform rows above
+	// also record: the table is the only place a reason code may be chosen, so the
+	// positive outcome of a question the probes actually ask has to have a row.
+	{PurposePortReachability, ObsSSHBannerReceived, Classification{Measured, Pass, ReasonOK}},
 	{PurposePortReachability, ObsProbeBudgetExpired, Classification{Measured, Fail, ReasonBudgetExpired}},
 	// No hub was supplied, so the attempt was not made: not measured, and
 	// never a blocked hub.
@@ -198,9 +212,15 @@ var classificationTable = []classificationRow{
 	{PurposePortReachability, ObsCommandDenied, Classification{NotMeasured, Indeterminate, ReasonCommandDenied}},
 
 	// Name resolution: an authoritative negative is a measurement of the name;
-	// a resolver that did not answer measured nothing.
+	// a resolver that did not answer measured nothing. The two absences a resolver
+	// can produce are the same two a dial can: a capability the run was never given
+	// and a seam that refused. They are rows here as well as under reachability
+	// because the name question is asked by probes that have no port to blame, and
+	// obligation 2 requires the two to stay distinguishable wherever they happen.
 	{PurposeNameResolution, ObsResolverAuthoritativeNegative, Classification{Measured, Fail, ReasonDNSNoSuchHost}},
 	{PurposeNameResolution, ObsResolverUnavailable, Classification{Unresolved, Indeterminate, ReasonDNSUnresolved}},
+	{PurposeNameResolution, ObsCapabilityExcluded, Classification{NotMeasured, Indeterminate, ReasonCapabilityExcluded}},
+	{PurposeNameResolution, ObsCommandDenied, Classification{NotMeasured, Indeterminate, ReasonCommandDenied}},
 
 	// The runner's own facts are facts about the run, not answers to the
 	// probe's question, so they classify the same way whatever was asked.
