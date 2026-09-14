@@ -3,9 +3,9 @@
 **Change**: `reach-diagnosis-core` — slice R1a of the approved roadmap R1–R12
 **Phase**: tasks (third pass: consolidation of the decided chain into cohesive PRs) · **Date**: 2026-09-14
 **Artifact store**: both — this file, mirrored in Engram as two observations: `sdd/reach-diagnosis-core/tasks` (part 1) and `sdd/reach-diagnosis-core/tasks/part2` (part 2)
-**Inputs read before writing**: this change's `proposal.md`, the three specs (`specs/diagnosis`, `specs/transport-feasibility`, `specs/cli-report`), `design.md` (authoritative), `openspec/config.yaml`, the previous tasks pass (38 units), and the parent's consolidation instruction (≈15–20 cohesive PRs, per-PR ceiling ≈600 lines).
+**Inputs read before writing**: this change's `proposal.md`, the three specs (`specs/diagnosis`, `specs/transport-feasibility`, `specs/cli-report`), `design.md` (authoritative), `openspec/config.yaml`, the previous tasks pass (38 units), and the parent's consolidation instruction (≈15–20 cohesive PRs; the per-PR ceiling was ≈600 lines then and is 1000 lines since 2026-09-14).
 **Skill resolution**: `paths-injected` — `/home/luisalt20/.config/opencode/skills/work-unit-commits/SKILL.md` and `/home/luisalt20/.config/opencode/skills/chained-pr/SKILL.md` read before writing.
-**Preflight consumed**: execution mode `auto`, artifact store `hybrid`, delivery strategy `ask-on-risk`, review budget 400 changed lines, `size:exception` never inferred. The human has chosen chained delivery, named the chain strategy `stacked-to-main`, and approved a 600-line per-PR cohesion ceiling. This pass executes those decisions and decides nothing new.
+**Preflight consumed**: execution mode `auto`, artifact store `hybrid`, delivery strategy `ask-on-risk`, review budget 400 changed lines, `size:exception` never inferred. The human has chosen chained delivery, named the chain strategy `stacked-to-main`, and approved a per-PR cohesion ceiling (600 lines, revised to 1000 on 2026-09-14 after three units measured 2–3× their estimates). This pass executes those decisions and decides nothing new.
 **No implementation**: this artifact adds no Go file, no `go.mod`, no scaffolding. The only file written is this one (plus its memory mirror).
 
 ---
@@ -15,7 +15,7 @@
 | Field | Value |
 |-------|-------|
 | Estimated changed lines | ≈7,600–11,800 (`additions + deletions`: authored code + strict-TDD tests + `docs/diagnosis-report.md`); point estimate ≈9,600 |
-| 400-line budget risk | Medium — every PR's point estimate is below the chain ceiling of 600 lines; the widest ranges straddle it and each carries a named second-split boundary |
+| 400-line budget risk | Medium — every PR's point estimate is below the chain ceiling (600 lines, revised to 1000 on 2026-09-14); the widest ranges straddle it and each carries a named second-split boundary |
 | Chained PRs recommended | Yes |
 | Suggested split | PR 1 → PR 2 → … → PR 20 (20 stacked PRs; the 38 work units WU1–WU38 are consolidated into 20 cohesive groups) |
 | Delivery strategy | ask-on-risk |
@@ -28,9 +28,11 @@ Chain strategy: stacked-to-main
 400-line budget risk: Medium
 ```
 
-**Budget ceiling, stated as a decision and not an oversight.** The per-PR ceiling for this chain is **600 changed lines**: a deliberate, user-approved cohesion exception to the canonical 400-line threshold. No PR in the map below exceeds it at its point estimate, so no `size:exception` is required or assumed. The budget constrains slicing only: no comment, blank line, doc, control case, triangulation case or test is deleted or compressed to reach a number.
+**Budget ceiling, stated as a decision and not an oversight.** The per-PR ceiling for this chain is **1000 changed lines** as of 2026-09-14: a deliberate, user-approved exception to the canonical 400-line threshold, revised upward from 600 because the first three units measured 347, 1400 and 1945 counted lines against estimates of 80, 595 and 545, and their splits still landed at 565–1176 lines. The 600 figure was not reachable in this codebase without fragmenting reviews into pieces smaller than a coherent unit. No PR in the map below exceeds it at its point estimate, so no `size:exception` is required or assumed. The budget constrains slicing only: no comment, blank line, doc, control case, triangulation case or test is deleted or compressed to reach a number.
 
-**Why `Decision needed before apply: No`.** The human already made the three decisions this pass would otherwise defer: chained delivery, the chain strategy `stacked-to-main`, and the 600-line per-PR cohesion ceiling for this chain. What remains is execution under those decisions, plus the per-PR budget check stated in the map below.
+**Reading the focused test commands in the map.** Those `-run` filters are written with markdown-escaped pipes (`\|`) so the table renders. When copying one, use the rendered form with a bare `|`: Go's `-run` takes an RE2 regexp, where `\|` matches a literal pipe and selects zero tests, which would report a green run that executed nothing.
+
+**Why `Decision needed before apply: No`.** The human already made the three decisions this pass would otherwise defer: chained delivery, the chain strategy `stacked-to-main`, and the per-PR cohesion ceiling for this chain (600 lines then, 1000 since 2026-09-14). What remains is execution under those decisions, plus the per-PR budget check stated in the map below.
 
 **Chain strategy, concretely.** PR 1 targets the main branch; PR 2 targets PR 1's branch; PR 3 targets PR 2's branch; and so on through PR 20. Merges happen in order, so each PR's diff shows only its own group. Branch naming: `reach-diagnosis-core/pr-<n>-<slug>`. If a diff shows another group's work (a polluted diff), retarget or rebase until only the current group appears — treat it as a base bug, not a review task.
 
@@ -38,7 +40,7 @@ Chain strategy: stacked-to-main
 
 **Estimate revision, stated honestly.** The first pass printed 4,200–6,100 for the whole slice; the second pass revised it to ≈7,600–11,800 (point ≈9,600) and this pass keeps that band unchanged. Nothing is shrunk to return it to the earlier width. The reason it moved is unchanged and real: two control cases per probe (can it `fail`, can it be `indeterminate`, PRD §8.4), one case per rule id (~40 rule ids), one case per classification row (27 rows), the three side-by-side timeout paths, and the determinism/coverage/NF-03 assertions at three layers. Consolidation changes grouping only.
 
-**Consolidation record (38 units → 20 PRs).** The previous pass sliced the same scope into 38 stacked PRs. That fragmentation cost — 38 branches, 38 reviews and 38 merges in strict order before anything is usable — was rejected by the user in favour of ≈15–20 cohesive groups under a 600-line ceiling. The mapping is exhaustive and non-overlapping:
+**Consolidation record (38 units → 20 PRs).** The previous pass sliced the same scope into 38 stacked PRs. That fragmentation cost — 38 branches, 38 reviews and 38 merges in strict order before anything is usable — was rejected by the user in favour of ≈15–20 cohesive groups under a per-PR ceiling (600 lines at the time, 1000 since 2026-09-14). The mapping is exhaustive and non-overlapping:
 
 | PR | Member units (previous pass) |
 |---|---|
@@ -175,16 +177,16 @@ Second-split boundary if this group lands above 600: the seams and `DenyAllSeams
 `Files`: `internal/probe/runner.go`, `internal/probe/runner_test.go`. `Depends on`: PR 3.
 Second-split boundary if this group lands above 600: the concurrency ceiling, hanging-probe handling and streaming (WU6) first, then the run budget, cancellation and the three-timeout-paths table (WU7).
 
-- [ ] **RED** — write `runner_test.go` with a counting seam proving the concurrency ceiling: never more than `Options.Concurrency` probes in flight, the default is 4, and a test-only elevated value is honoured. Prove the failure first. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement bounded concurrency plus streaming in `runner.go` with `Options{Concurrency, ProbeTimeout, RunBudget, Clock}` settable at construction. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add the hanging-probe case: a fixture probe that ignores context cancellation returns `(unresolved, probe_timeout)` produced by the runner, the run still finishes inside its injected budget, and every other fixture probe has a result (PRD §4.4, R-HR-NF-02). <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add streaming: the first result is delivered before the slowest probe finishes, so the runner does not buffer the suite. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + RACE** — extract the deadline/abandon logic so one implementation serves both bound paths; record a hand `go test -race ./internal/probe/` run. <!-- sdd-owner: implementation -->
-- [ ] **RED** — add the bounded-run case with millisecond values: a seam uniformly slower than every per-probe bound still yields a bounded result for every probe and the run ends inside the injected run budget (R-HR-NF-09). <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement the run budget and cancellation propagation in `runner.go`, producing `run_budget_exceeded` and `run_cancelled` at the runner layer only. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add cancellation: cancelling mid-flight returns promptly, each affected probe reports `(unresolved, run_cancelled)`, and no cancelled probe is ever reported as `pass`. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add `TestTimeoutPathsAreDistinct`: the probe's own budget expiring ⇒ `(measured, budget_expired)`; a probe ignoring its budget ⇒ `(unresolved, probe_timeout)` from the runner; UDP silence ⇒ `(unresolved, udp_silence)`. Assert three distinct `(resolution, reason)` pairs and no fourth collapsing pair (RG-8). <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + RACE** — `gofmt -l .`, `go vet ./...`, `go test ./...` and a hand `go test -race ./...`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `runner_test.go` with a counting seam proving the concurrency ceiling: never more than `Options.Concurrency` probes in flight, the default is 4, and a test-only elevated value is honoured. Prove the failure first. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement bounded concurrency plus streaming in `runner.go` with `Options{Concurrency, ProbeTimeout, RunBudget, Clock}` settable at construction. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add the hanging-probe case: a fixture probe that ignores context cancellation returns `(unresolved, probe_timeout)` produced by the runner, the run still finishes inside its injected budget, and every other fixture probe has a result (PRD §4.4, R-HR-NF-02). <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add streaming: the first result is delivered before the slowest probe finishes, so the runner does not buffer the suite. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + RACE** — extract the deadline/abandon logic so one implementation serves both bound paths; record a hand `go test -race ./internal/probe/` run. <!-- sdd-owner: implementation -->
+- [x] **RED** — add the bounded-run case with millisecond values: a seam uniformly slower than every per-probe bound still yields a bounded result for every probe and the run ends inside the injected run budget (R-HR-NF-09). <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement the run budget and cancellation propagation in `runner.go`, producing `run_budget_exceeded` and `run_cancelled` at the runner layer only. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add cancellation: cancelling mid-flight returns promptly, each affected probe reports `(unresolved, run_cancelled)`, and no cancelled probe is ever reported as `pass`. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add `TestTimeoutPathsAreDistinct`: the probe's own budget expiring ⇒ `(measured, budget_expired)`; a probe ignoring its budget ⇒ `(unresolved, probe_timeout)` from the runner; UDP silence ⇒ `(unresolved, udp_silence)`. Assert three distinct `(resolution, reason)` pairs and no fourth collapsing pair (RG-8). <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + RACE** — `gofmt -l .`, `go vet ./...`, `go test ./...` and a hand `go test -race ./...`. <!-- sdd-owner: implementation -->
 
 ### PR 5 — WU8 + WU9 · `local.env`: registry, platform classification, native-Windows refusal and WSL2 limits
 
