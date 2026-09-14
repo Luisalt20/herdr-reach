@@ -90,23 +90,26 @@ type ProbeRegistration struct {
 // registry is the ordered probe registry: exactly the ten probes of PRD §5.1, in
 // specification order, with a constructor on each probe whose slice has landed.
 //
-// This slice lands local.env, local.sshd and egress.hub.direct (PR 5 and PR 6).
-// Every later probe slice replaces one nil constructor with its own, which is the
-// only edit to this table those slices need: the names, the kinds and the order
-// are already the contract, and the enumeration test fails if any of them moves.
+// This slice lands local.env, local.sshd, egress.hub.direct (PR 5 and PR 6) and the
+// two public-SSH probes and two Cloudflare edge probes (PR 7). Every later probe slice
+// replaces one nil constructor with its own, which is the only edit to this table those
+// slices need: the names, the kinds and the order are already the contract, and the
+// enumeration test fails if any of them moves.
 //
-// The three landed probes are not the same shape: local.env and local.sshd
-// measure this machine and ignore the target input, while egress.hub.direct has
-// no declared host of its own — its address is run input — and resolves it here.
+// The landed probes are not the same shape. local.env and local.sshd measure this
+// machine and ignore the target input; egress.hub.direct has no declared host of its
+// own — its address is run input — and resolves it here; the two SSH probes declare one
+// endpoint each and the two edge probes declare two regions each, and they take the
+// target input so an override of those endpoints is honoured through one declaration.
 // That is why the factory takes both values rather than seams alone.
 var registry = []ProbeRegistration{
 	{Name: probeNameLocalEnv, Kind: ProbeLocal, New: newLocalEnv},
 	{Name: probeNameLocalSSHD, Kind: ProbeLocal, New: newLocalSSHD},
 	{Name: probeNameEgressHub, Kind: ProbeEgress, New: newEgressHub},
-	{Name: probeNameEgressSSHKnown, Kind: ProbeEgress},
-	{Name: probeNameEgressSSH443, Kind: ProbeEgress},
-	{Name: probeNameEgressCF7844, Kind: ProbeEgress},
-	{Name: probeNameEgressCF443, Kind: ProbeEgress},
+	{Name: probeNameEgressSSHKnown, Kind: ProbeEgress, New: newEgressSSHKnown},
+	{Name: probeNameEgressSSH443, Kind: ProbeEgress, New: newEgressSSH443},
+	{Name: probeNameEgressCF7844, Kind: ProbeEgress, New: newEgressCF7844},
+	{Name: probeNameEgressCF443, Kind: ProbeEgress, New: newEgressCF443},
 	{Name: probeNameEgressQUIC, Kind: ProbeProto},
 	{Name: probeNameTLSInterception, Kind: ProbeTLS},
 	{Name: probeNameTLSTrustStore, Kind: ProbeTLS},

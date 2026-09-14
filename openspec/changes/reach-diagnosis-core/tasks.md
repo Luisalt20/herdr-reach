@@ -223,14 +223,14 @@ Second-split boundary if this group lands above 600: the registry plus the four 
 `Files`: `internal/probe/egress.go`, `internal/probe/egress_test.go` (additions). `Depends on`: PR 6.
 Second-split boundary if this group lands above 600: the two SSH destination probes (WU12) first, then the two per-region Cloudflare probes (WU13).
 
-- [ ] **RED** — add one case per outcome for both probes: banner received; a non-SSH banner ⇒ measured fail/`banner_not_ssh`; refused and reset ⇒ measured fail; authoritative resolver negative ⇒ measured fail/`dns_no_such_host` while a resolver timeout ⇒ unresolved/`dns_unresolved` (the two must not collapse); plus each probe's `indeterminate` control case. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement both probes in `egress.go` through the classification table only. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add the partial-banner case: a truncated read that still carries an SSH identification string classifies as SSH, and the verbatim detail is preserved alongside the stable reason code (R-HR-07). <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestEgressSsh`. <!-- sdd-owner: implementation -->
-- [ ] **RED** — add: both regions pass; one region fails while the other passes ⇒ the split is visible per observation and the aggregate is `fail`; a fully blackholed target ⇒ measured fail/`budget_expired`; plus the `indeterminate` control case. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement both probes producing one observation per region (`region1`, `region2`) while the registry still contains exactly ten probes (D10). <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert the declared target set for these probes carries both regions, so an override that replaces it is reflected per observation and the closed-set assertion still holds. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestEgressCF`. <!-- sdd-owner: implementation -->
+- [x] **RED** — add one case per outcome for both probes: banner received; a non-SSH banner ⇒ measured fail/`banner_not_ssh`; refused and reset ⇒ measured fail; authoritative resolver negative ⇒ measured fail/`dns_no_such_host` while a resolver timeout ⇒ unresolved/`dns_unresolved` (the two must not collapse); plus each probe's `indeterminate` control case. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement both probes in `egress.go` through the classification table only. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add the partial-banner case: a truncated read that still carries an SSH identification string classifies as SSH, and the verbatim detail is preserved alongside the stable reason code (R-HR-07). <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestEgressSsh`. <!-- sdd-owner: implementation -->
+- [x] **RED** — add: both regions pass; one region fails while the other passes ⇒ the split is visible per observation and the aggregate is `fail`; a fully blackholed target ⇒ measured fail/`budget_expired`; plus the `indeterminate` control case. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement both probes producing one observation per region (`region1`, `region2`) while the registry still contains exactly ten probes (D10). <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert the declared target set for these probes carries both regions, so an override that replaces it is reflected per observation and the closed-set assertion still holds. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestEgressCF`. <!-- sdd-owner: implementation -->
 
 ### PR 8 — WU14 + WU15 · The protocol probes: `egress.quic` and `tls.interception`
 
