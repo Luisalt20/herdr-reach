@@ -91,18 +91,20 @@ type ProbeRegistration struct {
 // specification order, with a constructor on each probe whose slice has landed.
 //
 // This slice lands local.env, local.sshd, egress.hub.direct (PR 5 and PR 6), the
-// two public-SSH probes and two Cloudflare edge probes (PR 7) and D8's datagram probe with
-// the chain-on-the-wire probe (PR 8). Every later probe slice replaces one nil constructor
-// with its own, which is the only edit to this table those slices need: the names, the kinds
-// and the order are already the contract, and the enumeration test fails if any of them
-// moves. After PR 8 exactly one slot is left nil, tls.truststore, whose own slice supplies
-// it.
+// two public-SSH probes and two Cloudflare edge probes (PR 7), D8's datagram probe with the
+// chain-on-the-wire probe (PR 8), and the local-trust-store probe (PR 9). Every probe slice
+// replaces one nil constructor with its own, which is the only edit to this table those
+// slices need: the names, the kinds and the order are already the contract, and the
+// enumeration test fails if any of them moves. Since PR 9 no slot is nil: the registry
+// builds all ten probes of PRD §5.1, so the "which slice landed what" record this comment
+// keeps is complete.
 //
 // The landed probes are not the same shape. local.env and local.sshd measure this
 // machine and ignore the target input; egress.hub.direct has no declared host of its
 // own — its address is run input — and resolves it here; the two SSH probes declare one
 // endpoint each and the two edge probes declare two regions each, and they take the
 // target input so an override of those endpoints is honoured through one declaration.
+// The two TLS probes share one declared target and ask two different questions about it.
 // That is why the factory takes both values rather than seams alone.
 var registry = []ProbeRegistration{
 	{Name: probeNameLocalEnv, Kind: ProbeLocal, New: newLocalEnv},
@@ -114,7 +116,7 @@ var registry = []ProbeRegistration{
 	{Name: probeNameEgressCF443, Kind: ProbeEgress, New: newEgressCF443},
 	{Name: probeNameEgressQUIC, Kind: ProbeProto, New: newEgressQUIC},
 	{Name: probeNameTLSInterception, Kind: ProbeTLS, New: newTLSInterception},
-	{Name: probeNameTLSTrustStore, Kind: ProbeTLS},
+	{Name: probeNameTLSTrustStore, Kind: ProbeTLS, New: newTLSTrustStore},
 }
 
 // Registry returns the ordered probe registry as a copy: the ten entries of

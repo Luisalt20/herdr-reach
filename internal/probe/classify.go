@@ -262,6 +262,20 @@ var classificationTable = []classificationRow{
 	{PurposeTLSTrustStore, ObsTrustStoreRejectsChain, Classification{Measured, Fail, ReasonTrustStoreRejectsChain}},
 	{PurposeTLSTrustStore, ObsTrustStoreVerifierUnavailable, Classification{Unresolved, Indeterminate, ReasonTrustStorePlatformUnavailable}},
 	{PurposeTLSTrustStore, ObsTrustStoreVerifierBypassed, Classification{Unresolved, Indeterminate, ReasonTrustStoreOverridePlatformBypass}},
+	// The trust-store question is asked through the same handshake the chain
+	// question is, so it has the same two absences and the same answer to an
+	// answerless handshake. None of the three is a verdict about the pool: a
+	// handshake that produced nothing measured nothing, and the two ways the
+	// attempt can go unmade stay distinguishable (design §5.1 obligation 2).
+	{PurposeTLSTrustStore, ObsTLSHandshakeError, Classification{Unresolved, Indeterminate, ReasonTLSHandshakeUnresolved}},
+	// A platform the seam could not identify is the same fact here as it is for
+	// `local.env`: the signals were read and matched nothing, so no platform is
+	// assumed (R-HR-29). Without this row the fact would fall through to the total
+	// row and be reported as an internal failure, which would name this package as
+	// broken rather than name the missing platform signal.
+	{PurposeTLSTrustStore, ObsPlatformSignalsUnknown, Classification{Unresolved, Indeterminate, ReasonPlatformUnknown}},
+	{PurposeTLSTrustStore, ObsCapabilityExcluded, Classification{NotMeasured, Indeterminate, ReasonCapabilityExcluded}},
+	{PurposeTLSTrustStore, ObsCommandDenied, Classification{NotMeasured, Indeterminate, ReasonCommandDenied}},
 
 	// The local sshd: the presence of the binary, the service state and the
 	// configuration in force are measured facts, and each has a positive and a
