@@ -208,15 +208,15 @@ Second-split boundary if this group lands above 600: the registry plus the four 
 `Files`: `internal/probe/local.go`, `internal/probe/local_test.go` (additions); `internal/probe/egress.go`, `internal/probe/egress_test.go`. `Depends on`: PR 5.
 **Budget-forced merge** (disclosed in the consolidation record): no three-unit group fits under the 600-line ceiling, so these two probe units share one PR. Second-split boundary if disputed or above 600: `local.sshd` first, then `egress.hub.direct`.
 
-- [ ] **RED** — add the divergence case: written ≠ effective configuration ⇒ `(measured, fail, sshd_config_divergence)` with both configurations in the verbatim detail (R-HR-18). <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `local.sshd` as three separately reportable observations (binary presence, service state, effective configuration) over the injected `CommandRunner`/`FS`, with an absent binary as `(measured, fail, sshd_absent)` stating that installation is a later slice. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add the degradation cases: nil `CommandRunner` ⇒ not-measured/`capability_excluded` with the capability named; deny-all runner ⇒ not-measured/`command_denied`; plus the probe's `indeterminate` control case. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert the result is never `pass` whenever any observation was not measured, and that all local input is read through the injected readers. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestLocalSshd`. <!-- sdd-owner: implementation -->
-- [ ] **RED** — write `egress_test.go` with the three hub cases: with `--hub` the declared target is exactly the supplied `host[:port]`; with no hub the observation is not-measured/`input_missing_hub` with an empty target; a refused dial is `(measured, fail, conn_refused)`; a blackholed port is `(measured, fail, budget_expired)` produced by the probe whose budget is shorter than the runner bound. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `egress.hub.direct` in `egress.go` over `EffectiveTargets` and the injected `Dialer`. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert not-measured and refused are distinguishable, no observation says or implies "blocked" when no attempt was made, and no transport viability is established from hub reachability (R-HR-02, RG-13). <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestEgressHub`. <!-- sdd-owner: implementation -->
+- [x] **RED** — add the divergence case: written ≠ effective configuration ⇒ `(measured, fail, sshd_config_divergence)` with both configurations in the verbatim detail (R-HR-18). <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `local.sshd` as three separately reportable observations (binary presence, service state, effective configuration) over the injected `CommandRunner`/`FS`, with an absent binary as `(measured, fail, sshd_absent)` stating that installation is a later slice. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add the degradation cases: nil `CommandRunner` ⇒ not-measured/`capability_excluded` with the capability named; deny-all runner ⇒ not-measured/`command_denied`; plus the probe's `indeterminate` control case. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert the result is never `pass` whenever any observation was not measured, and that all local input is read through the injected readers. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestLocalSshd`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `egress_test.go` with the three hub cases: with `--hub` the declared target is exactly the supplied `host[:port]`; with no hub the observation is not-measured/`input_missing_hub` with an empty target; a refused dial is `(measured, fail, conn_refused)`; a blackholed port is `(measured, fail, budget_expired)` produced by the probe whose budget is shorter than the runner bound. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `egress.hub.direct` in `egress.go` over `EffectiveTargets` and the injected `Dialer`. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert not-measured and refused are distinguishable, no observation says or implies "blocked" when no attempt was made, and no transport viability is established from hub reachability (R-HR-02, RG-13). <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestEgressHub`. <!-- sdd-owner: implementation -->
 
 ### PR 7 — WU12 + WU13 · The egress reachability probes: public SSH and the Cloudflare edge regions
 
