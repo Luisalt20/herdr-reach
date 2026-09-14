@@ -175,16 +175,16 @@ Second-split boundary if this group lands above 600: the seams and `DenyAllSeams
 `Files`: `internal/probe/runner.go`, `internal/probe/runner_test.go`. `Depends on`: PR 3.
 Second-split boundary if this group lands above 600: the concurrency ceiling, hanging-probe handling and streaming (WU6) first, then the run budget, cancellation and the three-timeout-paths table (WU7).
 
-- [ ] **RED** — write `runner_test.go` with a counting seam proving the concurrency ceiling: never more than `Options.Concurrency` probes in flight, the default is 4, and a test-only elevated value is honoured. Prove the failure first. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement bounded concurrency plus streaming in `runner.go` with `Options{Concurrency, ProbeTimeout, RunBudget, Clock}` settable at construction. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add the hanging-probe case: a fixture probe that ignores context cancellation returns `(unresolved, probe_timeout)` produced by the runner, the run still finishes inside its injected budget, and every other fixture probe has a result (PRD §4.4, R-HR-NF-02). <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add streaming: the first result is delivered before the slowest probe finishes, so the runner does not buffer the suite. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + RACE** — extract the deadline/abandon logic so one implementation serves both bound paths; record a hand `go test -race ./internal/probe/` run. <!-- sdd-owner: implementation -->
-- [ ] **RED** — add the bounded-run case with millisecond values: a seam uniformly slower than every per-probe bound still yields a bounded result for every probe and the run ends inside the injected run budget (R-HR-NF-09). <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement the run budget and cancellation propagation in `runner.go`, producing `run_budget_exceeded` and `run_cancelled` at the runner layer only. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add cancellation: cancelling mid-flight returns promptly, each affected probe reports `(unresolved, run_cancelled)`, and no cancelled probe is ever reported as `pass`. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add `TestTimeoutPathsAreDistinct`: the probe's own budget expiring ⇒ `(measured, budget_expired)`; a probe ignoring its budget ⇒ `(unresolved, probe_timeout)` from the runner; UDP silence ⇒ `(unresolved, udp_silence)`. Assert three distinct `(resolution, reason)` pairs and no fourth collapsing pair (RG-8). <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + RACE** — `gofmt -l .`, `go vet ./...`, `go test ./...` and a hand `go test -race ./...`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `runner_test.go` with a counting seam proving the concurrency ceiling: never more than `Options.Concurrency` probes in flight, the default is 4, and a test-only elevated value is honoured. Prove the failure first. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement bounded concurrency plus streaming in `runner.go` with `Options{Concurrency, ProbeTimeout, RunBudget, Clock}` settable at construction. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add the hanging-probe case: a fixture probe that ignores context cancellation returns `(unresolved, probe_timeout)` produced by the runner, the run still finishes inside its injected budget, and every other fixture probe has a result (PRD §4.4, R-HR-NF-02). <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add streaming: the first result is delivered before the slowest probe finishes, so the runner does not buffer the suite. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + RACE** — extract the deadline/abandon logic so one implementation serves both bound paths; record a hand `go test -race ./internal/probe/` run. <!-- sdd-owner: implementation -->
+- [x] **RED** — add the bounded-run case with millisecond values: a seam uniformly slower than every per-probe bound still yields a bounded result for every probe and the run ends inside the injected run budget (R-HR-NF-09). <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement the run budget and cancellation propagation in `runner.go`, producing `run_budget_exceeded` and `run_cancelled` at the runner layer only. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add cancellation: cancelling mid-flight returns promptly, each affected probe reports `(unresolved, run_cancelled)`, and no cancelled probe is ever reported as `pass`. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add `TestTimeoutPathsAreDistinct`: the probe's own budget expiring ⇒ `(measured, budget_expired)`; a probe ignoring its budget ⇒ `(unresolved, probe_timeout)` from the runner; UDP silence ⇒ `(unresolved, udp_silence)`. Assert three distinct `(resolution, reason)` pairs and no fourth collapsing pair (RG-8). <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + RACE** — `gofmt -l .`, `go vet ./...`, `go test ./...` and a hand `go test -race ./...`. <!-- sdd-owner: implementation -->
 
 ### PR 5 — WU8 + WU9 · `local.env`: registry, platform classification, native-Windows refusal and WSL2 limits
 

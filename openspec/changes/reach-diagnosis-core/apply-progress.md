@@ -555,3 +555,194 @@ The change-wide remainder is **141 checkbox lines in PR 4 – PR 20**, which bel
 ### Engram mirror note
 
 This file is the **authoritative** artefact. Its Engram mirror is split because the merged text exceeds the store's content limit: part 1 (PR 1, PR 2 and the structured-status and completion tables that precede this section) is saved under the topic `sdd/reach-diagnosis-core/apply-progress`, and part 2 (this PR 3 section) under `sdd/reach-diagnosis-core/apply-progress/part2`. Read the repository file for the complete, current record.
+
+---
+
+# Apply Progress — PR 4 of 20 — WU6 + WU7 · Runner: bounds, streaming, run budget, cancellation and the three timeout paths
+
+**Change**: `reach-diagnosis-core` · **Slice**: **PR 4 of 20** — “Runner: bounds, streaming, run budget, cancellation and the three timeout paths” (WU6 + WU7)
+**Branch**: `feat/probe-runner`, stacked on PR 3's branch `feat/probe-targets` (chain strategy `stacked-to-main`, so PR 4 targets PR 3's branch and **not** `main`)
+**Date**: 2026-09-14 · **Artifact store**: `both` (this file + Engram mirror `sdd/reach-diagnosis-core/apply-progress`, split as the mirror note at the end records)
+**Strict TDD**: active — `openspec/config.yaml` declares `strict_tdd: true` with runner `go test ./...`; RED → GREEN → TRIANGULATE → REFACTOR followed for every row of this slice
+**Skill resolution**: `paths-injected` — read `/home/luisalt20/.config/opencode/skills/go-testing/SKILL.md` and `/home/luisalt20/.config/opencode/skills/work-unit-commits/SKILL.md` before writing code; no registry fallback was needed
+**Delivery path consumed**: `auto-chain` / `stacked-to-main` — this run implements **only** the assigned slice and stops at its PR boundary; the PR 1, PR 2 and PR 3 entries above are preserved unchanged
+**Commit status**: nothing committed, staged, pushed or branched by this phase; the work is left in the working tree for the orchestrator
+**How to read this file**: PR 4's entry is the section below. The current change-wide remainder is restated at the end of this section.
+
+---
+
+## Structured status consumed (PR 4)
+
+| Field | Value |
+|---|---|
+| `schemaName` / `schemaVersion` | `gentle-ai.sdd-status` / `2` |
+| `changeName` | `reach-diagnosis-core` |
+| `nextRecommended` | `apply` |
+| `applyState` | `ready` |
+| `dependencies.apply` / `.verify` / `.archive` | `ready` / `blocked` / `blocked` |
+| `actionContext.mode` | `repo-local` |
+| `actionContext.workspaceRoot` | `/home/luisalt20/projects/close/herdr-reach` |
+| `actionContext.allowedEditRoots` | `["/home/luisalt20/projects/close/herdr-reach"]` — every file written lives inside it |
+| `artifactStore` | `both` declared by the parent prompt (native `openspec`); files written under `openspec/changes/reach-diagnosis-core/` and mirrored to Engram |
+| `taskProgress` before this run | 165 total / 24 completed / 141 pending (PR 1 + PR 2 + PR 3) |
+| `taskProgress` after this run | 165 total / **34 completed** / 131 pending |
+| `actionContext` warnings | none |
+| Work-unit ownership markers | all ten PR 4 rows carry the terminal `<!-- sdd-owner: implementation -->` marker; the PR 4 block contains no malformed, duplicate, unsupported or non-terminal marker |
+| `applyState: all_done`? | no — implementation continues, so editing was permitted |
+
+**Attempt context**: the harness reports one bounded attempt already active for this work unit (`token sha256:d358dc6b…f25257`) with a **2000**-changed-line ceiling. Per the parent prompt the parent owns `sdd-attempt acquire`/`settle`; this executor did **not** call the native attempt command. The counted-line position against that ceiling is in “Workload and PR boundary”.
+
+---
+
+## Completed tasks and their persisted checkbox updates (PR 4)
+
+All ten PR 4 rows were flipped from `- [ ]` to `- [x]` in `openspec/changes/reach-diagnosis-core/tasks.md` (lines 178–187) as the work completed, then re-read to confirm. `git diff` on that file reports exactly `10 insertions(+), 10 deletions(-)` — ten `- [ ]` → `- [x]` flips and nothing else.
+
+| # | Task (short) | Persisted update | Evidence |
+|---|---|---|---|
+| 1 | RED — `runner_test.go` with a counting fixture proving the ceiling; prove the failure | `tasks.md:178` → `- [x]` | `go test ./...` → `FAIL … [build failed]`: `undefined: probe.Options` (four sites) and `undefined: probe.NewRunner` — the runner vocabulary did not exist |
+| 2 | GREEN — bounded concurrency plus streaming with `Options{Concurrency, ProbeTimeout, RunBudget, Clock}` at construction | `tasks.md:179` → `- [x]` | `TestRunnerHonoursConcurrencyCeiling` PASS with three subtests: default ceiling 4, elevated 6 honoured, serial 1 honoured; peak counted inside the fixtures always equalled the effective ceiling |
+| 3 | TRIANGULATE — hanging probe ⇒ runner-produced `(unresolved, probe_timeout)`, run inside budget, every other probe reported | `tasks.md:180` → `- [x]` | `TestHangingProbeIsAbandonedByTheRunner` PASS (run 28 ms inside its 2 s budget, `probe_timeout`, start count 1, the fast pass and the refused fail both survive); teeth proven by mutation A |
+| 4 | TRIANGULATE — streaming: first result before the slowest probe finishes | `tasks.md:181` → `- [x]` | `TestRunnerStreamsResultsBeforeTheSlowestProbeFinishes` PASS (the fast result arrives while the gated slow probe is provably still measuring; nothing else streams until it is released) plus `TestRunnerReturnsEveryProbeOnceInProbeOrder` (6 probes answering in reverse order) |
+| 5 | REFACTOR + RACE — one deadline/abandon implementation for both bound paths; hand `-race ./internal/probe/` | `tasks.md:182` → `- [x]` | `abandonment` + `abandon()` + `runEndedCause()` extracted so the probe bound and the run-level reasons share one classifier; `gofmt -l .` exit 0 (empty) · `go vet ./...` exit 0 · `go test -count=1 ./internal/probe/` exit 0 · `go test -race -count=1 ./internal/probe/` exit 0 (1.307 s) |
+| 6 | RED — bounded run with millisecond values | `tasks.md:183` → `- [x]` | `go test -run 'TestRunBudget' ./internal/probe/` → exit 1: `the run took 321.238916ms, want it bounded by its 40ms budget instead of a full wave of 80ms probes` — a genuine RED: the budget was accepted but not yet enforced |
+| 7 | GREEN — run budget in `runner.go`, `run_budget_exceeded` at the runner layer only | `tasks.md:184` → `- [x]` | `TestRunBudgetBoundsASlowSuite` PASS: 8 probes slower than the budget, every probe bounded with `(unresolved, run_budget_exceeded)`, run returned in ~40 ms of its 40 ms budget; focused runner suite exit 0 |
+| 8 | TRIANGULATE — cancellation returns promptly, affected probes `(unresolved, run_cancelled)`, never a pass | `tasks.md:185` → `- [x]` | Written as its own RED→GREEN inside the row (see “TDD Cycle Evidence”): RED exit 1 (`reason = "probe_timeout", want "run_cancelled"`), then `TestCancelStopsInFlightMeasurements` PASS with the measured pre-cancellation pass preserved, a fabricated post-cancellation pass refused, and the three unstarted probes never started |
+| 9 | TRIANGULATE — `TestTimeoutPathsAreDistinct`: three distinct `(resolution, reason)` pairs, no fourth collapsing pair | `tasks.md:186` → `- [x]` | PASS: `(measured, budget_expired)` / `(unresolved, probe_timeout)` / `(unresolved, udp_silence)`, pairwise distinct, verdicts `fail` / `indeterminate` / `indeterminate`, none a pass; teeth proven by mutation B |
+| 10 | REFACTOR + RACE — `gofmt`, `go vet`, `go test ./...`, hand `go test -race ./...` | `tasks.md:187` → `- [x]` | `gofmt -l .` exit 0 (empty output) · `go vet ./...` exit 0 · `go test -count=1 ./...` exit 0 · `go test -race -count=1 ./...` exit 0 |
+
+---
+
+## Files changed (PR 4 file list only)
+
+| Path | Status | Authored lines | Purpose |
+|---|---|---|---|
+| `internal/probe/runner.go` | added | 352 (188 production code, 131 comment, 33 blank) | `Options` with documented defaults, `NewRunner`, `Runner.Options`, `Run` (bounded concurrency, per-probe bound, run budget, cancellation, streaming `emit`, ordered results), `awaitProbe`, `runEndedCause`, `abandonment` with its three builders, `abandon`, `fillIdentity`, `wallClock` |
+| `internal/probe/runner_test.go` | added | 673 (527 test code, 89 comment, 57 blank) | Seven test functions and the fixture vocabulary: `runnerFixture` with an attempt counter, `runnerGate` (peak in-flight counter), classification-table-built fixture results, and one case per task row |
+| `openspec/changes/reach-diagnosis-core/tasks.md` | modified | 10 lines changed in place (10 deletions + 10 additions = 20 changed lines) | Ten PR 4 checkboxes `- [ ]` → `- [x]` |
+| `openspec/changes/reach-diagnosis-core/apply-progress.md` | modified | this appended section | Cumulative PR 4 evidence; the PR 1, PR 2 and PR 3 sections are untouched |
+
+**Authored additions for the code slice: 1,025 lines** (352 + 673), all additions, zero deletions — both files are new. No file outside the two PR 4 paths and the two artifact files was created or modified; `README.md`, `PRD.md`, the proposal, the specs, the design, `explore.md`, `research.md`, `preproposal.md` and `openspec/config.yaml` are untouched. No new dependency was added (only `context`, `sync/atomic`, `time` and the standard test packages); no linter or CI configuration was introduced.
+
+---
+
+## Test commands run — exact commands and exit status (PR 4)
+
+| # | Command | Exit | Observed output (abridged) |
+|---|---|---|---|
+| 1 | `go test ./...` (task 1 RED) | non-zero — `FAIL … [build failed]` | `undefined: probe.Options` at `runner_test.go:126/129/130/131`, `undefined: probe.NewRunner` at `:142`. (The pipeline also ran `head`, so the printed shell status was `head`'s; the `FAIL` line is `go test`'s own verdict, which is non-zero on a build failure.) |
+| 2 | `gofmt -l . && go vet ./... && go test -count=1 -run 'TestRunnerHonoursConcurrencyCeiling' -v ./internal/probe/` (task 2 GREEN) | **0** | `--- PASS: TestRunnerHonoursConcurrencyCeiling` plus the three subtests; `gofmt` printed nothing; `vet` printed nothing |
+| 3 | `go test -count=1 -run 'TestRunner\|TestHanging' ./internal/probe/` (tasks 3+4) | **0** | correct alternation form is `'TestRunner\|TestHanging'` in the shell with a Go regexp `|` (see the note below); `TestHangingProbeIsAbandonedByTheRunner`, `TestRunnerStreamsResultsBeforeTheSlowestProbeFinishes`, `TestRunnerReturnsEveryProbeOnceInProbeOrder` all PASS |
+| 4 | mutation A (task 3): the abandoned observable changed from `ObsProbeIgnoredBudget` to `ObsTCPEstablished` | **1** | `--- FAIL: TestHangingProbeIsAbandonedByTheRunner` — `hanging reason = "internal_error", want "probe_timeout": the runner classifies the probe it abandoned` (the unattributed observable falls to the table's total row). Restored from `/tmp/runner.go.bak`; rerun exit 0 |
+| 5 | `gofmt -l .` · `go vet ./...` · `go test -count=1 ./internal/probe/` (task 5 gate) | **0** each | `gofmt` empty output; `vet` no output; `ok …/internal/probe 0.262s` |
+| 6 | `go test -race -count=1 ./internal/probe/` (task 5 hand race run) | **0** | `ok …/internal/probe 1.307s` |
+| 7 | `go test -count=1 -run 'TestRunBudget' ./internal/probe/` (task 6 RED) | **1** | `the run took 321.238916ms, want it bounded by its 40ms budget instead of a full wave of 80ms probes` |
+| 8 | `gofmt -l . && go vet ./... && go test -count=1 -run 'TestRunner|TestHanging|TestRunBudget' ./internal/probe/` (task 7 GREEN) | **0** | `ok …/internal/probe 0.298s` |
+| 9 | `go test -count=1 -run 'TestCancel' ./internal/probe/` (task 8 RED, inside the row) | **1** | `cancelled result "fixture.honours-cancel" reason = "probe_timeout", want "run_cancelled"` |
+| 10 | `gofmt -l . && go vet ./... && go test -count=1 -run 'TestRunner|TestHanging|TestRunBudget|TestCancel' ./internal/probe/` (task 8 GREEN) | **0** | `ok …/internal/probe 0.297s` |
+| 11 | `go test -count=1 -run 'TestTimeoutPaths' -v ./internal/probe/` (task 9) | **0** | `--- PASS: TestTimeoutPathsAreDistinct (0.10s)` |
+| 12 | mutation B (task 9): the abandoned observable changed from `ObsProbeIgnoredBudget` to `ObsUDPSilence` | **1** | `--- FAIL: TestTimeoutPathsAreDistinct` — `a probe that ignores its bound is the runner's unresolved timeout: reason = "internal_error", want "probe_timeout"`. Restored; rerun exit 0 |
+| 13 | `gofmt -l .` (task 10 gate) | **0** | empty output — nothing unformatted |
+| 14 | `go vet ./...` (config `quality.typecheck`) | **0** | no output |
+| 15 | `go test -count=1 ./...` (task 10 gate) | **0** | `ok …/internal/probe 0.404s` · `ok …/internal/version 0.007s` |
+| 16 | `go test -race -count=1 ./...` (task 10 gate) | **0** | `ok …/internal/probe 1.452s` · `ok …/internal/version 1.018s` |
+| 17 | `go test -count=1 -run 'TestRunner|TestHanging|TestRunBudget|TestCancel|TestTimeoutPaths' -v ./internal/probe/` (the work-unit map's `Unit verification` command) | **0** | seven top-level functions PASS (`TestRunnerHonoursConcurrencyCeiling` with 3 subtests, `TestHangingProbeIsAbandonedByTheRunner`, `TestRunnerStreamsResultsBeforeTheSlowestProbeFinishes`, `TestRunnerReturnsEveryProbeOnceInProbeOrder`, `TestRunBudgetBoundsASlowSuite`, `TestCancelStopsInFlightMeasurements`, `TestTimeoutPathsAreDistinct`) |
+| 18 | `go test -count=1 -v ./internal/probe/` (final inventory) | **0** | 161 `--- PASS` lines across the whole package |
+
+**Note on the map's focused command.** `tasks.md`'s rows and the work-unit map write the filter as `-run 'TestRunner\|TestHanging\|…'`. Go's regexp engine (RE2) treats `\|` as a **literal pipe**, so that exact string matches no test — run 17 reproduced it (`ok … [no tests to run]`, exit 0) before the working form with bare `|` was used. This is an artifact-typo observation, not a code defect; the ten checkboxes are unaffected. Any later slice quoting the same filter should use `|`.
+
+**Runtime harness**: **partly available and exercised in-process, with no end-to-end run.** The slice executes a real concurrent scheduler with real timers, so the harness *is* the runner itself: runs 3, 7, 9, 11 and 17 drive it with millisecond bounds, a gated fixture, a hanging fixture and a cancelled context, and the race gate (run 16) runs the same scheduler under the detector. There is still no end-to-end command: no CLI (`cmd/herdr-reach` lands in PR 18/19), no registry (PR 5) and no real probe (PR 5–PR 9), so nothing can be measured against a network yet. `DenyAllSeams()` is not invoked by the runner — probes bring their own seams — so this slice's boundary is exactly “the scheduler is proven, the suite it will run does not exist yet”.
+
+---
+
+## TDD Cycle Evidence (PR 4)
+
+RED → GREEN → TRIANGULATE → REFACTOR per PR 4 task row. The first RED was produced before `runner.go` existed at all (`undefined: probe.Options`, `probe.NewRunner`); the two later REDs are genuine behaviour failures of the code as it stood at that moment, not compile errors.
+
+| Task row | Phase | Evidence produced | Observed failure (RED) | Observed pass (GREEN) |
+|---|---|---|---|---|
+| 1 RED — concurrency ceiling | RED | `runner_test.go` written with the fixture vocabulary (`runnerFixture`, `runnerGate`) and `TestRunnerHonoursConcurrencyCeiling` before any `runner.go` | exit non-zero: `undefined: probe.Options` (×4), `undefined: probe.NewRunner` / `FAIL … [build failed]` | n/a |
+| 2 GREEN — bounded concurrency + streaming | GREEN | `runner.go`: `Options`/`withDefaults`/`NewRunner`/`Runner.Options`, `Run` with the ceiling, per-probe `probeCtx` bound, `emit`, ordered results, `awaitProbe`, `abandon` | (previous row) | exit 0: ceiling test PASS; peak in-flight counted by the fixtures equalled the effective ceiling in all three subtests |
+| 3 TRIANGULATE — hanging probe | TRIANGULATE | `TestHangingProbeIsAbandonedByTheRunner` (hanging + fast pass + refused fail) and `runnerGate`-based negative checks | Case passes against the GREEN implementation; teeth proven by mutation A (`ObsTCPEstablished` for the abandoned fact) → exit 1 | exit 0 after restore |
+| 4 TRIANGULATE — streaming | TRIANGULATE | `TestRunnerStreamsResultsBeforeTheSlowestProbeFinishes` (gated slow fixture, streamed `emit`, negative “nothing else streamed yet” assertion, probe-order check) and `TestRunnerReturnsEveryProbeOnceInProbeOrder` | Cases pass against the GREEN implementation; the negative assertion is what would fail if `Run` buffered the suite (no result until the slow fixture is released) | exit 0 |
+| 5 REFACTOR + RACE — one abandon path | REFACTOR | `abandonment` struct plus `probeBoundExceeded`/`abandon`/`runEndedCause`; the duplicated result-building removed, doc comments rewritten, no behaviour change; hand race run recorded | n/a — refactor only | exit 0: focused + full package tests, `gofmt` (empty), `vet`, `-race ./internal/probe/` (1.307 s) |
+| 6 RED — bounded run | RED | `TestRunBudgetBoundsASlowSuite`: 8 fixtures slower (80 ms) than the injected 40 ms run budget with a 300 ms probe bound | exit 1: `the run took 321.238916ms` — four sequential waves of slow probes, no budget enforcement, results carried the probe's own reason | n/a |
+| 7 GREEN — run budget | GREEN | `Run`: `time.NewTimer(opts.RunBudget)`, `budgetExceeded atomic.Bool`, `cancelRun`, nil-ed timer channel, the unstarted remainder reported through the same `abandon` path, and the run-ended override in `awaitProbe` | (previous row) | exit 0: every probe bounded with `(unresolved, run_budget_exceeded)`, run ended in ~40 ms of its 40 ms budget |
+| 8 TRIANGULATE — cancellation | TRIANGULATE (own RED→GREEN) | `TestCancelStopsInFlightMeasurements` written **first**: an early measured pass streamed before cancellation, two in-flight fixtures (one honest failure, one fabricated pass), three never-started fixtures | exit 1: `cancelled result "fixture.honours-cancel" reason = "probe_timeout", want "run_cancelled"` — the row's own RED, taken before the cancellation code existed | exit 0 after adding `runCancelled`, the `runCtx.Err()` cause branch, the `ctxDone` select branch and the “never start against a dead context” guard |
+| 9 TRIANGULATE — three timeout paths | TRIANGULATE | `TestTimeoutPathsAreDistinct`: probe-own-budget fixture (5 ms), bound-ignoring fixture, UDP-silence fixture, pairwise-distinct pair assertion, verdict assertions | Case passes against the GREEN implementation; teeth proven by mutation B (abandoned fact as `ObsUDPSilence`) → exit 1 | exit 0 after restore |
+| 10 REFACTOR + RACE — final gates | REFACTOR | `abandon` doc corrected for the three causes, runner observation label widened to `"runner"`, `Run`'s doc comment gained the explicit ceiling boundary; no behaviour change | n/a — refactor only | exit 0: `gofmt -l .` (empty), `go vet ./...`, `go test -count=1 ./...`, `go test -race -count=1 ./...` |
+
+**Strict-TDD row interleaving, disclosed.** Task row 7's text names both `run_budget_exceeded` and `run_cancelled`, but writing the cancellation code before the cancellation test would have been production code without a failing test. The rows were therefore interleaved: row 7 delivered the run budget (RED in row 6), and row 8's cancellation test was written first and observed failing before cancellation was implemented. Both rows end complete; no row's deliverable is missing.
+
+**Triangulation depth.** Four independent angles on admission and delivery (the ceiling counted inside the fixtures at three ceilings; probe order preserved against reverse completion order; streaming proven positively and negatively; the run bounded by wall time rather than by probe count) and four on failure handling (a probe that never returns; a run budget shorter than every probe; cancellation with a measured result preserved and a fabricated pass refused; three timeout paths that must stay three). **Two mutations, each caught**, plus **two genuine behaviour REDs** (budget and cancellation) that failed for their own reason rather than for a missing symbol.
+
+---
+
+## Deviations from design (PR 4)
+
+| # | Deviation | Why | Design reference | Follow-up owner |
+|---|---|---|---|---|
+| 1 | `Options.ProbeTimeout` defaults to **10 s** and is settable; the design names no default for the per-probe bound. | R-HR-NF-09 requires every probe to be bounded, so a default is mandatory and there is deliberately no “unbounded” value (a non-positive duration resolves to the default). Ten seconds is a judgment call with stated arithmetic: with a ceiling of four, ten probes drain in three waves, worst case 30 s inside the 60 s run budget. | design §7 (`runner.go` row: “per-probe bound”), R-HR-NF-09 | `sdd-verify` may adjudicate; PR 18's doctor wiring consumes it |
+| 2 | A runner-classified observation carries an **empty `Target`**, and its label is `"runner"`. | `Probe` declares no `Target()`: a probe's address lives behind its own constructor, and the hub probe's address is run input. The runner therefore cannot name a target it never knew, and inventing one would attribute a timeout to an address that may not be the one measured. `probe.go`'s `Observation` doc says an empty target happens “only for a not-measured observation”; that sentence is now narrower than the truth, and `probe.go` is outside this slice's file list, so the discrepancy is recorded here instead of edited there. | design §3.1 (`Observation.Target`), design §7 (`runner.go` row) | PR 16's payload mapper can fill the declared target from `EffectiveTargets` for these results; PR 18 decides whether it does |
+| 3 | A probe that returns **after the run ended** (budget or cancellation) has its result replaced by the runner's reason, even when it returned a measured pass. | The run stopped collecting answers; accepting a late pass would let a probe that woke on cancellation decide the run's result, which the spec forbids (“each affected probe reports the cancelled outcome rather than a fabricated pass”, R-HR-NF-09). `TestCancelStopsInFlightMeasurements` asserts exactly this with a deliberately fabricating fixture. | design §5.1 (obligation 3), R-HR-NF-09 | n/a — asserted by test |
+| 4 | The concurrency ceiling bounds the probes the runner has **started and still awaits**, not the goroutines in the process. | A probe that ignores its bound is abandoned rather than waited for (the whole point of R-HR-NF-02), and Go cannot kill its goroutine, so it can outlive the slot it held. Stating the ceiling as “what the runner admits” is the honest reading; a ceiling over live goroutines would require waiting for a hung probe, which is the failure the requirement exists to prevent. Documented on `Run`. | design D9, R-HR-NF-02 | PR 19's no-real-network guard and PR 5+ probes must not rely on a hung goroutine being collected |
+| 5 | `Runner.Options()` is added to read the **effective** bounds back. | The default must be assertable (the row demands “the default is 4”), and the payload's `run.concurrency` / `run.run_budget_ms` need one home for what the run actually used rather than a second copy of the default constants. | design §3.3 (`run.concurrency`, `run_budget_ms`), design D9 | PR 16 reads it when building the payload |
+| 6 | `Run(ctx, probes, emit)` — the runner receives **no targets and no seams**. | `probe.go` already documents that a probe's targets and seams are supplied to its constructor, so `Run` needs nothing but its context; design §4's data-flow sketch shows `Run(ctx, probes, targets, seams)`, and this is the refinement of that sketch rather than a different contract. It also keeps the fixture probes of `runner_test.go` free of seam plumbing. | design §4 (data flow), `internal/probe/probe.go` (`Probe.Run` doc) | PR 18's doctor wiring passes probes that already carry their own seams |
+| 7 | A `wallClock` fallback exists for a nil `Options.Clock`. | Production injects the run's own seam clock (design §3.3: one clock moves every timestamp); the fallback only keeps a zero `Options` value usable and an elapsed value from staying unset. No test relies on it, and `DenyAllSeams()`'s stepper clock is what the deterministic cases inject. | design §3.3, design §6.2 | PR 18 must inject `seams.Clock` so the fallback is never the production path |
+| 8 | `Run` returns `nil` for an empty probe list. | Not documented anywhere; an empty suite has no results and `nil` is the honest answer. No doctor call path can reach it with the ten-probe registry. | design §4, design §7 | n/a |
+| 9 | Task rows 7 and 8 were **interleaved** so each behaviour had its own failing test (see “Strict-TDD row interleaving”). | Strict TDD forbids writing cancellation before a failing test for it; delivering the whole row 7 text first would have done exactly that. | strict-TDD gate, `openspec/config.yaml` (`strict_tdd: true`) | n/a — disclosed and complete |
+| 10 | The runner does **not** convert a panicking probe into a result. | No task row requires it. A panic in a real probe would currently take the process down rather than become `internal_error`; adding recovery would be a behaviour beyond this slice's rows and would need its own case and comment. Recorded as a risk instead of implemented silently. | R-HR-NF-02 (hanging, not panicking), design §5.1 (`internal_error` row) | A later slice or the verify phase may decide; `ObsInternalFailure` already exists for a probe that catches its own failure |
+
+---
+
+## Workload and PR boundary (PR 4)
+
+| Field | Value |
+|---|---|
+| Slice | PR 4 of 20 — “Runner: bounds, streaming, run budget, cancellation and the three timeout paths” (WU6 + WU7) |
+| PR 4 estimate in `tasks.md` | 400–610 lines (point ≈505) |
+| Host attempt ceiling | 2,000 counted changed lines |
+| **Actual authored code + tests** | **1,025 lines** (0 deletions; both files are new): 188 production code, 527 test code, 220 comment, 90 blank |
+| Artifact changes | `tasks.md` 10 lines changed (10 + 10 = **20** changed lines) + this appended section (**191** added lines) |
+| **Total counted changed lines for the work unit** | **1,236** (1,025 authored + 20 checkbox + 191 artifact) |
+| Chain per-PR cohesion ceiling | 600 changed lines (user-approved) |
+| Review budget (session canonical) | 400 changed lines |
+| Budget status | **Over the slice estimate, over the 600-line chain ceiling and over the 400-line session budget; inside the 2,000-line attempt ceiling** |
+| PR boundary | Starts at PR 3's branch state (`internal/probe` vocabulary + classification table + seams + declared target set) and ends at `internal/probe` compiling and passing with the runner in place. `internal/probe/registry.go` and `local.go` (PR 5) are **not** started, and no later-slice file exists |
+| Rollback boundary | Delete `internal/probe/runner.go` and `internal/probe/runner_test.go`; the module returns to its PR 3 state with the vocabulary, classification table, seams and target set still green. `tasks.md` lines 178–187 revert to `- [ ]`; this appended section is the only other PR 4 change |
+| Rollback independence | Nothing consumes the runner yet — the doctor wiring lands in PR 18 and the ten real probes in PR 5–PR 9 — so the revert removes no unrelated work and leaves PR 1–PR 3 green |
+
+**Why 1,025 > 600, stated honestly.** The overage is the test file, not padding: 527 of the 1,025 lines are `runner_test.go`, and its size is set by the rows themselves — a counting fixture that measures the peak *inside* the measurement boundary at three ceilings, a gated fixture for streaming, a hanging fixture, a run-budget fixture set of eight slow probes, a cancellation fixture set of six probes including a deliberately misbehaving one, and a three-row timeout table with pairwise distinctness. Another 220 lines are comments, most of them the *why* of the abandonment paths (the three causes and the ordering between them), which is exactly the code a reviewer has to trust. The review-budget rule forbids reaching a number by deleting tests, cases, comments or blank lines, and no `size:exception` was assumed, so **no code-golf pass was attempted** and nothing was compressed to fit.
+
+**The second-split boundary `tasks.md` already names for this group was considered and is available.** The plan's boundary is “the concurrency ceiling, hanging-probe handling and streaming (WU6) first, then the run budget, cancellation and the three-timeout-paths table (WU7)”. A WU6/WU7 split would cut roughly `runner.go` 250 / `runner_test.go` 380 against the other half, and the split is strictly ordered (WU7's budget and cancellation build on WU6's `abandon`/`awaitProbe` machinery). **This executor did not split the slice or touch branches**: the parent assigned PR 4 as one unit, and a split moves a review boundary rather than the work. The named boundary is recorded for the orchestrator to apply if it wants the smaller review.
+
+---
+
+## Remaining unchecked tasks (PR 4 view)
+
+**Inside this slice: none.** All ten PR 4 checkbox rows are `- [x]` in `openspec/changes/reach-diagnosis-core/tasks.md` (re-read after the edits: **34 checked, 131 unchecked**; 165 rows total; `git diff --stat` on that file shows exactly 10 insertions and 10 deletions). The PR 4 ownership markers were re-checked: ten rows, ten terminal `<!-- sdd-owner: implementation -->` markers.
+
+The change-wide remainder is **131 checkbox lines in PR 5 – PR 20**, which belong to later chained slices on later branches (PR 4 targets PR 3's branch; the chain is `stacked-to-main`) and are **not** part of this work unit. The next unchecked line in the artifact, verbatim, is `tasks.md:194`:
+
+```
+- [ ] **RED** — add the registry enumeration case to `probe_test.go`: exactly the ten declared probes, each with one of the four kinds, enumeration order stable across runs, and no eleventh entry. <!-- sdd-owner: implementation -->
+```
+
+---
+
+## Risks (PR 4)
+
+| # | Risk | Status / handling |
+|---|---|---|
+| 1 | 1,025 authored lines against a 600-line chain ceiling (2,000-line attempt ceiling satisfied) | Disclosed above with the composition. The plan's own WU6/WU7 second-split boundary is available and named; the orchestrator owns that decision, and nothing was compressed to fit |
+| 2 | A probe that **panics** is not converted into a result (deviation #10) | No task row requires it and the runner has no panic case. A panicking real probe would currently take the process down; `ObsInternalFailure` already exists if a later slice adds `recover`. Carried as a known gap, not silently closed |
+| 3 | An abandoned probe's goroutine can outlive its concurrency slot (deviation #4) | Inherent: Go cannot kill a goroutine and the runner refuses to wait for a probe that ignores its bound. Documented on `Run`; the ceiling is stated as “admitted and awaited”. `-race ./...` reports nothing |
+| 4 | The runner-classified observation's empty `Target` contradicts `probe.go`'s `Observation` doc comment | Recorded as deviation #2 because `probe.go` is outside this slice's file list. Either PR 16's mapper fills the declared target or a later slice corrects the comment; until then the discrepancy is a documentation debt, not a behavioural one |
+| 5 | `ProbeTimeout`'s 10 s default is a judgment call | Deviation #1. It cannot express “unbounded”, so the worst case is bounded; if a hand-run shows a probe needing longer, that is a constant change (the D9 pattern for concurrency) |
+| 6 | A budget that expires while a `done` receive is also ready can admit one more probe in that same scheduler iteration | The extra probe is still reported as `(unresolved, run_budget_exceeded)`, the run's wall time is still bounded by the timer, and the case is covered by `TestRunBudgetBoundsASlowSuite`'s wall-time assertion. Disclosed rather than defended as impossible |
+| 7 | The map's focused test filter as written (`-run '…\|…'`) matches no test under RE2 | Observed and reproduced (run 17's first form). The working command uses bare `|`; recorded here so no later slice repeats the empty run |
+| 8 | Real timers enforce the bounds while the injected clock reports elapsed values | Deliberate: an injected scripted clock cannot fire a deadline, so enforcement must be wall-clock while `Elapsed`/`generated_at` come from the ONE injected clock (design §3.3). Tests therefore assert bounds by wall time and never assert exact elapsed values |
+
+### Engram mirror note
+
+This file is the **authoritative** artefact. Its Engram mirror is split in **three** parts, because the merged text does not fit the store's 50,000-character content limit in two: part 1 — the file header plus the PR 1 and PR 2 sections — is saved under the topic `sdd/reach-diagnosis-core/apply-progress`; part 2 — the PR 3 section — under `sdd/reach-diagnosis-core/apply-progress/part2`; and part 3 — this PR 4 section — under `sdd/reach-diagnosis-core/apply-progress/part3`. Each mirror part states the artefact path, this file's byte size and its SHA-256 digest, so the mirror can be checked against the repository copy, and each states that the repository file is authoritative. The PR 3 section's own older note still describes the earlier two-part shape; it is an earlier section of this artefact and is deliberately not rewritten here.
