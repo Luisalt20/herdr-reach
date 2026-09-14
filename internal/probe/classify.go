@@ -117,6 +117,10 @@ const (
 	// ObsPlatformSignalsUnknown is a set of platform signals matching no
 	// supported classification.
 	ObsPlatformSignalsUnknown Observable = "platform_signals_unknown"
+	// ObsPlatformSignalsClassified is a set of platform signals matching one of
+	// the supported classifications: Linux, macOS or WSL2 as a node, or native
+	// Windows (which is classified in order to be refused).
+	ObsPlatformSignalsClassified Observable = "platform_signals_classified"
 	// ObsNodePlatformUnsupported is a node classified as native Windows, which
 	// this tool refuses to operate on.
 	ObsNodePlatformUnsupported Observable = "node_platform_unsupported"
@@ -212,9 +216,16 @@ var classificationTable = []classificationRow{
 	{PurposeSSHDConfiguration, ObsCapabilityExcluded, Classification{NotMeasured, Indeterminate, ReasonCapabilityExcluded}},
 	{PurposeSSHDConfiguration, ObsCommandDenied, Classification{NotMeasured, Indeterminate, ReasonCommandDenied}},
 
-	// This machine: signals matching no supported classification are
-	// unresolved, and a classified native Windows node is this tool's measured
-	// negative answer rather than an error.
+	// This machine: signals matching one of the supported classifications are a
+	// measured positive, signals matching none are unresolved, and a classified
+	// native Windows node is this tool's measured negative answer rather than an
+	// error.
+	//
+	// The classified row is the positive counterpart design §5.1 does not print:
+	// §5.3 requires `local.env` to pass with a healthy environment, and a measured
+	// pass is only expressible if the table has a row for it. It is declared here,
+	// with the rest of the table, rather than by the probe that first needs it.
+	{PurposePlatformClassification, ObsPlatformSignalsClassified, Classification{Measured, Pass, ReasonOK}},
 	{PurposePlatformClassification, ObsPlatformSignalsUnknown, Classification{Unresolved, Indeterminate, ReasonPlatformUnknown}},
 	{PurposePlatformClassification, ObsNodePlatformUnsupported, Classification{Measured, Fail, ReasonNodePlatformUnsupported}},
 
