@@ -234,6 +234,12 @@ var classificationTable = []classificationRow{
 	{PurposeUDPReachability, ObsUDPSilence, Classification{Unresolved, Indeterminate, ReasonUDPSilence}},
 	{PurposeUDPReachability, ObsUDPUnreachable, Classification{Measured, Fail, ReasonUDPUnreachable}},
 	{PurposeUDPReachability, ObsUDPOtherError, Classification{Unresolved, Indeterminate, ReasonUDPErrorUnclassified}},
+	// A datagram question can also be unable to attempt its exchange at all: no
+	// packet dialer was injected for the run, or the packet seam refused. Both are
+	// attempts that were not made, with the two reason codes obligation 2 requires
+	// to stay distinguishable, and neither is a claimed absence of a reply.
+	{PurposeUDPReachability, ObsCapabilityExcluded, Classification{NotMeasured, Indeterminate, ReasonCapabilityExcluded}},
+	{PurposeUDPReachability, ObsCommandDenied, Classification{NotMeasured, Indeterminate, ReasonCommandDenied}},
 
 	// TLS on the wire: the issuer and the verification code are part of the
 	// measurement, and only a verified chain whose issuer is a declared
@@ -242,6 +248,12 @@ var classificationTable = []classificationRow{
 	{PurposeTLSCertificate, ObsTLSVerifyFailed, Classification{Measured, Fail, ReasonTLSVerifyFailed}},
 	{PurposeTLSCertificate, ObsTLSIssuerUnexpected, Classification{Measured, Fail, ReasonTLSIssuerUnexpected}},
 	{PurposeTLSCertificate, ObsTLSHandshakeError, Classification{Unresolved, Indeterminate, ReasonTLSHandshakeUnresolved}},
+	// A chain measurement can also be unable to run at all: no verifier was
+	// injected for the run, or the verifier seam refused. Both are attempts that
+	// were not made, never a rejected chain and never a claimed interception, and
+	// the two reason codes stay distinguishable (design §5.1 obligation 2).
+	{PurposeTLSCertificate, ObsCapabilityExcluded, Classification{NotMeasured, Indeterminate, ReasonCapabilityExcluded}},
+	{PurposeTLSCertificate, ObsCommandDenied, Classification{NotMeasured, Indeterminate, ReasonCommandDenied}},
 
 	// The local trust store: a Linux pool can accept or reject the chain; a
 	// verifier that cannot answer, or one an environment override bypasses, is
