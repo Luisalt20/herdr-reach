@@ -6,3 +6,7 @@
 # Editor / OS
 .DS_Store
 *.swp
+# Local Pi runtime state
+.atl/
+.pi/
+.codegraph/

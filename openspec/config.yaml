@@ -1,0 +1,90 @@
+strict_tdd: true
+context: |
+  herdr-reach — a Go CLI/TUI that makes a locked-down machine SSH-reachable so Herdr 0.9
+  multi-machine can target it. It measures what the network actually allows, recommends a
+  transport with evidence, provisions it, proves it works, and makes it survive reboots.
+  Problem: Herdr multi-machine assumes SSH reachability. Corporate endpoint agents, CGNAT,
+  and IP-level egress blocks break that assumption, and every failure looks like "SSH is
+  blocked" when the real cause is the destination.
+  Governing principle (outranks every other decision, PRD §14.5): when the tool cannot
+  establish something it says so and it says why. No fabricated success, no `indeterminate`
+  presented as `pass`, no recommendation without a reason attached.
+  Stack: Go (observed toolchain go1.26.6 linux/arm64; README badge declares 1.25.10 — the
+  discrepancy is recorded, not silently resolved); TUI on Bubbletea + Bubbles + Lipgloss
+  (PRD R-HR-NF-07); versioned JSON Schema wire contracts under contracts/pairing/v1.
+  Package layout (PRD §7.1): cmd/herdr-reach; internal/{tui,tui/screens,probe,transport,
+  environ,pair,shedr,doctor,sshcfg,sysfile,version}. internal/shedr is the only package that
+  invokes the herdr binary.
+  Repository state at init: greenfield — no go.mod, no Go sources, no git commits.
+  PRD.md is the product spec, README.md is the public front page, docs/assets holds SVGs.
+  Scope decision: the PRD describes a full product, not a single SDD change. The SDD program
+  is a series of chained changes (explore → program roadmap → per-slice proposal/spec/design/
+  tasks/apply/verify). First slice candidate: probe suite + diagnosis engine + verdict screen
+  with --json, no system mutation.
+  Ratified decision (2026-09-14, human approval): the Go module path is
+  `github.com/Luisalt20/herdr-reach`. Evidence: the private upstream repository
+  `Luisalt20/herdr-reach` (commit c366784, default branch main) holds PRD.md, README.md,
+  LICENSE and docs/ byte-identical to this workspace; the only local delta was `.gitignore`
+  gaining an `.atl/` ignore entry. Git was reconciled the same day: `origin` added, `main`
+  fetched from upstream, local `main` tracks `origin/main`, working tree preserved.
+  Workflow decision: one branch per SDD change; delivery follows ordinary repository policy.
+  Note: the first apply phase that creates go.mod must use this exact module path.
+  Verified precondition at init: `go test ./...` and `go vet ./...` currently fail with
+  "directory prefix . does not contain main module", so apply and verify must not run the
+  configured test command until go.mod exists.
+  Quality gap recorded at init: `quality.lint` is empty — no linter is installed or chosen;
+  do not invent one without an explicit decision.
+  Artifact language: English for all repository-facing artifacts; user conversation is Spanish.
+  Out of scope for V1 (PRD §2.1, §12): inventing a new transport, agent dashboards, an
+  orchestration runtime, a hosted service or account, a Herdr plugin form, Windows-native node.
+rules:
+  proposal:
+    require_problem_statement: true
+  spec:
+    require_acceptance_criteria: true
+  design:
+    require_tradeoffs: true
+  tasks:
+    protect_review_workload: true
+  apply:
+    test_command: "go test ./..."
+  verify:
+    test_command: "go test ./..."
+testing:
+  detected: "2026-09-14"
+  runner:
+    command: "go test ./..."
+    framework: "go test"
+  layers:
+    unit: "go test"
+    integration: ""
+    e2e: ""
+  commands:
+    unit:
+      - scope: "root"
+        command: "go test ./..."
+        framework: "go test"
+    integration:
+      []
+    e2e:
+      []
+  coverage:
+    command: "go test ./... -coverprofile=coverage.out"
+    commands:
+      - scope: "root"
+        command: "go test ./... -coverprofile=coverage.out"
+        framework: "go test"
+quality:
+  lint: ""
+  lint_commands:
+    []
+  typecheck: "go vet ./..."
+  typecheck_commands:
+    - scope: "root"
+      command: "go vet ./..."
+      framework: "go vet"
+  format: "gofmt -l ."
+  format_commands:
+    - scope: "root"
+      command: "gofmt -l ."
+      framework: "gofmt"
