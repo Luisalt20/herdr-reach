@@ -1388,3 +1388,220 @@ PR 8 adds `internal/probe/quic.go`, `quic_test.go`, `tls.go` and `tls_test.go` (
 This file is the **authoritative** artefact. Its Engram mirror is now split in **six** parts because the merged text exceeds the store's 50,000-character content limit: part 1 — the file header plus the PR 1 and PR 2 sections — under the topic `sdd/reach-diagnosis-core/apply-progress`; part 2 — the PR 3 section — under `sdd/reach-diagnosis-core/apply-progress/part2`; part 3 — the PR 4 section — under `sdd/reach-diagnosis-core/apply-progress/part3`; part 4 — the PR 5 section — under `sdd/reach-diagnosis-core/apply-progress/part4`; part 5 — the PR 6 section — under `sdd/reach-diagnosis-core/apply-progress/part5`; and part 6 — this PR 7 section — under `sdd/reach-diagnosis-core/apply-progress/part6`.
 
 Every part states the artefact path, this file's byte size and its SHA-256 digest **as recorded when that part was saved**, and that the repository file is authoritative. Parts 1–5 therefore carry their own slice's snapshot and their digests no longer match this file, which has grown by one section since; part 6 carries the merged file's size and digest as of this run. A mirror part is a readable convenience copy of this artefact, not a second source of truth: read this file for the complete, current record. The PR 3–PR 6 sections' own older notes still describe the earlier two-, three-, four- and five-part shapes; they are earlier sections of this artefact and are deliberately not rewritten here.
+
+# Apply Progress — PR 8 of 20 — WU14 + WU15 · The protocol probes: `egress.quic` and `tls.interception`
+
+**Change**: `reach-diagnosis-core` · **Slice**: **PR 8 of 20** — "the protocol probes: `egress.quic` and `tls.interception`" (WU14 + WU15)
+**Branch**: `feat/probe-quic-tls`, stacked on PR 7's branch `feat/probe-egress-reachability` (chain strategy `stacked-to-main`, so PR 8 targets PR 7's branch and **not** `main`)
+**Date**: 2026-09-14 · **Artifact store**: `both` (this file + Engram mirror, split as the mirror note at the end records)
+**Strict TDD**: active — `openspec/config.yaml` declares `strict_tdd: true` with runner `go test ./...`; RED → GREEN → TRIANGULATE → REFACTOR followed for both halves of this slice
+**Skill resolution**: `paths-injected` — read `/home/luisalt20/.config/opencode/skills/go-testing/SKILL.md` and `/home/luisalt20/.config/opencode/skills/work-unit-commits/SKILL.md` before writing code; no registry fallback was needed
+**Delivery path consumed**: `auto-chain` / `stacked-to-main` — this run implements **only** the assigned slice and stops at its PR boundary; the PR 1–PR 7 sections above are preserved unchanged
+**Commit status**: nothing committed, staged, pushed or branched by this phase; the work is left in the working tree for the orchestrator
+**How to read this file**: PR 8's entry is the section below. The current change-wide remainder is restated at the end of this section.
+
+---
+
+## Structured status consumed (PR 8)
+
+| Field | Value |
+|---|---|
+| `schemaName` / `schemaVersion` | `gentle-ai.sdd-status` / `2` |
+| `changeName` | `reach-diagnosis-core` |
+| `nextRecommended` | `apply` |
+| `applyState` | `ready` |
+| `dependencies.apply` / `.verify` / `.archive` | `ready` / `blocked` / `blocked` |
+| `actionContext.mode` | `repo-local` |
+| `actionContext.workspaceRoot` | `/home/luisalt20/projects/close/herdr-reach` |
+| `actionContext.allowedEditRoots` | `["/home/luisalt20/projects/close/herdr-reach"]` — every file written lives inside it |
+| `artifactStore` | `both` declared by the parent prompt (native `openspec`); files written under `openspec/changes/reach-diagnosis-core/` and mirrored to Engram |
+| `taskProgress` before this run | 165 total / 60 completed / 105 pending (PR 1 through PR 7) |
+| `taskProgress` after this run | 165 total / **68 completed** / 97 pending |
+| `actionContext` warnings | none |
+| Work-unit ownership markers | all eight PR 8 rows carry the terminal `<!-- sdd-owner: implementation -->` marker; the whole file still holds 165 markers for 165 checkbox rows, none malformed, duplicate, unsupported or non-terminal |
+| `applyState: all_done`? | no — implementation continues, so editing was permitted |
+
+**Attempt context**: the status reports one bounded attempt already active for this work unit (`token sha256:b428920ea5767c5fb59c36beafc49927fb0ddb2482d60b3d3dc78270f488358d`) with a **3,000**-changed-line ceiling. Per the parent prompt the parent owns `sdd-attempt acquire`/`settle`; this executor did **not** call the native attempt command. The counted-line position against that ceiling is in "Workload and PR boundary".
+
+---
+
+## Completed tasks and their persisted checkbox updates (PR 8)
+
+All eight PR 8 rows were flipped from `- [ ]` to `- [x]` in `openspec/changes/reach-diagnosis-core/tasks.md` (lines 240–247) as the work completed, then re-read to confirm. `git diff --stat` on that file reports exactly `8 insertions(+), 8 deletions(-)` — eight flips and nothing else (68 checked, 97 unchecked of 165).
+
+| # | Task (short) | Persisted update | Evidence |
+|---|---|---|---|
+| 1 | RED — write `quic_test.go` with the four D8 outcomes and all four reason codes: any UDP reply ⇒ `(measured, pass, udp_response_received)`; silence ⇒ `(unresolved, udp_silence)`; ICMP port-unreachable ⇒ `(measured, fail, udp_unreachable)`; any other socket error ⇒ `(unresolved, udp_error_unclassified)`; plus the `indeterminate` control case | `tasks.md:240` → `- [x]` | `go test -count=1 -run 'TestEgressQuic|TestQuicProbe' ./internal/probe/` → **exit 1**, 19 × `the registry built no "egress.quic" probe, so no run could measure it` across 21 failing subtests — a behaviour RED: the probe is declared, registered by name and unbuildable |
+| 2 | GREEN — implement `quic.go` as a raw UDP datagram over the injected `PacketDialer`/`PacketConn`; add no QUIC dependency | `tasks.md:241` → `- [x]` | Focused run **exit 0**: the four outcomes over both declared regions, each observation labelled `udp 7844 regionN`, both declared addresses dialed over exactly the `udp` network with a probe-owned deadline, both sockets closed, `len(probe.Registry()) == 10` asserted, and `TestQuicProbeAddsNoQuicDependency` proving `go.mod` still carries no requirement |
+| 3 | TRIANGULATE — assert the RG-5 property: a silent socket is never `fail`, the detail never claims the path is blocked, and the declared narrow question is stated in the detail text | `tasks.md:242` → `- [x]` | `TestEgressQuicSilenceIsNeverAFailureAndClaimsOnlyTheQuestion`: seven scripts (reply, silence, ICMP, other error, failed dial, no capability, deny-all) scanned for the forbidden tokens `block`/`viable`/`viability`/`transport`/`recommend`; silence asserted `(unresolved, indeterminate, udp_silence)` and never `fail`; a split run (region1 pass, region2 silent) aggregating to the unanswered region; the narrow question asserted in every outcome's detail |
+| 4 | REFACTOR + GATE — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestEgressQuic` | `tasks.md:243` → `- [x]` | `gofmt -l .` exit 0 (empty output) · `go vet ./...` exit 0 (no output) · focused `TestEgressQuic` exit 0 · full package suite exit 0 |
+| 5 | RED — write `tls_test.go` with: verified chain and declared expected issuer ⇒ `(measured, pass, ok)`; verification failure ⇒ `(measured, fail, tls_verify_failed)` with the verification code in the detail; issuer outside the declared expected set ⇒ `(measured, fail, tls_issuer_unexpected)` with wording that says "not in the declared expected set" and never accuses; other handshake error ⇒ `(unresolved, tls_handshake_unresolved)`; plus the `indeterminate` control case | `tasks.md:244` → `- [x]` | `go test -count=1 -run 'TestTLSInterception' ./internal/probe/` → **exit 1**, 13 × `the registry built no "tls.interception" probe, so no run could measure it` — a behaviour RED for the same reason as row 1 |
+| 6 | GREEN — implement `tls.interception` over the injected `TLSVerifier` with the declared expected issuer set | `tasks.md:245` → `- [x]` | Focused run **exit 0**: verified-with-declared-issuer pass, verification failure with the code in the detail, issuer outside the declared set as a measured failure, other handshake error unresolved, and the two not-measured capabilities kept distinguishable |
+| 7 | TRIANGULATE — assert the injected verifying configuration is unchanged after the run and that no unverified retry was performed, and that the observed issuer and verification code appear in the result (R-HR-04) | `tasks.md:246` → `- [x]` | `TestTLSInterceptionLeavesTheVerifyingConfigurationUnchanged` (three outcomes ×: exactly one `Verify` call at the declared address, `InsecureSkipVerify` false, `ServerName` the declared host, `RootCAs` nil, and the at-attempt snapshot equal to the post-run configuration) and `TestTLSInterceptionNamesTheObservedIssuerAndVerificationCode` (three outcomes ×: the observed issuer and the verification code both present in the result) |
+| 8 | REFACTOR + GATE — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestTLSInterception` | `tasks.md:247` → `- [x]` | `gofmt -l .` exit 0 (empty) · `go vet ./...` exit 0 · focused `TestTLSInterception` exit 0 · full suite and `-race` suite exit 0 |
+
+---
+
+## Files changed (PR 8)
+
+| Path | Status | Authored lines | Purpose |
+|---|---|---|---|
+| `internal/probe/quic.go` | added | +285 (285) | D8's datagram probe: the header stating the narrow question and why no QUIC stack is involved; `udpProbePayload`, `udpReadLimit`, `udpDeclaredQuestion`, `udpSubject`, `udpFactLabel`; the `egressQuic` probe (`Run` with the per-region reduction, `observe`, `measure`, `exchangeDeadline`); the `packetAddr` net.Addr built from the declared target rather than resolved; `udpObserve`, `packetErrorFact`, `udpReplyFact` |
+| `internal/probe/quic_test.go` | added | +549 (549) | The packet-seam fixtures (`scriptedPacketConn` with a per-address template, `scriptedPacketDialer`, `packetSeams`, `runQuic`) and five test functions: the four-outcome table, the indeterminate control table, the RG-5 silence/no-claim/split case, the declared-regions-and-override case, and the no-dependency case |
+| `internal/probe/tls.go` | added | +230 (230) | R-HR-04's chain probe: the header stating the four outcomes and why verification is never weakened; `declaredExpectedIssuers` (the declared expected publisher set) with `expectedIssuerFor`; the `tlsInterception` probe (`Run`, `observe`); `tlsVerifyingConfig`; `tlsObserve`, `tlsChainFact` |
+| `internal/probe/tls_test.go` | added | +388 (388) | The verifier fixture (`scriptedTLSVerifier`, `tlsConfigSnapshot`/`snapshotTLSConfig`, `tlsSeams`, `runTLSInterception`) and four test functions: the outcome table (including the never-accuses scan), the indeterminate control table, the unchanged-configuration/no-retry case, and the issuer/verification-code case |
+| `internal/probe/classify.go` | modified (enabling edit — deviation #1) | +12 / −0 (12) | Four new rows, purely additive: `capability_excluded` and `command_denied` under `PurposeUDPReachability` and under `PurposeTLSCertificate`, with the comments that say why each purpose needs them (design §5.1 obligation 2) |
+| `internal/probe/registry.go` | modified (enabling edit — deviation #2) | +9 / −7 (16) | The `egress.quic` and `tls.interception` constructors filled in; the ordering comment extended to record that PR 8 lands two more constructors and leaves exactly one slot (`tls.truststore`) nil. The names, the kinds and the order are untouched, and the registry still holds exactly ten entries |
+| `openspec/changes/reach-diagnosis-core/tasks.md` | modified | 8 lines changed in place (8 deletions + 8 additions = 16 changed lines) | Eight PR 8 checkboxes `- [ ]` → `- [x]` |
+| `openspec/changes/reach-diagnosis-core/apply-progress.md` | modified | this appended section | Cumulative PR 8 evidence; the PR 1–PR 7 sections are untouched |
+| `openspec/changes/reach-diagnosis-core/apply.md` (attempt candidate) | not written | — | No `apply.md` exists or was created; the attempt bookkeeping belongs to the parent's `sdd-attempt` commands, which this executor did not call |
+
+**Authored code + tests: 1,480 counted lines** (285 + 549 + 230 + 388 + 12 + 16). No file outside the four assigned paths, the two disclosed enabling paths and the two artifact files was created or modified; `README.md`, `PRD.md`, the proposal, the specs, the design, `explore.md`, `research.md`, `preproposal.md` and `openspec/config.yaml` are untouched. No new dependency was added (production code imports only `context`, `crypto/tls`, `errors`, `fmt`, `net`, `strconv`, `strings`, `syscall`, `time` — all standard library; the tests add `os` and `reflect`); no linter, no CI configuration and no `go.sum` was introduced.
+
+---
+
+## Test commands run — exact commands and exit status (PR 8)
+
+| # | Command | Exit | Observed output (abridged) |
+|---|---|---|---|
+| 1 | `go test -count=1 -run 'TestEgressQuic\|TestQuicProbe' ./internal/probe/` (task 1 RED) | **1** | 19 × `the registry built no "egress.quic" probe, so no run could measure it`; 21 failing subtests across the four test functions |
+| 2 | `gofmt -w internal/probe/quic.go internal/probe/quic_test.go internal/probe/classify.go internal/probe/registry.go` then the same focused run (task 2 GREEN) | **0** | `ok …/internal/probe 0.010s` |
+| 3 | `go test -count=1 -v -run 'TestEgressQuic\|TestQuicProbe' ./internal/probe/` | **0** | 22 `--- PASS` lines including subtests |
+| 4 | `go test -count=1 -run 'TestTLSInterception' ./internal/probe/` (task 5 RED, with the `tls.interception` slot still nil) | **1** | 13 × `the registry built no "tls.interception" probe, so no run could measure it` |
+| 5 | `gofmt -w internal/probe/tls.go internal/probe/registry.go` then the same focused run (task 6 GREEN) | **0** | `ok …/internal/probe 0.008s` |
+| 6 | `go test -count=1 -v -run 'TestEgressQuic\|TestQuicProbe\|TestTLSInterception' ./internal/probe/` | **0** | 39 `--- PASS` lines including subtests |
+| 7 | mutations Q1–Q6 and T1–T7, one at a time against `/tmp` backups (see "Mutation evidence") | **1** each | every mutation caught by the case it targets; `diff -q` confirmed every restore, and the package was re-run green afterwards |
+| 8 | `gofmt -l .` · `go vet ./...` (tasks 4 and 8 gates) | **0** each | `gofmt` empty output; `vet` no output |
+| 9 | `go test -count=1 ./...` (final gate) | **0** | `ok …/internal/probe 0.414s` · `ok …/internal/version 0.007s` |
+| 10 | `go test -race -count=1 ./...` (final gate) | **0** | `ok …/internal/probe 1.510s` · `ok …/internal/version 1.021s` |
+| 11 | `go test -count=1 -v ./internal/probe/` (final inventory) | **0** | 78 top-level functions PASS across the package (69 before this slice + 9 new: five in `quic_test.go`, four in `tls_test.go`) |
+| 12 | `go test -count=1 -run 'TestEgressQuic\|TestTLSInterception' ./internal/probe/` (the map's filter, **bare pipe**) | **0** | `ok …/internal/probe 0.012s` |
+| 13 | `go test -count=1 -run 'TestEgressQuic\\\|TestTLSInterception' ./internal/probe/` (the map's **escaped** form, reproduced as written) | **0** | `ok …/internal/probe 0.008s [no tests to run]` — the artifact's `\|` typo again (PR 4 risk #7, PR 5 note 12, PR 6 run 13, PR 7 run 12): under RE2 it matches a literal pipe and selects nothing |
+
+**Runtime harness**: **N/A as an end-to-end run, exercised in process at both new probe boundaries.** There is still no CLI (`cmd/herdr-reach` lands in PR 18/19), no `doctor` wiring (PR 18) and no real network: the slices that would make a real machine reachable are PR 18–PR 20. What *is* exercised is the production path a run takes — `Registry()`/`ProbesFor(seams, input)` → the declared entry → its constructor → `Run` — with a scripted packet dialer/socket and a scripted TLS verifier over the deny-all base of design §6.2, which is the first proof level the design names for a probe. The unmeasured live steps remain the real socket shapes (a real UDP reply, a real ICMP port-unreachable, a real silent edge) and the real TLS handshake against a live chain, both of which belong to the verify phase's hand-run — design §9 names exactly these two: the D8 raw-UDP comparison against `cloudflared`'s own QUIC log lines, and the PRD §1.1 chain.
+
+---
+
+## TDD Cycle Evidence (PR 8)
+
+RED → GREEN → TRIANGULATE → REFACTOR per PR 8 task row, in the two halves the slice merges (the QUIC probe first, then `tls.interception`, which is also the boundary the task plan names). Both REDs are behaviour failures — the probe is declared, registered and unbuildable — rather than missing symbols inside a file that already exists.
+
+| Task row | Phase | Evidence produced | Observed failure (RED) | Observed pass (GREEN) |
+|---|---|---|---|---|
+| 1 RED — QUIC cases | RED | `quic_test.go` gained the packet-seam fixtures and all four QUIC test functions before any QUIC production code existed | exit 1: 19 × `the registry built no "egress.quic" probe, so no run could measure it` | n/a |
+| 2 GREEN — the QUIC probe | GREEN | `quic.go` (285 lines); `classify.go`: the two `PurposeUDPReachability` not-measured rows; `registry.go`: the `egress.quic` constructor | (previous row) | exit 0: 22 PASS lines; reply/`udp_response_received`, silence/`udp_silence`, ICMP/`udp_unreachable`, other error/`udp_error_unclassified` over both declared regions, deadlines set, sockets closed, no dependency added |
+| 3 TRIANGULATE — RG-5 and the declared set | TRIANGULATE | `TestEgressQuicSilenceIsNeverAFailureAndClaimsOnlyTheQuestion` (seven outcome scripts scanned for five forbidden tokens, the silence triple, and a split run), `TestEgressQuicDeclaredRegionsSurviveAnOverride`, `TestQuicProbeAddsNoQuicDependency` | Cases pass against the GREEN implementation; teeth proven by Q1 (silence classified as a failure), Q3 (the declared question dropped), Q4 (only the first region measured), Q5 (no socket deadline) and Q6 (socket never closed), each exit 1 | exit 0 after each restore |
+| 4 REFACTOR + GATE | REFACTOR | The `packetErrorFact` default wording corrected so a dial failure is not described as a read that failed (it now says the exchange produced no reply, which is true whether the socket failed before or after the datagram went out); comments re-read against the code | n/a — refactor only (the QUIC suite is the regression gate) | exit 0: `gofmt -l .` (empty), `go vet ./...`, focused suite, full suite |
+| 5 RED — TLS cases | RED | `tls_test.go` gained the verifier fixture, the snapshot helper and all four TLS test functions, with `tls.go` and the `tls.interception` constructor still absent | exit 1: 13 × `the registry built no "tls.interception" probe, so no run could measure it` | n/a |
+| 6 GREEN — the chain probe | GREEN | `tls.go` (230 lines) with `declaredExpectedIssuers`, `expectedIssuerFor`, `tlsVerifyingConfig` and `tlsChainFact`; `classify.go`: the two `PurposeTLSCertificate` not-measured rows; `registry.go`: the `tls.interception` constructor | (previous row) | exit 0: verified/`ok`, verify failure/`tls_verify_failed` with the code, unexpected issuer/`tls_issuer_unexpected`, handshake error/`tls_handshake_unresolved`, and the two not-measured capabilities |
+| 7 TRIANGULATE — configuration, retry and the reported pair | TRIANGULATE | `TestTLSInterceptionLeavesTheVerifyingConfigurationUnchanged` and `TestTLSInterceptionNamesTheObservedIssuerAndVerificationCode` | Cases pass against the GREEN implementation; teeth proven by T1 (`InsecureSkipVerify` true), T2 (the server name dropped), T5 (a retry after an error), T6 (`expectedIssuerFor` always true) and T7 (the nil-verifier branch removed, which panics), each exit 1 | exit 0 after each restore |
+| 8 REFACTOR + GATE | REFACTOR | Comments re-read against the code; the duplicate multi-observation join deliberately left in `quic.go` rather than extracted, because the shared home would be `egress.go`, which is outside this slice's allowed file list (deviation #7) | n/a — refactor only | exit 0: `gofmt -l .` (empty), `go vet ./...`, focused suite, full suite, `-race` suite |
+
+**Strict-TDD integrity note.** (a) Both REDs are registry-constructor failures, because a probe the registry cannot build cannot be measured at all: that is the honest first failing state of these rows, and it is a *behaviour* failure (declared and unbuildable), not a missing symbol in the suite. (b) Rows 3 and 7 are TRIANGULATE rows: their cases were written against the GREEN implementation, which strict TDD allows for triangulation, and every one of them was mutation-checked rather than trusted (thirteen mutations, all caught). (c) Row 4's and row 8's refactors were verified by the suites they already had, and both suites are the gate for the wording change in row 4: the RG-5 token scan and the four-outcome table are what pins `packetErrorFact`'s text. (d) No comment, control case or triangulation case was removed or compressed to reach any number; the counts are reported in "Workload and PR boundary".
+
+---
+
+## Mutation evidence (PR 8)
+
+Every mutation was applied to a `/tmp` backup, run against the focused case, and restored; `diff -q` then confirmed the restore and the package was re-run green.
+
+| # | Mutation | Case that caught it | Observed failure |
+|---|---|---|---|
+| Q1 | Silence classified as an ICMP port-unreachable (`ObsUDPSilence` → `ObsUDPUnreachable` in `udpReplyFact`) | the four-outcome table and the control table | exit 1 — `observation 0 = ("measured", "fail", "udp_unreachable"), want ("unresolved", "indeterminate", "udp_silence")` |
+| Q2 | The denied-seam branch removed from `packetErrorFact` (`case errors.Is(err, ErrSeamDenied)` → `case false`) | the indeterminate control table | exit 1 — `observation 0 = ("unresolved", "indeterminate", "udp_error_unclassified"), want ("not_measured", "indeterminate", "command_denied")` |
+| Q3 | `udpObserve` no longer appends the declared question | the four-outcome table and the silence case | exit 1 — `does not state the declared narrow question` |
+| Q4 | The region loop stops after the first region (`targets[:1]`) | the four-outcome table, the split case and the override case | exit 1 — expected two observations, got one (`want one per declared region`) |
+| Q5 | The socket deadline is never set | the four-outcome table | exit 1 — `carried no deadline, so the probe bounded nothing` |
+| Q6 | The packet socket is never closed | the four-outcome table | exit 1 — `the probe left the socket for … open` |
+| T1 | `InsecureSkipVerify` set to `true` | the unchanged-configuration case | exit 1 — `the probe disabled certificate verification to obtain a result` |
+| T2 | The declared server name dropped from the verifying configuration | the unchanged-configuration case | exit 1 — `the verifying configuration's server name = "", want the declared host "www.cloudflare.com"` |
+| T3 | The expected-issuer test inverted in `tlsChainFact` | the outcome table | exit 1 — `observation = ("measured", "fail", "tls_issuer_unexpected"), want ("measured", "pass", "ok")` |
+| T4 | The `ErrTLSVerification` branch removed (`case false`) | the outcome table | exit 1 — `observation = ("unresolved", "indeterminate", "tls_handshake_unresolved"), want ("measured", "fail", "tls_verify_failed")` |
+| T5 | A retry performed after a failed `Verify` | the unchanged-configuration case | exit 1 — `the verifier was invoked 2 times, want exactly one: an unverified retry is forbidden (R-HR-04)` |
+| T6 | `expectedIssuerFor` made to accept any declared entry (`if strings.TrimSpace(expected) != ""`; the first form of this mutation, a literal `if true`, was a build failure rather than a behavioural mutation and does not count) | the outcome table and the issuer/code case | exit 1 — the unexpected-issuer outcome reclassified as a pass |
+| T7 | The nil-verifier branch removed (`if false`) | the indeterminate control table | exit 1 — `panic: runtime error: invalid memory address or nil pointer dereference` in the `no capability at all` case, i.e. a missing capability reported by a crash instead of a not-measured fact |
+
+**Triangulation depth.** Thirteen mutations, every one caught. On the QUIC half: five forbidden-token scans over seven outcome scripts; the four reason-code triples asserted per region and in the aggregate; the declared question asserted in every outcome's detail; both declared regions asserted against the declaration; the per-address recipients and deadlines asserted from the seam's own record; the two not-measured capabilities asserted to stay distinguishable; and the split run asserted to aggregate to the unanswered region. On the TLS half: the four outcomes asserted with their reason codes; the never-accuses scan over the unexpected-issuer detail; the at-attempt configuration snapshot compared against the post-run configuration; exactly one `Verify` call asserted in every case; and the observed issuer and verification code asserted to reach the result in every definite outcome.
+
+---
+
+## Deviations from design (PR 8)
+
+| # | Deviation | Why | Design reference | Follow-up owner |
+|---|---|---|---|---|
+| 1 | **`internal/probe/classify.go` was edited, which is outside the PR 8 file list** (+12/−0): `capability_excluded` and `command_denied` rows under `PurposeUDPReachability` and under `PurposeTLSCertificate`. | Design §5.1 prints the definite outcomes for both questions and neither absence. Both probes can be unable to attempt their measurement at all — no seam injected, or a seam that refused — and obligation 2 requires those two facts to be not-measured with their own distinguishable codes rather than to fall through to `internal_error`. Purely additive, same package, no existing row moved or reordered; proven by Q2 (the denied-seam branch removed) and the two control tables. | design §5.1 (obligation 2), PR 7 deviation #1 | `sdd-verify` must adjudicate; the orchestrator may prefer to fold the rows into a review of PR 2 |
+| 2 | **`internal/probe/registry.go` was edited** (+9/−7): both constructors filled and the ordering comment extended. | Two slots, two constructors, one edit each; the names, kinds and order are untouched, the enumeration test still asserts exactly ten, and `tls.truststore` is still nil for PR 9. Extending the comment in the same edit keeps the table's own record of which slice landed what from going stale. | design §4, design D8/D10, PR 7 deviation #2 | n/a — PR 9 fills the last slot |
+| 3 | The **declared expected issuer set** lives in `tls.go` (`declaredExpectedIssuers`, unexported) rather than in `targets.go`'s declaration. | `targets.go` was outside this slice's file list, and the set is part of the chain measurement's contract rather than of "where the probe measures": `targets.go` says the probe measures `www.cloudflare.com:443`, and this declaration says what publisher that host is expected to present (PRD §1.1). The consequence is disclosed: the declared expected set is **not** echoed by the declared target set the payload reads, so a consumer can compare the observed issuer only against the probe's constant. | design §5.1 ("issuer not in the declared expected set for the target"), design §3.3, PRD §1.1 | PR 9 shares the declaration (same file); PR 16/PR 17 may want it echoed in the payload and the doc |
+| 4 | The datagram is sent to a locally constructed `net.Addr` (`packetAddr`), not to one obtained from `net.ResolveUDPAddr`. | Naming an address is not measuring it, and a resolution call inside the probe would be a real network operation outside a seam — exactly what the seam set exists to prevent, and what PR 19's static guard narrows. The address string is the declared target's own `host:port`, so the dialed set still equals the declared set. | design §6.1 (seam table), design §6.2, R-HR-NF-10 | PR 19's `real.go` owns the production `DialPacket`; the static guard must not need to allow a resolution call here |
+| 5 | The QUIC probe takes **no resolver step**, unlike the four TCP reachability probes: a name-level dial failure classifies as `udp_error_unclassified`. | Design §6.1's seam table lists only `PacketDialer`/`PacketConn` for `egress.quic`, and design D8's declared question is about the datagram exchange, not about the name. The failure is therefore unresolved and its wording is the socket's verbatim text — not dressed up, but also not attributed to the name. | design D8, design §6.1, RG-5 | `sdd-verify` may want this stated in the output; PR 16/PR 17 word the human projection |
+| 6 | The **verifying configuration is built inside `tls.go`** and asserted through the injected verifier (the test captures the pointer and snapshots its fields at the attempt). | No seam in `Seams` carries a `*tls.Config` and `seams.go` is outside this slice's file list. Building it fresh per run and passing it once satisfies R-HR-04's "never weakened, never retried" without adding public surface; the snapshot-then-compare assertion is what makes "unchanged after the run" observable from outside. | R-HR-04, design §6.1, design §5.1 | PR 9's `tls.truststore` will want the same configuration contract; PR 19's `real.go` implements the production verifier |
+| 7 | `quic.go`'s `Run` **repeats** the multi-observation join (`strings.Join` over targets and details) that `egressCF.Run` performs in `egress.go`. | The shared home for that helper is `egress.go`, which is outside this slice's allowed file list, and editing it would move PR 7's reviewed code inside a PR 8 diff. The duplication is three statements and is recorded rather than silently left for a reader to notice. | design §7 (`egress.go` / `quic.go` file map), PR 7 risk #7 | A later slice that already owns `egress.go`, or the verify phase, may extract it |
+| 8 | `TestQuicProbeAddsNoQuicDependency` reads `../../go.mod` from the test. | Design D8's rejected alternative was a third-party QUIC stack, and "no dependency was added" is otherwise an assertion about a file no test reads. The path is the module root relative to the package directory `go test` runs in; a move of `go.mod` fails the test loudly instead of skipping it. | design D8, design §11 (no non-stdlib dependency in R1a) | PR 19/PR 20 own the broader dependency and no-egress guards; this case is the D8-specific one |
+| 9 | The QUIC probe's silence outcome is reached through `dialTimedOut`, the same deadline-expiry property helper the TCP probes use. | The property ("a socket reported that its deadline expired") is the same fact in both places, and reusing the helper keeps one definition of it. The *classification* is not shared: a deadline expiry is `budget_expired`/fail for a port-reachability question and `udp_silence`/unresolved for the datagram question, and `TestUnclassifiableObservationIsNeverAPass` already pins that an expiry on a non-reachability purpose is not borrowed as a failure. | design §5.1 obligation 3, RG-8 | n/a |
+
+---
+
+## Workload and PR boundary (PR 8)
+
+| Field | Value |
+|---|---|
+| Slice | PR 8 of 20 — "the protocol probes: `egress.quic` and `tls.interception`" (WU14 + WU15) |
+| PR 8 estimate in `tasks.md` | 320–490 lines (point ≈405) |
+| Host attempt ceiling | 3,000 counted changed lines |
+| **Actual authored code + tests** | **1,480 counted lines**: `quic.go` +285, `quic_test.go` +549, `tls.go` +230, `tls_test.go` +388, `classify.go` +12/−0 (12), `registry.go` +9/−7 (16) |
+| Artifact changes | `tasks.md` 8 lines changed (8 + 8 = **16** changed lines) + this appended section |
+| **Total counted changed lines for the work unit** | **≈1,830** (1,480 authored + 16 checkbox + this section) |
+| Chain per-PR cohesion ceiling | 1,000 changed lines (user-approved, revised from 600 on 2026-09-14) |
+| Review budget (session canonical) | 400 changed lines |
+| Budget status | **3.7× the slice estimate, over the 1,000-line chain ceiling and over the 400-line session budget; inside the 3,000-line attempt ceiling** |
+| PR boundary | Starts at PR 7's branch state (`internal/probe` vocabulary + classification table + seams + declared target set + runner + registry with `local.env`, `local.sshd`, `egress.hub.direct`, the two public-SSH probes and the two per-region Cloudflare edge probes) and ends at `internal/probe` compiling and passing with D8's datagram probe and the chain-on-the-wire probe landed and registered (eight of the ten constructors filled). **PR 9 is not started**: no `tls.truststore` implementation, no `internal/diagnosis/`, `internal/transport/`, `internal/report/`, `internal/doctor/`, `cmd/` or `docs/diagnosis-report.md` exists, and `tls.truststore` is the only registry slot still nil |
+| Rollback boundary | Delete `quic.go`, `quic_test.go`, `tls.go` and `tls_test.go`; revert `classify.go`'s +12 and `registry.go`'s +9/−7 (including the comment). The module returns to its PR 7 state with the eight previously landed probes, the vocabulary, the classification table, the seams, the declared target set and the runner still green. `tasks.md` lines 240–247 revert to `- [ ]`; this appended section is the only other PR 8 change |
+| Rollback independence | Nothing outside `internal/probe` consumes either probe — the doctor wiring lands in PR 18 and the reasoning layer in PR 9+ — so the revert removes no unrelated work and leaves PR 1–PR 7 green |
+
+**Why 1,480 > 1,000, stated honestly, and the boundary the plan already names.** The overage is not padding. 549 lines are `quic_test.go` — the packet-seam fixtures plus four test functions that between them script four outcome scripts × two regions, six control shapes, seven forbidden-token scans and a split run — and 388 are `tls_test.go` — the verifier fixture with its configuration snapshot plus four test functions that script three definite outcomes, three control shapes and two close-to-the-spec scenarios (unchanged configuration, one call, issuer + code reported). The production code is 515 lines, of which roughly 250 are the comments that carry the *why* of the narrow question, the four UDP outcomes, the never-weakens-verification rule and the never-accuses wording — exactly the code a reviewer has to trust in these two probes. The review-budget rule forbids reaching a number by deleting tests, control cases, triangulation cases, comments, docs or blank lines, and no `size:exception` was assumed, so **nothing was compressed**; the honest count is reported instead. The estimate in `tasks.md` (≈405) under-counted by 3.7×, consistent with the revision recorded in the forecast (the first three units measured 347/1400/1945 against estimates of 80/595/545).
+
+Measuring the code as written, the boundary the task plan names splits this slice into:
+
+- **PR 8a = WU14 (`egress.quic`)** — `quic.go` 285, `quic_test.go` 549, the two `PurposeUDPReachability` rows in `classify.go` 6, and the `egress.quic` constructor in `registry.go` 2, ≈ **842 counted lines** — inside the 1,000-line ceiling on its own.
+- **PR 8b = WU15 (`tls.interception`)** — `tls.go` 230, `tls_test.go` 388, the two `PurposeTLSCertificate` rows in `classify.go` 6, and the `tls.interception` constructor in `registry.go` 2, ≈ **626 counted lines** — inside the ceiling too. PR 8b depends on PR 8a only for the shared test fixtures (`egressBuild`, `declaredAddress`, `resultText`), which PR 7 already landed in `egress_test.go` and `quic_test.go` does not add to.
+- **Shared enabling edit**: the ordering comment in `registry.go` (12 changed lines), which describes both constructors and cannot be attributed to one half.
+
+Two-thirds of the overage is test code, and the split the plan names does bring each half under the ceiling; the only reason the halves are not already separate reviews is that the parent assigned PR 8 as one work unit and this executor does not move review boundaries on its own.
+
+**This executor did not split the slice or touch branches**: the parent assigned PR 8 as one unit, and a split moves a review boundary rather than the work. Against the 3,000-line attempt ceiling the work unit is inside it (≈1,830).
+
+---
+
+## Remaining unchecked tasks (PR 8 view)
+
+**Inside this slice: none.** All eight PR 8 checkbox rows are `- [x]` in `openspec/changes/reach-diagnosis-core/tasks.md` (re-read after the edits: **68 checked, 97 unchecked**; 165 rows total; `git diff --stat` on that file shows exactly 8 insertions and 8 deletions). The ownership markers were re-checked: 165 `<!-- sdd-owner: implementation -->` markers for 165 rows, every one terminal.
+
+The change-wide remainder is **97 checkbox lines in PR 9 – PR 20**, which belong to later chained slices on later branches (PR 8 targets PR 7's branch; the chain is `stacked-to-main`) and are **not** part of this work unit. The next unchecked line in the artifact, verbatim, is `tasks.md:254` — PR 9's first row, which is where the next slice resumes:
+
+```
+- [ ] **RED** — add the Linux controls: an accepting pool ⇒ `(measured, pass, ok)`; a rejected chain ⇒ `(measured, fail, truststore_rejects_chain)`. <!-- sdd-owner: implementation -->
+```
+
+PR 9 adds `tls.truststore` to `tls.go`/`tls_test.go` (extending the two files this slice created, including the `declaredExpectedIssuers` declaration and `tlsVerifyingConfig`) and fills the last registry slot, plus `internal/diagnosis/facts.go` and the accessor cases.
+
+---
+
+## Risks (PR 8)
+
+| # | Risk | Status / handling |
+|---|---|---|
+| 1 | A **silent UDP socket** is the most likely live outcome on a filtered network, and it is deliberately reported as `unresolved` rather than as a negative | The classification table maps `ObsUDPSilence` to unresolved/indeterminate and Q1 proves the outcome table and the control table catch a regression. Consequence disclosed: a run against a network that drops QUIC will usually be **incomplete** (exit code 1 once PR 18 wires it), not clean, because silence makes the run incomplete by design. That is the honest outcome and it is what design §5.2's `CF_HTTP2_ADVISED_QUIC_UNCONFIRMED` path is built for |
+| 2 | A **name-level failure** on the QUIC probe reports `udp_error_unclassified` rather than `dns_no_such_host` (deviation #5) | design §6.1 lists no resolver seam for `egress.quic`. The detail carries the socket's verbatim text, so nothing is fabricated; what is missing is the attribution. The verify phase's hand-run and PR 16/PR 17's wording are where a reader would notice |
+| 3 | The **declared expected issuer set is not echoed** by the declared target set (deviation #3) | The pass/fail decision is still evidence-backed (the observed issuer and the verification code are always in the result), but a consumer cannot recompute the set from the payload. PR 16/PR 17 own whether it is echoed |
+| 4 | `expectedIssuerFor` compares **case-insensitively** on trimmed values | This is a local decision with a stated reason (publishers vary in case between chains, and a case-only difference must not become a reported interception). It is a value comparison, never a comparison of error text, so R-HR-07 is unaffected; a stricter exact comparison would be the alternative and is recorded here as the trade-off |
+| 5 | The QUIC payload is a **labelled marker**, not a QUIC packet | Deliberate (D8): the probe has no QUIC stack, so its payload cannot be a handshake and must not pretend to be one. A remote endpoint that answers only valid QUIC packets will stay silent, and silence is unresolved — which is the designed degradation, not a defect |
+| 6 | The **real socket shapes** behind `packetErrorFact`, `udpReplyFact` and the production TLS verifier are unexercised | The tests script `ECONNREFUSED`, a deadline expiry and an arbitrary socket error, and assert the probe's own deadline and one-call discipline, but no live UDP reply, live ICMP port-unreachable or live handshake is performed — the project's own rule forbids real egress in tests. Design §9's verify-phase hand-run is the remaining evidence |
+| 7 | `tls.interception` **shares `tls.go` and `tls_test.go`** with PR 9's `tls.truststore` | Deliberate (design §7's file map). PR 9 extends both files, and the shared `declaredExpectedIssuers`/`tlsVerifyingConfig` are the contract it will build on; the two probes' questions differ (a live chain vs the local pool), so the test functions stay separate |
+| 8 | The artifact's focused filter (`-run 'TestEgressQuic\|TestTLSInterception'`) selects nothing under RE2 | Reproduced again (run 13) and recorded since PR 4 risk #7 (PR 5 note 12, PR 6 run 13, PR 7 run 12): copy the filter from the map with a **bare** `|`. The eight checkboxes are unaffected |
+| 9 | The PR 8 estimate (≈405) was **3.7× under** the authored 1,480 | The forecast already records that its estimates measured 2–3× low (the first three units measured 347/1400/1945 against 80/595/545); this slice is inside that band at its upper end, mostly because the QUIC and TLS outcome tables script every state per region and the two R-HR-04 properties (unchanged configuration, no retry) need their own fixtures. No task was dropped to fit |
+
+### Engram mirror note
+
+This file is the **authoritative** artefact. Its Engram mirror is now split in **seven** parts because the merged text far exceeds the store's 50,000-character content limit: part 1 — the file header plus the PR 1 and PR 2 sections — under the topic `sdd/reach-diagnosis-core/apply-progress`; part 2 — the PR 3 section — under `sdd/reach-diagnosis-core/apply-progress/part2`; part 3 — the PR 4 section — under `sdd/reach-diagnosis-core/apply-progress/part3`; part 4 — the PR 5 section — under `sdd/reach-diagnosis-core/apply-progress/part4`; part 5 — the PR 6 section — under `sdd/reach-diagnosis-core/apply-progress/part5`; part 6 — the PR 7 section — under `sdd/reach-diagnosis-core/apply-progress/part6`; and part 7 — this PR 8 section — under `sdd/reach-diagnosis-core/apply-progress/part7`.
+
+Every part states the artefact path, this file's byte size and its SHA-256 digest **as recorded when that part was saved**, and that the repository file is authoritative. Parts 1–6 therefore carry their own slice's snapshot and their digests no longer match this file, which has grown by one section since; part 7 carries the merged file's size and digest as of this run (267,631 bytes, `41f802a7fa9ed4d95693c6155e31b45fba334fee6b41d926ece0b3d908ebeee5`, measured immediately before this note was appended, so this note's own lines are not covered by that digest). A mirror part is a readable convenience copy of this artefact, not a second source of truth: read this file for the complete, current record. The PR 3–PR 7 sections' own older notes still describe the earlier two-, three-, four-, five- and six-part shapes; they are earlier sections of this artefact and are deliberately not rewritten here.

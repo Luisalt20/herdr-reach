@@ -237,14 +237,14 @@ Second-split boundary if this group lands above 600: the two SSH destination pro
 `Files`: `internal/probe/quic.go`, `internal/probe/quic_test.go`, `internal/probe/tls.go`, `internal/probe/tls_test.go`. `Depends on`: PR 7.
 Second-split boundary if this group lands above 600: the QUIC probe (WU14) first, then `tls.interception` (WU15).
 
-- [ ] **RED** — write `quic_test.go` with the four D8 outcomes and all four reason codes: any UDP reply ⇒ `(measured, pass, udp_response_received)`; silence ⇒ `(unresolved, udp_silence)`; ICMP port-unreachable ⇒ `(measured, fail, udp_unreachable)`; any other socket error ⇒ `(unresolved, udp_error_unclassified)`; plus the `indeterminate` control case. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `quic.go` as a raw UDP datagram over the injected `PacketDialer`/`PacketConn`; add no QUIC dependency. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert the RG-5 property: a silent socket is never `fail`, the detail never claims the path is blocked, and the declared narrow question is stated in the detail text. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestEgressQuic`. <!-- sdd-owner: implementation -->
-- [ ] **RED** — write `tls_test.go` with: verified chain and declared expected issuer ⇒ `(measured, pass, ok)`; verification failure ⇒ `(measured, fail, tls_verify_failed)` with the verification code in the detail; issuer outside the declared expected set ⇒ `(measured, fail, tls_issuer_unexpected)` with wording that says "not in the declared expected set" and never accuses; other handshake error ⇒ `(unresolved, tls_handshake_unresolved)`; plus the `indeterminate` control case. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `tls.interception` over the injected `TLSVerifier` with the declared expected issuer set. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert the injected verifying configuration is unchanged after the run and that no unverified retry was performed, and that the observed issuer and verification code appear in the result (R-HR-04). <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestTLSInterception`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `quic_test.go` with the four D8 outcomes and all four reason codes: any UDP reply ⇒ `(measured, pass, udp_response_received)`; silence ⇒ `(unresolved, udp_silence)`; ICMP port-unreachable ⇒ `(measured, fail, udp_unreachable)`; any other socket error ⇒ `(unresolved, udp_error_unclassified)`; plus the `indeterminate` control case. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `quic.go` as a raw UDP datagram over the injected `PacketDialer`/`PacketConn`; add no QUIC dependency. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert the RG-5 property: a silent socket is never `fail`, the detail never claims the path is blocked, and the declared narrow question is stated in the detail text. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestEgressQuic`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `tls_test.go` with: verified chain and declared expected issuer ⇒ `(measured, pass, ok)`; verification failure ⇒ `(measured, fail, tls_verify_failed)` with the verification code in the detail; issuer outside the declared expected set ⇒ `(measured, fail, tls_issuer_unexpected)` with wording that says "not in the declared expected set" and never accuses; other handshake error ⇒ `(unresolved, tls_handshake_unresolved)`; plus the `indeterminate` control case. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `tls.interception` over the injected `TLSVerifier` with the declared expected issuer set. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert the injected verifying configuration is unchanged after the run and that no unverified retry was performed, and that the observed issuer and verification code appear in the result (R-HR-04). <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestTLSInterception`. <!-- sdd-owner: implementation -->
 
 ### PR 9 — WU16 + WU17b · `tls.truststore` and the fact accessors
 
