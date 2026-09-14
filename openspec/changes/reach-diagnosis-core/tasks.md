@@ -145,16 +145,16 @@ main ← PR 1        bootstrap: module + version
 `Files`: `internal/probe/probe.go`, `internal/probe/reason.go`, `internal/probe/classify.go`, `internal/probe/probe_test.go`, `internal/probe/classify_test.go`. `Depends on`: PR 1.
 Second-split boundary if this group lands above 600: the vocabulary and the closed reason-code set (WU2) first, then the classification table (WU3), since the table consumes the vocabulary and nothing consumes the table yet.
 
-- [ ] **RED** — write `internal/probe/probe_test.go` with `TestResultInvariants`: `Verdict ∈ {pass,fail} ⟺ Resolution == measured`; `Resolution ∈ {unresolved, not_measured} ⇒ Verdict == indeterminate`; `TestAggregateOrder` asserting `fail > indeterminate > pass`. Prove the failure first. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `probe.go`: `Probe`, `ProbeKind`, `Verdict`, `Resolution`, `Observation`, `Result` and `Aggregate([]Observation) (Verdict, ReasonCode)`; run the invariant test to green. <!-- sdd-owner: implementation -->
-- [ ] **RED** — add the reason-code case to `probe_test.go`: the set is closed, unique, in the documented declaration order, exactly the 27 codes of design §3.5, and `AllReasonCodes()` returns that order. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `reason.go` with the 27 constants plus `AllReasonCodes()`. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — an unresolved observation is never promoted to `pass` and a not-measured one is never turned into `fail`, even when a sibling observation is `pass` or `fail`; `Aggregate` returns the worst observation's reason. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — one owner per concept (codes only in `reason.go`); run `gofmt -l .`, `go vet ./...`, `go test ./...`. <!-- sdd-owner: implementation -->
-- [ ] **RED** — write `classify_test.go` with one case per design §5.1 row, asserting `(Resolution, ReasonCode)` and that all 27 reason codes are reachable; include `TestWordingDrift`, where two OS wordings of one failure yield identical codes and differing verbatim details. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `classify.go` as the ordered table keyed by observation plus the probe's declared purpose; every probe classifies only through it (no inline reason selection). <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add the control case: an unclassifiable observation yields `internal_error`/`platform_unknown` and never `pass`; and one raw observable classified through two probes with the same declared purpose cannot produce two codes. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/` and the full suite. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `internal/probe/probe_test.go` with `TestResultInvariants`: `Verdict ∈ {pass,fail} ⟺ Resolution == measured`; `Resolution ∈ {unresolved, not_measured} ⇒ Verdict == indeterminate`; `TestAggregateOrder` asserting `fail > indeterminate > pass`. Prove the failure first. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `probe.go`: `Probe`, `ProbeKind`, `Verdict`, `Resolution`, `Observation`, `Result` and `Aggregate([]Observation) (Verdict, ReasonCode)`; run the invariant test to green. <!-- sdd-owner: implementation -->
+- [x] **RED** — add the reason-code case to `probe_test.go`: the set is closed, unique, in the documented declaration order, exactly the 28 codes of design §3.5, and `AllReasonCodes()` returns that order. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `reason.go` with the 28 constants plus `AllReasonCodes()`. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — an unresolved observation is never promoted to `pass` and a not-measured one is never turned into `fail`, even when a sibling observation is `pass` or `fail`; `Aggregate` returns the worst observation's reason. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — one owner per concept (codes only in `reason.go`); run `gofmt -l .`, `go vet ./...`, `go test ./...`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `classify_test.go` with one case per design §5.1 row, asserting `(Resolution, ReasonCode)` and that all 28 reason codes are reachable; include `TestWordingDrift`, where two OS wordings of one failure yield identical codes and differing verbatim details. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `classify.go` as the ordered table keyed by observation plus the probe's declared purpose; every probe classifies only through it (no inline reason selection). <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add the control case: an unclassifiable observation yields `internal_error`/`platform_unknown` and never `pass`; and one raw observable classified through two probes with the same declared purpose cannot produce two codes. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/` and the full suite. <!-- sdd-owner: implementation -->
 
 ### PR 3 — WU4 + WU5 · Seams, the deny-all test default, and the declared target set
 
@@ -365,7 +365,7 @@ Second-split boundary if this group lands above 600: the human projection (WU31)
 - [ ] **TRIANGULATE** — assert the blocked target string and the verbatim failing detail survive alongside the stable reason code, and that the completeness text never implies the suite finished when it did not (R-HR-07, R-HR-NF-02). <!-- sdd-owner: implementation -->
 - [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/report/ -run TestHumanProjection`. <!-- sdd-owner: implementation -->
 - [ ] **RED** — write `docs_test.go` parsing the doc's two tables and asserting set equality with `probe.AllReasonCodes()` and `diagnosis.AllRuleIDs()`. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — write `docs/diagnosis-report.md`: the exit-code table, the stdout/stderr split, the payload shape with `schema_version`, the table of all 27 reason codes, the rule-id scheme, and the statement that adding a code or rule id is a contract change. No schema file is written (R-HR-NF-06). <!-- sdd-owner: implementation -->
+- [ ] **GREEN** — write `docs/diagnosis-report.md`: the exit-code table, the stdout/stderr split, the payload shape with `schema_version`, the table of all 28 reason codes, the rule-id scheme, and the statement that adding a code or rule id is a contract change. No schema file is written (R-HR-NF-06). <!-- sdd-owner: implementation -->
 - [ ] **TRIANGULATE** — assert a code added to the constants without a doc row, or a row without a constant, fails; document that the exit-code constants ↔ doc-table assertion lives in `internal/doctor/doctor_test.go` (PR 18) to avoid an import cycle. <!-- sdd-owner: implementation -->
 - [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./...`. <!-- sdd-owner: implementation -->
 
