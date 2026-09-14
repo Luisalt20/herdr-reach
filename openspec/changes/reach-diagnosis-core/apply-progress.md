@@ -1605,3 +1605,235 @@ PR 9 adds `tls.truststore` to `tls.go`/`tls_test.go` (extending the two files th
 This file is the **authoritative** artefact. Its Engram mirror is now split in **seven** parts because the merged text far exceeds the store's 50,000-character content limit: part 1 — the file header plus the PR 1 and PR 2 sections — under the topic `sdd/reach-diagnosis-core/apply-progress`; part 2 — the PR 3 section — under `sdd/reach-diagnosis-core/apply-progress/part2`; part 3 — the PR 4 section — under `sdd/reach-diagnosis-core/apply-progress/part3`; part 4 — the PR 5 section — under `sdd/reach-diagnosis-core/apply-progress/part4`; part 5 — the PR 6 section — under `sdd/reach-diagnosis-core/apply-progress/part5`; part 6 — the PR 7 section — under `sdd/reach-diagnosis-core/apply-progress/part6`; and part 7 — this PR 8 section — under `sdd/reach-diagnosis-core/apply-progress/part7`.
 
 Every part states the artefact path, this file's byte size and its SHA-256 digest **as recorded when that part was saved**, and that the repository file is authoritative. Parts 1–6 therefore carry their own slice's snapshot and their digests no longer match this file, which has grown by one section since; part 7 carries the merged file's size and digest as of this run (267,631 bytes, `41f802a7fa9ed4d95693c6155e31b45fba334fee6b41d926ece0b3d908ebeee5`, measured immediately before this note was appended, so this note's own lines are not covered by that digest). A mirror part is a readable convenience copy of this artefact, not a second source of truth: read this file for the complete, current record. The PR 3–PR 7 sections' own older notes still describe the earlier two-, three-, four-, five- and six-part shapes; they are earlier sections of this artefact and are deliberately not rewritten here.
+
+
+# Apply Progress — PR 9 of 20 — WU16 + WU17b · `tls.truststore` and the fact accessors
+
+**Change**: `reach-diagnosis-core` · **Slice**: **PR 9 of 20** — "`tls.truststore` and the fact accessors" (WU16 + WU17b)
+**Branch**: `feat/probe-truststore-facts`, stacked on PR 8's branch `feat/probe-quic-tls` (chain strategy `stacked-to-main`, so PR 9 targets PR 8's branch and **not** `main`)
+**Date**: 2026-09-14 · **Artifact store**: `both` (this file + Engram mirror, split as the mirror note at the end records)
+**Strict TDD**: active — `openspec/config.yaml` declares `strict_tdd: true` with runner `go test ./...`; RED → GREEN → TRIANGULATE → REFACTOR followed for both halves of this slice
+**Skill resolution**: `paths-injected` — read `/home/luisalt20/.config/opencode/skills/go-testing/SKILL.md` and `/home/luisalt20/.config/opencode/skills/work-unit-commits/SKILL.md` before writing code; no registry fallback was needed
+**Delivery path consumed**: `auto-chain` / `stacked-to-main` — this run implements **only** the assigned slice and stops at its PR boundary; the PR 1–PR 8 sections above are preserved unchanged
+**Commit status**: nothing committed, staged, pushed or branched by this phase; the work is left in the working tree for the orchestrator
+**How to read this file**: PR 9's entry is the section below. The current change-wide remainder is restated at the end of this section.
+
+---
+
+## Structured status consumed (PR 9)
+
+| Field | Value |
+|---|---|
+| `schemaName` / `schemaVersion` | `gentle-ai.sdd-status` / `2` |
+| `changeName` | `reach-diagnosis-core` |
+| `nextRecommended` | `apply` |
+| `applyState` | `ready` |
+| `dependencies.apply` / `.verify` / `.archive` | `ready` / `blocked` / `blocked` |
+| `actionContext.mode` | `repo-local` |
+| `actionContext.workspaceRoot` | `/home/luisalt20/projects/close/herdr-reach` |
+| `actionContext.allowedEditRoots` | `["/home/luisalt20/projects/close/herdr-reach"]` — every file written lives inside it |
+| `artifactStore` | `both` declared by the parent prompt (native `openspec`); files written under `openspec/changes/reach-diagnosis-core/` and mirrored to Engram |
+| `taskProgress` before this run | 165 total / 68 completed / 97 pending (PR 1 through PR 8) |
+| `taskProgress` after this run | 165 total / **75 completed** / 90 pending |
+| `actionContext` warnings | none |
+| Work-unit ownership markers | all seven PR 9 rows carry the terminal `<!-- sdd-owner: implementation -->` marker; the whole file still holds 165 markers for 165 checkbox rows, none malformed, duplicate, unsupported or non-terminal |
+| `applyState: all_done`? | no — implementation continues, so editing was permitted |
+
+**Attempt context**: the status reports one bounded attempt already active for this work unit (`token sha256:f2a4b991b938ca708cbd7d9ec549b2f35b33dbde276c56eae84882725df89374`) with a **3,000**-changed-line ceiling. Per the parent prompt the parent owns `sdd-attempt acquire`/`settle`; this executor did **not** call the native attempt command. The counted-line position against that ceiling is in "Workload and PR boundary".
+
+---
+
+## Completed tasks and their persisted checkbox updates (PR 9)
+
+All seven PR 9 rows were flipped from `- [ ]` to `- [x]` in `openspec/changes/reach-diagnosis-core/tasks.md` (lines 254–260) as the work completed, then re-read to confirm. `git diff --stat` on that file reports exactly `7 insertions(+), 7 deletions(-)` — seven flips and nothing else (75 checked, 90 unchecked of 165).
+
+| # | Task (short) | Persisted update | Evidence |
+|---|---|---|---|
+| 1 | RED — add the Linux controls: an accepting pool ⇒ `(measured, pass, ok)`; a rejected chain ⇒ `(measured, fail, truststore_rejects_chain)` | `tasks.md:254` → `- [x]` | `go test -count=1 -run 'TestTLSTruststore' ./internal/probe/` → **exit 1**, 2 × `the registry built no "tls.truststore" probe, so no run could measure it` — a behaviour RED: the probe is declared, registered by name and unbuildable (the same first failing state PR 8's probe rows had) |
+| 2 | GREEN — implement `tls.truststore`: macOS ⇒ `(unresolved, truststore_platform_unavailable)` with the documented limitation in the result detail; `SSL_CERT_FILE`/`SSL_CERT_DIR` override ⇒ `(unresolved, truststore_override_platform_bypass)` | `tasks.md:255` → `- [x]` | Focused run **exit 0**: accepting pool ⇒ `(measured, pass, ok)`, rejected chain ⇒ `(measured, fail, truststore_rejects_chain)`, macOS ⇒ `(unresolved, indeterminate, truststore_platform_unavailable)` carrying the limitation, both overrides ⇒ `(unresolved, indeterminate, truststore_override_platform_bypass)`; the config asserted to leave verification on, name the declared host and supply no root pool of its own |
+| 3 | TRIANGULATE — assert the macOS limitation text is in the result itself (RG-3), and that the override case is `indeterminate` and never `pass` | `tasks.md:256` → `- [x]` | `TestTLSTruststoreNeverClaimsWhenThePoolInForceIsNotTheLocalStore`: five cases (macOS, `SSL_CERT_FILE`, `SSL_CERT_DIR`, both set, override on macOS) × the limitation fragments asserted in `result.Detail` itself, `unresolved` + `indeterminate` + the case's reason, never `pass` and never `fail`, and **zero** verifier invocations in every case; `TestTLSTruststoreReportsTheIndeterminateControlCase`: seven control shapes (no verifier, denying verifier, no environment seam, no platform seam, `unknown` platform, `""` platform, answerless handshake), each never a definite verdict |
+| 4 | REFACTOR + GATE — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestTLSTruststore`, then the full probe suite with the ten probes registered | `tasks.md:257` → `- [x]` | `gofmt -l .` exit 0 (empty output) · `go vet ./...` exit 0 (no output) · focused `TestTLSTruststore` exit 0 (4 top-level functions, 14 subtests) · full package suite exit 0 with **82** top-level tests · `TestTLSTruststoreClosesTheTenProbeRegistry` asserts no registry slot is nil and `Probes` builds all ten |
+| 5 | RED — add the accessor cases to `internal/diagnosis/rules_test.go`: a multi-observation probe exposes every observation's own state (DEV-2), and a not-measured observation maps to `NOT_MEASURED` rather than to a `fail` or `pass` state | `tasks.md:258` → `- [x]` | `go test -count=1 -run 'TestFacts' ./internal/diagnosis/` → **exit 1**: `github.com/Luisalt20/herdr-reach/internal/diagnosis: no non-test Go files in .../internal/diagnosis` + `FAIL ... [build failed]` — the compile-level RED the plan predicts, because the package is new |
+| 6 | GREEN — implement `internal/diagnosis/facts.go`: accessors turning `[]probe.Result` into matchable `(probe, resolution, verdict)` states | `tasks.md:259` → `- [x]` | Focused run **exit 0**: 4 top-level functions / 9 subtests; one fact per observation of a two-region probe and of a three-observation `local.sshd` result, the passing region still `PASS` beside the refused region's `FAIL`, the not-measured capability `NOT_MEASURED` beside the absent binary's `FAIL` |
+| 7 | REFACTOR + GATE — accessors only in `facts.go`; `gofmt -l .`, `go vet ./...`, `go test ./internal/diagnosis/` | `tasks.md:260` → `- [x]` | `gofmt -l .` exit 0 (empty) · `go vet ./...` exit 0 · `go test ./internal/diagnosis/` exit 0 · full suite and `-race` suite exit 0; `facts.go` holds the accessors only — no rule, no conclusion, no verdict of its own |
+
+---
+
+## Files changed (PR 9)
+
+| Path | Status | Authored lines | Purpose |
+|---|---|---|---|
+| `internal/probe/tls.go` | modified | +259 / −0 (259) | `tls.truststore`: the header stating the two honest degradations and why no handshake is performed for either; `trustStoreFactLabel`, `trustStoreMacOSLimitation`, `trustStoreSubject`, `trustStoreOverrideVariables`; the `tlsTrustStore` probe (`Run`, `observe` with the declared-capability order); `platformGOOS`; `trustStoreOverride`; `tlsTrustStoreObserve`; `tlsTrustStoreFact` |
+| `internal/probe/tls_test.go` | modified | +428 / −0 (428) | The trust-store fixtures (`scriptedEnv`, `trustStoreSeams`, `runTLSTruststore`) and four test functions: the Linux controls, the never-claims/RG-3 case (macOS limitation in the result, both overrides, override on macOS, both overrides set), the indeterminate control table, and the ten-probe registry closure |
+| `internal/diagnosis/facts.go` | added | +173 (173) | The package's first file and its doc comment; `State` with the four states, `Fact`, `allStates`/`AllStates`, `StateOf`, `Facts`, `FactsFor`, `newFact` — accessors only, no rule logic and no verdict of its own |
+| `internal/diagnosis/rules_test.go` | added | +280 (280) | The accessor suite: the run fixture (`observation`, `result`, `factsFixture`) and four test functions — every observation of a multi-observation probe (DEV-2), `FactsFor`, the nine-cell state map plus the closed state set, and "the accessors invent no measurement" |
+| `internal/probe/classify.go` | modified (enabling edit — deviation #1) | +14 / −0 (14) | Four new rows under `PurposeTLSTrustStore`, purely additive: `tls_handshake_unresolved` (an answerless handshake), `platform_unknown` (platform signals matching nothing), and `capability_excluded` / `command_denied` for the two ways the attempt can go unmade. All four reason codes already exist in the closed set; none was invented |
+| `internal/probe/registry.go` | modified (enabling edit — deviation #2) | +9 / −7 (16) | The `tls.truststore` constructor filled in — the last nil slot, so the registry now builds all ten probes — and the ordering comment updated to record that no slot is nil. The names, the kinds and the order are untouched |
+| `openspec/changes/reach-diagnosis-core/tasks.md` | modified | 7 lines changed in place (7 deletions + 7 additions = 14 changed lines) | Seven PR 9 checkboxes `- [ ]` → `- [x]` |
+| `openspec/changes/reach-diagnosis-core/apply-progress.md` | modified | this appended section | Cumulative PR 9 evidence; the PR 1–PR 8 sections are untouched |
+| `openspec/changes/reach-diagnosis-core/apply.md` (attempt candidate) | not written | — | No `apply.md` exists or was created; the attempt bookkeeping belongs to the parent's `sdd-attempt` commands, which this executor did not call |
+
+**Authored code + tests: 1,170 counted lines** (259 + 428 + 173 + 280 + 14 + 16). No file outside the six assigned or disclosed paths and the two artifact files was created or modified; `README.md`, `PRD.md`, the proposal, the specs, the design, `explore.md`, `research.md`, `preproposal.md` and `openspec/config.yaml` are untouched. No new dependency was added (production code adds no import: `tls.go` and `facts.go` use only `strings`/`fmt`/`errors`/`time` plus the existing `crypto/tls`; the tests add `os`); no linter, no CI configuration and no `go.sum` was introduced.
+
+---
+
+## Test commands run — exact commands and exit status (PR 9)
+
+| # | Command | Exit | Observed output (abridged) |
+|---|---|---|---|
+| 1 | `go test -count=1 -run 'TestTLSTruststore' ./internal/probe/` (task 1 RED) | **1** | 2 × `the registry built no "tls.truststore" probe, so no run could measure it` (the two Linux control subtests) |
+| 2 | `gofmt -w internal/probe/tls.go internal/probe/classify.go internal/probe/registry.go` then the same focused run (task 2 GREEN) | **0** | `ok …/internal/probe 0.009s` |
+| 3 | `go test -count=1 -v -run 'TestTLSTruststore' ./internal/probe/` (after triangulation) | **0** | 4 top-level `--- PASS` lines and 14 subtest `--- PASS` lines |
+| 4 | mutations S1–S12, one at a time against `/tmp` backups (see "Mutation evidence") | **1** each | every mutation caught by the case it targets; `diff -q` confirmed every restore, and the focused suite was green afterwards |
+| 5 | `go test -count=1 -run 'TestFacts' ./internal/diagnosis/` (task 5 RED) | **1** | `no non-test Go files in …/internal/diagnosis`; `FAIL … [build failed]` |
+| 6 | `gofmt -w internal/diagnosis/facts.go internal/diagnosis/rules_test.go` then the same focused run (task 6 GREEN) | **0** | `ok …/internal/diagnosis 0.007s` |
+| 7 | `go test -count=1 -v -run 'TestFacts' ./internal/diagnosis/` | **0** | 4 top-level `--- PASS` lines and 9 subtest `--- PASS` lines |
+| 8 | mutations F1–F10, one at a time against `/tmp` backups | **1** each | every mutation caught; every restore verified with `diff -q` |
+| 9 | `gofmt -l .` · `go vet ./...` (tasks 4 and 7 gates) | **0** each | `gofmt` empty output; `vet` no output |
+| 10 | `go test -count=1 ./internal/probe/` (full probe suite with ten probes registered) | **0** | `ok …/internal/probe 0.414s` — 82 top-level test functions |
+| 11 | `go test -count=1 ./internal/diagnosis/` | **0** | `ok …/internal/diagnosis 0.008s` |
+| 12 | `go test -count=1 ./...` (final gate) | **0** | `ok …/internal/diagnosis` · `ok …/internal/probe 0.419s` · `ok …/internal/version` |
+| 13 | `go test -race -count=1 ./...` (final gate) | **0** | `ok …/internal/diagnosis 1.019s` · `ok …/internal/probe 1.515s` · `ok …/internal/version 1.018s` |
+| 14 | `go test -count=1 -run TestTLSTruststore ./internal/probe/` and `go test -count=1 -run TestFacts ./internal/diagnosis/` (the map's two filters, **bare** names) | **0** each | `ok …/internal/probe 0.009s`, `ok …/internal/diagnosis 0.007s` — both filters select their suite (see the naming note in deviation #7) |
+
+**Runtime harness**: **N/A as an end-to-end run, exercised in process at both new boundaries.** There is still no CLI (`cmd/herdr-reach` lands in PR 18/19), no `doctor` wiring (PR 18) and no real network or real keychain: the slices that would make a real machine reachable are PR 18–PR 20. What *is* exercised is the production path a run takes — `Registry()`/`ProbesFor(seams, input)` → the declared entry → its constructor → `Run` — with a scripted platform seam, a scripted environment seam and a scripted TLS verifier over the deny-all base of design §6.2, plus the reasoning bridge over hand-written `[]probe.Result` values. The unmeasured live steps are the real platform pool (a real Linux `SystemCertPool` accepting or rejecting a real chain), a real `SSL_CERT_FILE` override, and a real macOS run whose exit code design §3.3 predicts as `1`; design §9's verify-phase hand-run is where those belong.
+
+---
+
+## TDD Cycle Evidence (PR 9)
+
+RED → GREEN → TRIANGULATE → REFACTOR per PR 9 task row, in the two halves the slice merges (the trust-store probe first, then the accessors — the boundary the task plan names). The probe half's RED is a behaviour failure (declared, registered, unbuildable); the accessor half's RED is the compile-level failure the plan predicts, because `internal/diagnosis` did not exist before this slice.
+
+| Task row | Phase | Evidence produced | Observed failure (RED) | Observed pass (GREEN) |
+|---|---|---|---|---|
+| 1 RED — the Linux controls | RED | `tls_test.go` gained the trust-store fixtures and `TestTLSTruststoreReportsTheLinuxControls` before any trust-store production code existed | exit 1: 2 × `the registry built no "tls.truststore" probe, so no run could measure it` | n/a |
+| 2 GREEN — the trust-store probe | GREEN | `tls.go` (259 lines) with `tlsTrustStore`, `trustStoreOverride`, `platformGOOS`, `tlsTrustStoreFact`; `classify.go`: the four `PurposeTLSTrustStore` rows; `registry.go`: the last constructor | (previous row) | exit 0: accepting pool / `ok`, rejected chain / `truststore_rejects_chain`, macOS / `truststore_platform_unavailable` with the limitation, both overrides / `truststore_override_platform_bypass`; the pool contract (one call, verification on, declared host, nil roots) asserted |
+| 3 TRIANGULATE — RG-3 and the never-claims property | TRIANGULATE | `TestTLSTruststoreNeverClaimsWhenThePoolInForceIsNotTheLocalStore`, `TestTLSTruststoreReportsTheIndeterminateControlCase`, `TestTLSTruststoreClosesTheTenProbeRegistry` | Cases pass against the GREEN implementation; teeth proven by S1–S12, each exit 1 | exit 0 after each restore; 4 top-level functions, 14 subtests |
+| 4 REFACTOR + GATE | REFACTOR | The `observe` capability order re-read against the code and the comments re-read against it; the four `classify.go` rows placed with the rest of the purpose's block rather than beside the probe that first needs them | n/a — refactor only (the trust-store suite is the regression gate) | exit 0: `gofmt -l .` (empty), `go vet ./...`, focused suite, full probe suite (82 tests, ten probes built) |
+| 5 RED — the accessor cases | RED | `internal/diagnosis/rules_test.go` created with the four accessor test functions and the `diagnosis` package still absent | exit 1: `no non-test Go files in …/internal/diagnosis` / `[build failed]` | n/a |
+| 6 GREEN — the accessors | GREEN | `internal/diagnosis/facts.go` (173 lines) with the package doc, `State`, `Fact`, `AllStates`, `StateOf`, `Facts`, `FactsFor`, `newFact` | (previous row) | exit 0: 4 top-level functions, 9 subtests; every observation of a multi-observation probe exposed with its own state, the not-measured observation `NOT_MEASURED` beside its failing sibling |
+| 7 REFACTOR + GATE | REFACTOR | `Facts` and `FactsFor` share one construction path (`newFact`), so the duplicate-loop shape that PR 8 recorded as a deliberate duplication does not repeat here; the doc comments re-read against the design's `(probe, resolution, verdict)` wording | n/a — refactor only | exit 0: `gofmt -l .` (empty), `go vet ./...`, `go test ./internal/diagnosis/`, full suite, `-race` suite |
+
+**Strict-TDD integrity note.** (a) The probe RED is a registry-constructor failure, because a probe the registry cannot build cannot be measured at all: that is the honest first failing state of this row and it is a *behaviour* failure (declared and unbuildable), not a missing symbol inside the suite. (b) The accessor RED is deliberately compile-level, as the task row itself predicts, because the package is new: the cases were written before the package existed, and their first run is the build failure the artifact names. (c) Rows 3 and 7 are TRIANGULATE/REFACTOR rows: the row-3 cases were written against the GREEN implementation, which strict TDD allows for triangulation, and all of them were mutation-checked rather than trusted (twelve mutations, all caught). (d) No comment, control case, triangulation case or test was removed or compressed to reach any number; the counts are reported in "Workload and PR boundary". (e) The trust-store empty-`GOOS` case was added *because* one mutation (S12) escaped the first triangulation pass: the suite was extended until the mutation was caught, not left with a blind spot.
+
+---
+
+## Mutation evidence (PR 9)
+
+Every mutation was applied to a `/tmp` backup, run against the focused suite, and restored; `diff -q` then confirmed the restore and the suite was re-run green. Twenty-two mutations, every one caught.
+
+### The trust-store probe (`-run TestTLSTruststore`)
+
+| # | Mutation | Case that caught it | Observed failure |
+|---|---|---|---|
+| S1 | The macOS branch disabled (`case goosDarwin:` → a value that never matches) | the never-claims case | exit 1 — the macOS case fell through to the verifier and reported a pass |
+| S2 | Overrides never detected (the empty-value guard forced false) | the never-claims case | exit 1 — an override case came out as a verdict instead of `truststore_override_platform_bypass` |
+| S3 | The override check moved after the platform branch | the override-on-macOS case | exit 1 — the reason changed from `truststore_override_platform_bypass` to `truststore_platform_unavailable` |
+| S4 | The two override variables swapped in `trustStoreOverrideVariables` | the both-set case | exit 1 — `SSL_CERT_DIR` was reported where the declaration order promises `SSL_CERT_FILE` |
+| S5 | An accepted chain classified as a rejection (`ObsTLSVerified` → `ObsTrustStoreRejectsChain`) | the Linux controls | exit 1 — `observation = ("measured", "fail", "truststore_rejects_chain"), want ("measured", "pass", "ok")` |
+| S6 | The nil-filesystem branch removed | the control case | exit 1 — the probe dereferenced a missing seam instead of reporting the missing capability |
+| S7 | The nil-platform branch removed | the control case | exit 1 — a missing platform seam crashed the probe instead of being reported |
+| S8 | The unknown-platform branch disabled | the control case | exit 1 — an unidentified platform fell through and was reported as a verdict |
+| S9 | The macOS limitation wording altered (the keychain sentence replaced) | the never-claims case | exit 1 — the result detail no longer carried the documented limitation fragments (RG-3) |
+| S10 | The nil-verifier branch removed (in the trust-store probe) | the control case | exit 1 — a missing verifier capability crashed instead of being reported as not measured |
+| S11 | The denied-seam branch removed from `tlsTrustStoreFact` | the control case | exit 1 — `("unresolved", "tls_handshake_unresolved")` where the denied seam is `("not_measured", "command_denied")` |
+| S12 | `platformGOOS` reports an empty value instead of the unknown signal | the control case (`""` platform) | exit 1 — a seam that reported nothing was treated as a platform and produced a verdict |
+
+### The fact accessors (`-run TestFacts`)
+
+| # | Mutation | Case that caught it | Observed failure |
+|---|---|---|---|
+| F1 | The not-measured branch of `StateOf` removed | the state-map table and the multi-observation case | exit 1 — a not-measured observation mapped to `UNRESOLVED` instead of `NOT_MEASURED` |
+| F2 | `StateOf`'s unclassifiable default promoted to `PASS` | the state-map table | exit 1 — a forbidden resolution × verdict cell became a pass |
+| F3 | `StateOf`'s unclassifiable default reported as `FAIL` | the state-map table | exit 1 — a forbidden cell became a failure |
+| F4 | Only the first observation of each result exposed | the multi-observation case and `FactsFor` | exit 1 — 2 facts for 5 observations |
+| F5 | Not-measured observations dropped from `Facts` | the multi-observation case | exit 1 — 4 facts for 5 observations |
+| F6 | `FactsFor` stops filtering by probe | `FactsFor` case and the multi-observation case | exit 1 — 5 facts for `local.sshd`, want 3 |
+| F7 | `FactsFor` fabricates a not-measured fact for an unreported probe | the no-invention case and the `egress.quic` assertion | exit 1 — 1 fact for a probe the run never reported |
+| F8 | `AllStates` drops a state | the closed-set case | exit 1 — 3 states, want the 4 of design §3.6 |
+| F9 | `AllStates` reordered | the closed-set case | exit 1 — declaration order changed |
+| F10 | A fact copies a resolution that is not its observation's | the faithful-view assertions | exit 1 — the fact disagreed with the observation it describes |
+
+**Triangulation depth.** On the probe half: the two Linux outcomes with their reason codes and details; the never-accuses-adjacent honesty fragments (limitation text, override variable names and values, the word "bypass", "unresolved"); five unattributable cases × never `pass`, never `fail`, zero verifier invocations; seven control shapes × never a definite verdict; the pool contract asserted from the verifier's own record (one call, the declared address, verification on, declared server name, nil roots); the environment seam's call log asserted to contain only the two documented variable reads; and the ten-probe registry closure. On the accessor half: five facts from two multi-observation results with the per-observation states asserted beside the aggregates; the per-probe accessor's filter and order; a nine-cell state map including the five cells the vocabulary forbids; the closed state set's size, order and no-duplicate property; and the no-invention case.
+
+---
+
+## Deviations from design (PR 9)
+
+| # | Deviation | Why | Design reference | Follow-up owner |
+|---|---|---|---|---|
+| 1 | **`internal/probe/classify.go` was edited, which is outside the PR 9 file list** (+14/−0): `tls_handshake_unresolved`, `platform_unknown`, `capability_excluded` and `command_denied` rows under `PurposeTLSTrustStore`. | Design §5.1 prints this question's definite outcomes and none of its absences. Without the rows, an answerless handshake, an unidentified platform and the two ways the attempt can go unmade would all fall through to the table's total row and be reported as `internal_error` — naming this package as broken rather than naming what was missing (obligation 2, R-HR-29). Purely additive, same package, no existing row moved or reordered, and **no reason code was invented**: all four codes already exist in the closed set. Proven by S8, S10 and S11. | design §5.1 (obligation 2), R-HR-29, PR 8 deviation #1 | `sdd-verify` must adjudicate; the orchestrator may prefer to fold the rows into a review of PR 2 |
+| 2 | **`internal/probe/registry.go` was edited** (+9/−7): the last constructor filled and the ordering comment updated. | The slot was nil by design and its own slice supplies it; the names, kinds and order are untouched and `TestTLSTruststoreClosesTheTenProbeRegistry` asserts no slot is nil afterwards. Extending the comment in the same edit keeps the table's own record of which slice landed what from going stale. | design §4, design §7, PR 8 deviation #2 | n/a — the registry is now complete |
+| 3 | **The probe performs no handshake on macOS and none when an override is set**: both cases are reported from the platform and the environment alone, and the suite asserts the verifier was invoked **zero** times in five such cases. | This is the sharpest decision in the slice. The declared question is "does the *local trust store* accept this chain?". On macOS the probe cannot attribute any answer to an enumerable pool, and with an override the pool in force is not the machine's trust store, so a handshake would answer a *different* question and its answer would have to be discarded. Performing it would put a real network round trip into a run for evidence that cannot be used, and reporting its result would be the false pass RG-3 forbids. The classification rows still describe the capability as attempted-and-unusable (`truststore_verifier_unavailable`, `truststore_override_platform_bypass`), because the probe did attempt its measurement and found the capability unusable. | R-HR-04, RG-3, design §5.1 (`unresolved` = "capability attempted and unusable") | `sdd-verify` should adjudicate; if the verify phase wants the handshake performed and discarded, that is a one-line change plus a case |
+| 4 | **An unidentified platform is `unresolved`/`platform_unknown`, not a verdict**: `platformGOOS` maps an empty reading to the unknown signal, and the probe reports unresolved for both `"unknown"` and `""`. | R-HR-29's "no default guess" applies at this boundary too: a machine whose operating system the seam could not name must not be assumed to be one whose pool can be enumerated, and a pass there would be exactly the false pass RG-3 exists to prevent. Proven by S8 and S12. | R-HR-29, design §5.1 (`platform_unknown`), PR 5 | `sdd-verify` must adjudicate; the alternative (proceed for any non-darwin value) is recorded in risk #2 |
+| 5 | **The reason code for "the platform could not be identified" is the existing `platform_unknown`**, reused from the platform-classification question rather than a new code. | The reason-code set is closed (design §3.5) and adding a code is a contract change; `platform_unknown`'s documented meaning — signals matching no supported classification, ambiguous, no default guess — is exactly this fact. No code was invented. Falls in the same family as the deliberate `sshd_absent` reuse PR 6 recorded in `classify.go`. | design §3.5, §5.1 | `sdd-verify`; a dedicated code for the trust-store platform question would be a contract change for a later slice |
+| 6 | **The macOS limitation lives in a constant in `tls.go`** (`trustStoreMacOSLimitation`) and reaches the result's own detail, rather than being stated only in the human projection. | RG-3 requires the limitation in the output, and `report.WriteHuman` (PR 17) does not exist yet; putting it in the result means it travels through both projections when they land, instead of being re-worded later. The probe is the layer that knows *why* the measurement is unresolved. | RG-3, R-HR-04, design §3.3 | PR 17 may echo the same sentence in the human projection; the constant is the single home for the wording |
+| 7 | **The new test functions follow the artifact's filter spelling** (`TestTLSTruststore…`, `TestFacts…`), not Go's conventional `TrustStore` capitalization. | The task plan's unit-verification command for this slice is `go test ./internal/probe/ -run TestTLSTruststore`; `-run` is a case-sensitive regular expression, so a suite named `TestTLSTrustStore…` would make the documented command select **zero** tests and report a green run that executed nothing (the failure mode PR 4–PR 8 recorded for the escaped-pipe filters). Production identifiers keep Go's spelling (`tlsTrustStore`, `trustStoreOverride`). Run 14 verifies both filters select their suite. | design §3.5's naming style, tasks.md's unit-verification column | A future slice that renames the tests to `TrustStore` must update the artifact's filters in the same change |
+| 8 | **`facts.go` carries the package doc comment** for `internal/diagnosis`. | It is the package's first file; design §7's file map puts `rules.go`, `findings.go`, `diagnose.go` and `ids.go` in PR 10–PR 12, and a package with no doc comment would be a gap for every godoc reader until then. The comment states the layer's contract (pure, never re-measures, never upgrades an absence) rather than describing this file alone. | design §7, DEV-1 | PR 10 should extend rather than replace it if the package contract grows |
+| 9 | **`Fact` carries the whole observation beside the copied `(resolution, verdict, state)` triple.** | Design §5.2's `Need{Probe, Resolution, Verdict}` will match on the triple, and the conclusion texts of PR 10–PR 12 must name the label, target, reason code and verbatim detail. The one construction path (`newFact`) makes the copy and the observation impossible to disagree, and the case asserts the agreement explicitly. | design §5.2, §7 (`facts.go`), DEV-2 | PR 10 owns whether `Need` reads the copied fields or the observation's |
+| 10 | **The accessors report zero facts for a probe the run did not report** (including a result with no observations) instead of synthesising a not-measured fact. | A measurement that is missing from a run and a capability the run reported as unavailable are different facts: the first is a coverage gap, the second is a measurement. Fabricating the first would let a rule match on something the run never measured, which is the honesty rule the whole change rests on. The distinction is stated in `FactsFor`'s doc comment and pinned by `TestFactsInventNoMeasurement`. | design §5.3 (coverage vs not measured), R-HR-02 | PR 16/PR 17 own the coverage projection that makes the first case visible |
+
+---
+
+## Workload and PR boundary (PR 9)
+
+| Field | Value |
+|---|---|
+| Slice | PR 9 of 20 — "`tls.truststore` and the fact accessors" (WU16 + WU17b) |
+| PR 9 estimate in `tasks.md` | 300–440 lines (point ≈365) |
+| Host attempt ceiling | 3,000 counted changed lines |
+| **Actual authored code + tests** | **1,170 counted lines**: `tls.go` +259, `tls_test.go` +428, `facts.go` +173, `rules_test.go` +280, `classify.go` +14/−0 (14), `registry.go` +9/−7 (16) |
+| Artifact changes | `tasks.md` 7 lines changed (7 + 7 = **14** changed lines) + this appended section |
+| **Total counted changed lines for the work unit** | **≈1,320** (1,170 authored + 14 checkbox + this section) |
+| Chain per-PR cohesion ceiling | 1,000 changed lines (user-approved, revised from 600 on 2026-09-14) |
+| Review budget (session canonical) | 400 changed lines |
+| Budget status | **3.2× the slice estimate, over the 1,000-line chain ceiling and over the 400-line session budget; inside the 3,000-line attempt ceiling** |
+| PR boundary | Starts at PR 8's branch state (`internal/probe` vocabulary + classification table + seams + declared target set + runner + registry with nine probes) and ends with `internal/probe` building all **ten** probes and passing, plus the new `internal/diagnosis` package holding the fact accessors and its first suite. **PR 10 is not started**: no `ids.go`, `rules.go`, `findings.go` or `diagnose.go`, no rule id, no rule table, no finding, no open question, no `internal/transport/`, `internal/report/`, `internal/doctor/`, `cmd/` or `docs/diagnosis-report.md` |
+| Rollback boundary | Delete `internal/diagnosis/` (`facts.go` + `rules_test.go`); remove the trust-store section from `tls.go` and `tls_test.go`, revert `classify.go`'s +14 and `registry.go`'s +9/−7 (including the comment, restoring the nil slot). The module returns to its PR 8 state with the eight previously landed probes, the vocabulary, the classification table, the seams, the declared target set and the runner still green. `tasks.md` lines 254–260 revert to `- [ ]`; this appended section is the only other PR 9 change |
+| Rollback independence | Nothing outside `internal/probe` and the new `internal/diagnosis` consumes either half: the doctor wiring lands in PR 18, the rule mechanism in PR 10, and the projections in PR 16–PR 17, so the revert removes no unrelated work and leaves PR 1–PR 8 green |
+
+**Why 1,170 > 1,000, stated honestly, and the boundary the plan already names.** The overage is not padding. 428 lines are `tls_test.go` — the platform, environment and verifier fixtures plus four test functions that between them script two Linux outcomes, five unattributable cases and seven control shapes, each with its own never-a-pass assertion and its own verifier-invocation expectation — and 280 are `rules_test.go` — the run fixture plus four test functions covering the multi-observation property, the per-probe accessor, a nine-cell state map and the no-invention case. The production code is 459 lines (`tls.go` + `facts.go`), of which roughly 250 are the comments that carry the *why* of the two honest degradations, the capability ordering and the state mapping — exactly the code a reviewer has to trust in a probe that deliberately refuses to measure. The review-budget rule forbids reaching a number by deleting tests, control cases, triangulation cases, comments, docs or blank lines, and no `size:exception` was assumed, so **nothing was compressed**; the honest count is reported instead. The estimate in `tasks.md` (≈365) under-counted by 3.2×, consistent with the revision recorded in the forecast (the first three units measured 347/1400/1945 against estimates of 80/595/545).
+
+Measuring the code as written, the boundary the task plan names splits this slice into:
+
+- **PR 9a = WU16 (`tls.truststore`)** — `tls.go` 259, `tls_test.go` 428, the four `PurposeTLSTrustStore` rows in `classify.go` 14, and the last registry constructor plus its comment in `registry.go` 16, ≈ **717 counted lines** — inside the 1,000-line ceiling on its own.
+- **PR 9b = WU17b (`facts.go` and the accessor cases)** — `facts.go` 173 and `rules_test.go` 280, ≈ **453 counted lines** — inside the ceiling too, and it depends on PR 9a only for nothing at all: the accessors read `[]probe.Result` values that PR 2–PR 8 already produce, so 9b could be reviewed on its own.
+
+Almost two-thirds of the overage is test code, and the split the plan names does bring each half under the ceiling; the only reason the halves are not separate reviews is that the parent assigned PR 9 as one work unit and this executor does not move review boundaries on its own.
+
+**This executor did not split the slice or touch branches**: the parent assigned PR 9 as one unit, and a split moves a review boundary rather than the work. Against the 3,000-line attempt ceiling the work unit is inside it (≈1,320).
+
+---
+
+## Remaining unchecked tasks (PR 9 view)
+
+**Inside this slice: none.** All seven PR 9 checkbox rows are `- [x]` in `openspec/changes/reach-diagnosis-core/tasks.md` (re-read after the edits: **75 checked, 90 unchecked**; 165 rows total; `git diff --stat` on that file shows exactly 7 insertions and 7 deletions). The ownership markers were re-checked: 165 `<!-- sdd-owner: implementation -->` markers for 165 rows, every one terminal.
+
+The change-wide remainder is **90 checkbox lines in PR 10 – PR 20**, which belong to later chained slices on later branches (PR 9 targets PR 8's branch; the chain is `stacked-to-main`) and are **not** part of this work unit. The next unchecked line in the artifact, verbatim, is `tasks.md:267` — PR 10's first row, which is where the next slice resumes:
+
+```
+- [ ] **RED** — add `TestRuleIDsCoverEveryProbeState` to `rules_test.go`: every registered probe × `{PASS, FAIL, UNRESOLVED, NOT_MEASURED}` has exactly one rule id, and `AllRuleIDs()` has no duplicate and no orphan. Prove the failure first. <!-- sdd-owner: implementation -->
+```
+
+PR 10 adds `internal/diagnosis/ids.go`, `rules.go`, `findings.go`, `diagnose.go` and their cases to `rules_test.go`, building on this slice's `Fact`, `State`, `StateOf`, `Facts` and `AllStates` accessors: the rule ids are derived as `<PROBE>_<STATE>` from `AllStates`, and the rule table's `Need{Probe, Resolution, Verdict}` matches the triple a `Fact` carries.
+
+---
+
+## Risks (PR 9)
+
+| # | Risk | Status / handling |
+|---|---|---|
+| 1 | The **no-handshake decision** (deviation #3) is the slice's sharpest judgement: the probe reports macOS and override outcomes without ever calling the verifier | Deliberate and asserted (five cases, zero invocations). The reason is in the code comment and here: an answer the platform or the environment does not let the probe attribute to the local pool is an answer to a different question. `sdd-verify` is the adjudicator; the alternative is a one-line change plus a case |
+| 2 | An **unidentified platform is unresolved rather than measured** (deviation #4), so a run whose platform seam fails cannot report a trust-store verdict | This is the conservative direction: it can turn a would-be pass into an unresolved gap, never the reverse. The consequence is disclosed: it can make a run incomplete (exit 1 once PR 18 wires it), which is the honest reading of "the platform was not identified" |
+| 3 | Two reason codes are **reused** for facts on this question (`platform_unknown`, and `capability_excluded` for a missing platform/environment seam) rather than given dedicated codes (deviations #1 and #5) | The reason-code set is closed and adding a code is a contract change, so reuse with the detail naming what was missing is the honest option; the row comments record it. A dedicated code would be a later contract change |
+| 4 | The **real platform pool, the real override and a real macOS run are unexercised** | The project's own rule forbids real egress and real platform state in tests; the platform, environment and verifier seams are scripted instead. Design §9's verify-phase hand-run (a Linux live run and a macOS run whose documented exit code design §3.3 predicts as `1`) is the remaining evidence |
+| 5 | `facts.go`'s **exported surface is new** and PR 10–PR 12 will build on it | `Facts`, `FactsFor`, `StateOf`, `AllStates`, `Fact`, and the four `State` constants are the whole contract; the design's `Need{Probe, Resolution, Verdict}` matches the `Fact` triple directly, and `AllStates` exists so the rule-id coverage case can enumerate the states instead of restating them. If PR 10 wants a different accessor shape, that is a PR 10 change on top of this one — recorded so it is a decision rather than a surprise |
+| 6 | The **new classification rows sit in a file PR 2's review owns** (deviation #1) | Disclosed exactly as PR 8 disclosed its version of the same edit (+14 lines, purely additive, four existing codes). The rows are what keeps an answerless handshake and an unidentified platform from being reported as `internal_error` |
+| 7 | The **artifact's test-name spelling** (`TestTLSTruststore`) is load-bearing for its own filter (deviation #7) | Both documented filters were run and select their suite (run 14). A future rename to Go's `TestTLSTrustStore` must update the artifact's unit-verification column in the same change, or the documented command will silently select nothing |
+| 8 | The PR 9 estimate (≈365) was **3.2× under** the authored 1,170 | The forecast already records that its estimates measured 2–3× low (the first three units measured 347/1400/1945 against 80/595/545) and this slice is inside that band, mostly because five unattributable cases, seven control shapes and a nine-cell state map each need their own assertions. No task was dropped to fit |
+
+### Engram mirror note
+
+This file is the **authoritative** artefact. Its Engram mirror is now split in **eight** parts because the merged text far exceeds the store's 50,000-character content limit: part 1 — the file header plus the PR 1 and PR 2 sections — under the topic `sdd/reach-diagnosis-core/apply-progress`; part 2 — the PR 3 section — under `sdd/reach-diagnosis-core/apply-progress/part2`; part 3 — the PR 4 section — under `sdd/reach-diagnosis-core/apply-progress/part3`; part 4 — the PR 5 section — under `sdd/reach-diagnosis-core/apply-progress/part4`; part 5 — the PR 6 section — under `sdd/reach-diagnosis-core/apply-progress/part5`; part 6 — the PR 7 section — under `sdd/reach-diagnosis-core/apply-progress/part6`; part 7 — the PR 8 section — under `sdd/reach-diagnosis-core/apply-progress/part7`; and part 8 — this PR 9 section — under `sdd/reach-diagnosis-core/apply-progress/part8`.
+
+Every part states the artefact path, this file's byte size and its SHA-256 digest **as recorded when that part was saved**, and that the repository file is authoritative. Parts 1–7 therefore carry their own slice's snapshot and their digests no longer match this file, which has grown by one section since; part 8 carries the merged file's size and digest as of this run (310270 bytes, `e3ac747b6571d239ee81199af6226afd0798ec308c7fecd7b8659dc777cb974e`, measured immediately before this note was appended, so this note's own lines are not covered by that digest). A mirror part is a readable convenience copy of this artefact, not a second source of truth: read this file for the complete, current record. The PR 3–PR 8 sections' own older notes still describe the earlier two-, three-, four-, five-, six- and seven-part shapes; they are earlier sections of this artefact and are deliberately not rewritten here. The tasks artefact's mirror is not re-transcribed this run: it is corrected by a labelled checkbox-state observation, as the mirror note of that observation records.
