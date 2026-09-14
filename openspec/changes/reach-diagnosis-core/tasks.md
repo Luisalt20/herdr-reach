@@ -193,15 +193,15 @@ Second-split boundary if this group lands above 600: the concurrency ceiling, ha
 `Files`: `internal/probe/registry.go`, `internal/probe/local.go`, `internal/probe/local_test.go`, `internal/probe/probe_test.go` (enumeration case). `Depends on`: PR 4.
 Second-split boundary if this group lands above 600: the registry plus the four platform classifications (WU8) first, then the refusal, the unknown-platform degrade and the documented WSL2 limits (WU9).
 
-- [ ] **RED** — add the registry enumeration case to `probe_test.go`: exactly the ten declared probes, each with one of the four kinds, enumeration order stable across runs, and no eleventh entry. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `registry.go` with the ordered registry and a constructor per probe, starting with `local.env` only, and extend it as each probe lands. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `local.env` classification in `local.go` (Linux, macOS, WSL2, native Windows plus architecture) reading only the injected `Platform`/`FS` seams. <!-- sdd-owner: implementation -->
-- [ ] **RED + TRIANGULATE** — in `local_test.go`, script all four platform seams and assert each classification with its arch; assert the probe offers no provisioning action (R-HR-29). <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/`. <!-- sdd-owner: implementation -->
-- [ ] **RED** — add the refusal case: native Windows ⇒ `(measured, fail, node_platform_unsupported)` naming WSL2 as the supported path (R-HR-30). <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement the refusal in `local.env`, plus the degrade path where signals matching no supported classification yield `(unresolved, platform_unknown)` with no default guess. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert the WSL2 detail contains only the documented semantics (milliseconds idle, default 60000, Windows 11 only) and contains neither the child-of-init rule nor a `-1` sentinel (RG-4); assert WSL2 without systemd is detection-only and names the enabling work as a later slice. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/`. <!-- sdd-owner: implementation -->
+- [x] **RED** — add the registry enumeration case to `probe_test.go`: exactly the ten declared probes, each with one of the four kinds, enumeration order stable across runs, and no eleventh entry. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `registry.go` with the ordered registry and a constructor per probe, starting with `local.env` only, and extend it as each probe lands. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `local.env` classification in `local.go` (Linux, macOS, WSL2, native Windows plus architecture) reading only the injected `Platform`/`FS` seams. <!-- sdd-owner: implementation -->
+- [x] **RED + TRIANGULATE** — in `local_test.go`, script all four platform seams and assert each classification with its arch; assert the probe offers no provisioning action (R-HR-29). <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/`. <!-- sdd-owner: implementation -->
+- [x] **RED** — add the refusal case: native Windows ⇒ `(measured, fail, node_platform_unsupported)` naming WSL2 as the supported path (R-HR-30). <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement the refusal in `local.env`, plus the degrade path where signals matching no supported classification yield `(unresolved, platform_unknown)` with no default guess. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert the WSL2 detail contains only the documented semantics (milliseconds idle, default 60000, Windows 11 only) and contains neither the child-of-init rule nor a `-1` sentinel (RG-4); assert WSL2 without systemd is detection-only and names the enabling work as a later slice. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/`. <!-- sdd-owner: implementation -->
 
 ### PR 6 — WU10 + WU11 · `local.sshd` and `egress.hub.direct`
 

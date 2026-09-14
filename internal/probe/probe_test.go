@@ -204,6 +204,172 @@ func TestAggregateOrder(t *testing.T) {
 	}
 }
 
+// declaredProbeRegistry is PRD §5.1's probe table, transcribed row by row in
+// specification order: the ten probes, each with the single kind it declares.
+// It is deliberately a literal transcription rather than a read of the
+// declaration, so the enumeration case below detects drift between the
+// specification and the registry instead of restating the registry to itself.
+var declaredProbeRegistry = []struct {
+	name string
+	kind probe.ProbeKind
+}{
+	{"local.env", probe.ProbeLocal},
+	{"local.sshd", probe.ProbeLocal},
+	{"egress.hub.direct", probe.ProbeEgress},
+	{"egress.ssh.known", probe.ProbeEgress},
+	{"egress.ssh.443", probe.ProbeEgress},
+	{"egress.cf.7844", probe.ProbeEgress},
+	{"egress.cf.443", probe.ProbeEgress},
+	{"egress.quic", probe.ProbeProto},
+	{"tls.interception", probe.ProbeTLS},
+	{"tls.truststore", probe.ProbeTLS},
+}
+
+// probeKinds is the closed set of probe kinds (PRD §5.1): a probe declares
+// exactly one of these four, and a fifth value would be a specification change
+// rather than an implementation detail.
+var probeKinds = []probe.ProbeKind{probe.ProbeLocal, probe.ProbeEgress, probe.ProbeTLS, probe.ProbeProto}
+
+// TestRegistryEnumeratesTheDeclaredProbes is the registry's enumeration case
+// (PRD §5.1's first scenario): the registry holds exactly the ten declared
+// probes, in specification order, each with one of the four kinds, with no
+// eleventh entry, no duplicate, and an enumeration order that does not move
+// between runs. Everything a run reports is echoed in registry order (design
+// §3.3), so an unstable or extended enumeration would change output that must
+// not depend on map iteration or on which probe finished first.
+func TestRegistryEnumeratesTheDeclaredProbes(t *testing.T) {
+	registry := probe.Registry()
+	if len(registry) != len(declaredProbeRegistry) {
+		t.Fatalf("the registry holds %d probes, want the %d of PRD §5.1", len(registry), len(declaredProbeRegistry))
+	}
+
+	seen := make(map[string]bool, len(registry))
+	for i, want := range declaredProbeRegistry {
+		entry := registry[i]
+		if entry.Name != want.name || entry.Kind != want.kind {
+			t.Errorf("registry[%d] = (%q, %q), want (%q, %q) in specification order",
+				i, entry.Name, entry.Kind, want.name, want.kind)
+		}
+		if seen[entry.Name] {
+			t.Errorf("registry[%d] = %q is a duplicate: one probe, one entry", i, entry.Name)
+		}
+		seen[entry.Name] = true
+
+		// The kind must be one of the four documented values: a probe that
+		// declares something else is a probe no consumer has a contract for.
+		known := false
+		for _, kind := range probeKinds {
+			if entry.Kind == kind {
+				known = true
+				break
+			}
+		}
+		if !known {
+			t.Errorf("registry[%d] = %q declares kind %q, which is not one of the four probe kinds", i, entry.Name, entry.Kind)
+		}
+	}
+
+	// No eleventh entry: every registered name is one of the declared ten. The
+	// count plus the positional loop above already say so; this map says it
+	// against the specification rather than against the registry's own order.
+	declaredNames := make(map[string]bool, len(declaredProbeRegistry))
+	for _, declared := range declaredProbeRegistry {
+		declaredNames[declared.name] = true
+	}
+	for i, entry := range registry {
+		if !declaredNames[entry.Name] {
+			t.Errorf("registry[%d] = %q is not one of the ten declared probes", i, entry.Name)
+		}
+	}
+
+	// Stability across runs: two enumerations of the same registry must be the
+	// same sequence, because both the payload and the human report read it.
+	again := probe.Registry()
+	if len(again) != len(registry) {
+		t.Fatalf("the second enumeration holds %d probes, the first %d", len(again), len(registry))
+	}
+	for i := range registry {
+		if again[i].Name != registry[i].Name || again[i].Kind != registry[i].Kind {
+			t.Errorf("enumeration %d differs between runs: (%q, %q) vs (%q, %q)",
+				i, again[i].Name, again[i].Kind, registry[i].Name, registry[i].Kind)
+		}
+	}
+
+	// The registry hands out a copy: a caller cannot reorder or shrink the
+	// probe set through the value it read.
+	registry[0] = probe.ProbeRegistration{Name: "mutated", Kind: probe.ProbeTLS}
+	if probe.Registry()[0].Name != declaredProbeRegistry[0].name {
+		t.Fatal("Registry() handed out the package's own registry slice")
+	}
+
+	// The registry is the probe set; the declared target set is the dialed set.
+	// They name the same ten probes in the same order, so a probe cannot be
+	// registered without a declaration or declared without a registration.
+	declarations := probe.DeclaredTargets()
+	if len(declarations) != len(registry) {
+		t.Fatalf("the declared target set holds %d probes, the registry %d", len(declarations), len(registry))
+	}
+	for i, declaration := range declarations {
+		if declaration.Probe != declaredProbeRegistry[i].name {
+			t.Errorf("declared target set[%d] = %q, the registry declares %q in that position",
+				i, declaration.Probe, declaredProbeRegistry[i].name)
+		}
+	}
+}
+
+// TestRegistryBuildsOnlyRegisteredProbes asserts the second half of the
+// enumeration contract: the probes a run can actually build are the registry's
+// own entries, in registry order, each reporting the name and kind its entry
+// declares. A probe the registry cannot build is a probe whose own slice has not
+// landed yet, and building one must never produce a differently named or
+// differently kinded probe than the declaration promised.
+func TestRegistryBuildsOnlyRegisteredProbes(t *testing.T) {
+	registered := map[string]probe.ProbeKind{}
+	buildable := 0
+	for _, entry := range probe.Registry() {
+		registered[entry.Name] = entry.Kind
+		if entry.New != nil {
+			buildable++
+		}
+	}
+	if buildable == 0 {
+		t.Fatal("the registry cannot build a single probe, so a run would measure nothing")
+	}
+
+	built := probe.Probes(probe.DenyAllSeams())
+	if len(built) != buildable {
+		t.Fatalf("the registry built %d probes, its entries promise %d", len(built), buildable)
+	}
+
+	position := 0
+	for _, entry := range probe.Registry() {
+		if entry.New == nil {
+			continue
+		}
+		probeUnderTest := built[position]
+		position++
+		if probeUnderTest.Name() != entry.Name {
+			t.Errorf("built probe %d reports %q, its registry entry declares %q", position-1, probeUnderTest.Name(), entry.Name)
+		}
+		if probeUnderTest.Kind() != entry.Kind {
+			t.Errorf("built probe %q reports kind %q, its registry entry declares %q", entry.Name, probeUnderTest.Kind(), entry.Kind)
+		}
+	}
+
+	// A built probe outside the registry would be the eleventh entry the
+	// enumeration case forbids.
+	for _, probeUnderTest := range built {
+		kind, ok := registered[probeUnderTest.Name()]
+		if !ok {
+			t.Errorf("the registry built the unregistered probe %q", probeUnderTest.Name())
+			continue
+		}
+		if kind != probeUnderTest.Kind() {
+			t.Errorf("built probe %q reports kind %q, the registry declares %q", probeUnderTest.Name(), probeUnderTest.Kind(), kind)
+		}
+	}
+}
+
 // TestAggregateNeverPromotesAnUnmeasuredObservation triangulates the honesty
 // property the aggregate order exists for: an unresolved or not-measured
 // observation is never promoted to a pass, a not-measured observation is never
