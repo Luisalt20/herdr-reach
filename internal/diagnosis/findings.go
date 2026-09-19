@@ -207,6 +207,17 @@ func factDetail(observation probe.Observation) string {
 // written, or that anything on the machine changed. The post-quantum trade-off the recommendation
 // carries is worded where the recommendation is assembled (design §5.4 gives it one home in the
 // transport layer), so it is stated once rather than twice with two chances to drift.
+//
+// The `local.sshd` and `node.platform` groups landed in this slice and keep the same boundary. The
+// sshd wording never states what a configuration change would do: a divergence is quoted as the
+// two configurations the probe measured, an absence as the absence the probe reported, and the
+// positive conclusion only states what was found and measured. The node wording repeats only the
+// semantics the classification itself carries — WSL2 as the supported path on a Windows machine,
+// detection and no change — and decides no transport: whether any transport can reach the hub is
+// the transport layer's decision, and no group text here claims otherwise. The two `tls.*`
+// questions have no hand-named wording because this slice restated them to the derived fact ids,
+// whose wording is the fact wording above, and `NODE_WSL2_SYSTEMD_ABSENT` has no wording here
+// because this slice does not implement it.
 
 // namedConclusionText renders one hand-named conclusion from the facts its rule matched. It is the
 // single home of the group wording: rules.go names which conclusion it emits, exactly as for a
@@ -244,6 +255,20 @@ func namedConclusionText(id string, matched []Fact) string {
 		return cloudflareNoHTTP2AdviceQUICUsableText(matched)
 	case ruleCFHTTP2AdvisoryNotAssessed:
 		return cloudflareHTTP2AdvisoryNotAssessedText(matched)
+	case ruleSSHDPresentConfigDivergent:
+		return sshdPresentConfigDivergentText(matched)
+	case ruleSSHDAbsent:
+		return sshdAbsentText(matched)
+	case ruleSSHDEffectiveConfigNotMeasured:
+		return sshdEffectiveConfigNotMeasuredText(matched)
+	case ruleSSHDPresentConfigured:
+		return sshdPresentConfiguredText(matched)
+	case ruleNodePlatformRefusedNativeWindows:
+		return nodePlatformRefusedNativeWindowsText(matched)
+	case ruleNodePlatformUnknown:
+		return nodePlatformUnknownText(matched)
+	case ruleNodePlatformSupported:
+		return nodePlatformSupportedText(matched)
 	}
 	return ""
 }
@@ -271,6 +296,20 @@ func factsInState(matched []Fact, state State) []Fact {
 func firstFact(matched []Fact, probeName string, state State) (Fact, bool) {
 	for _, fact := range matched {
 		if fact.Probe == probeName && fact.State == state {
+			return fact, true
+		}
+	}
+	return Fact{}, false
+}
+
+// firstFactInLabel returns the first matched fact of one probe, reported under one label, in one
+// state. It is how a group conclusion quotes the exact observation it matched when one probe
+// reported several: the label is the probe's own stable one, so the conclusion names the
+// measurement rather than a position in the matched slice. The label is compared verbatim, exactly
+// as matchNeeds compared it.
+func firstFactInLabel(matched []Fact, probeName, label string, state State) (Fact, bool) {
+	for _, fact := range matched {
+		if fact.Probe == probeName && fact.Observation.Label == label && fact.State == state {
 			return fact, true
 		}
 	}
@@ -599,4 +638,125 @@ func cloudflareHTTP2AdvisoryNotAssessedText(matched []Fact) string {
 			describeFacts(notMeasured))
 	}
 	return ""
+}
+
+// sshdPresentConfigDivergentText is the wording of `SSHD_PRESENT_CONFIG_DIVERGENT`: the written
+// configuration and the configuration in force were both measured and they disagree (R-HR-18).
+//
+// The conclusion quotes the matched observation's verbatim detail, which carries both
+// configurations, and states the divergence as the measurement it is. It is never worded as a
+// success: the row exists precisely so a configuration that disagrees with the written file cannot
+// reach the positive conclusion.
+func sshdPresentConfigDivergentText(matched []Fact) string {
+	config, ok := firstFactInLabel(matched, "local.sshd", "effective config", StateFail)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("the sshd effective configuration differs from the written one: %s. This is a measured divergence and not a success: the configuration in force is not the one the written file declares.",
+		describeFact(config))
+}
+
+// sshdAbsentText is the wording of `SSHD_ABSENT`: no sshd binary is present at the documented path.
+//
+// The absence is the probe's own measured negative, quoted with its label, target and verbatim
+// detail, and the sentence states the slice boundary the probe's detail already carries: installing
+// sshd is work owned by a later slice and nothing was changed. The row matches the binary
+// observation's own label, so this text is unreachable for a stopped service — an installed binary
+// can never be reported as absent, and a stopped service is reported by its own observation and its
+// own fact.
+func sshdAbsentText(matched []Fact) string {
+	binary, ok := firstFactInLabel(matched, "local.sshd", "binary present", StateFail)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("no sshd binary is present at the documented path: %s. Installing sshd is not part of this run but work owned by a later slice, and nothing was changed.",
+		describeFact(binary))
+}
+
+// sshdEffectiveConfigNotMeasuredText is the wording of `SSHD_EFFECTIVE_CONFIG_NOT_MEASURED`: the
+// configuration in force was not measured.
+//
+// The conclusion names the excluded capability through the observation's own reason code and
+// verbatim detail and states the boundary: no claim is made about the configuration in force. It is
+// the default live case, because the zero-execution boundary excludes `sshd -T`, and it must never
+// be read as a configured or a divergent sshd.
+func sshdEffectiveConfigNotMeasuredText(matched []Fact) string {
+	config, ok := firstFactInLabel(matched, "local.sshd", "effective config", StateNotMeasured)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("the sshd effective configuration was not measured: %s. No claim is made about the configuration in force in this run.",
+		describeFact(config))
+}
+
+// sshdPresentConfiguredText is the wording of `SSHD_PRESENT_CONFIGURED`: the binary is present and
+// the configuration in force was measured and agrees with the written one.
+//
+// It is the group's positive conclusion, and it quotes both matched observations: the presence of
+// the binary and the agreement the probe measured, which carries the two configurations verbatim.
+// The service state is deliberately not part of this conclusion — a stopped service does not
+// change either measurement, and the probe reports it as its own fact.
+func sshdPresentConfiguredText(matched []Fact) string {
+	binary, ok := firstFactInLabel(matched, "local.sshd", "binary present", StatePass)
+	if !ok {
+		return ""
+	}
+	config, ok := firstFactInLabel(matched, "local.sshd", "effective config", StatePass)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("the sshd binary is present and its effective configuration was measured and agrees with the written one: %s; %s. This run reports the measurement and changes nothing.",
+		describeFact(binary), describeFact(config))
+}
+
+// nodePlatformRefusedNativeWindowsText is the wording of `NODE_PLATFORM_REFUSED_NATIVE_WINDOWS`: the
+// classification measured native Windows, which cannot host a supported node (R-HR-30).
+//
+// It quotes the classification and its own detail, names WSL2 as the supported path, and states two
+// boundaries: nothing was changed, and no transport is decided here. Whether a transport can reach
+// the hub is the transport layer's question; this package derives no viability, and a refusal of
+// the platform is not a verdict about any candidate.
+func nodePlatformRefusedNativeWindowsText(matched []Fact) string {
+	classification, ok := firstFact(matched, "local.env", StateFail)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("the node classification is a measured refusal: %s. Native Windows cannot host a supported node, and WSL2 is the supported path on a Windows machine; nothing was changed. No transport is decided here: whether any transport can reach the hub is the transport layer's decision.",
+		describeFact(classification))
+}
+
+// nodePlatformUnknownText is the wording of `NODE_PLATFORM_UNKNOWN`: the signals matched no
+// supported classification, so no platform is assumed.
+//
+// The conclusion names the missing classification through the observation's own reason code and
+// verbatim detail, which quotes the signals the seam reported. It is the absence of a
+// classification and never a default guess (R-HR-29).
+func nodePlatformUnknownText(matched []Fact) string {
+	classification, ok := firstFact(matched, "local.env", StateUnresolved)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("the node platform is unknown: %s. No platform is assumed and no default is guessed.",
+		describeFact(classification))
+}
+
+// nodePlatformSupportedText is the wording of `NODE_PLATFORM_SUPPORTED`: `local.env` measured one of
+// the supported classifications.
+//
+// The observation's target carries the classification and the architecture, and so does its own
+// detail; the conclusion splits the target with `probe.SplitNodePlatformIdentity` — the inverse of
+// the constructor the probe used — so the two halves are quoted as the values they are rather than
+// as a string. A target the splitter does not recognise is quoted verbatim rather than guessed at.
+// The sentence states the boundary: this is a detection, and nothing was changed.
+func nodePlatformSupportedText(matched []Fact) string {
+	classification, ok := firstFact(matched, "local.env", StatePass)
+	if !ok {
+		return ""
+	}
+	if platform, arch, ok := probe.SplitNodePlatformIdentity(classification.Observation.Target); ok {
+		return fmt.Sprintf("the node platform is supported: classification %q, architecture %q — %s. This run detects and reports the environment; it changes nothing.",
+			platform, arch, describeFact(classification))
+	}
+	return fmt.Sprintf("the node platform is supported: %s. This run detects and reports the environment; it changes nothing.",
+		describeFact(classification))
 }
