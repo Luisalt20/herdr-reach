@@ -755,7 +755,7 @@ This file is the **authoritative** artefact. Its Engram mirror is split in **thr
 **Branch**: `feat/probe-registry-localenv`, stacked on PR 4's branch `feat/probe-runner` (chain strategy `stacked-to-main`, so PR 5 targets PR 4's branch and **not** `main`)
 **Date**: 2026-09-14 · **Artifact store**: `both` (this file + Engram mirror, split as the mirror note at the end records)
 **Strict TDD**: active — `openspec/config.yaml` declares `strict_tdd: true` with runner `go test ./...`; RED → GREEN → TRIANGULATE → REFACTOR followed for every row of this slice, and two REDs were **re-created** rather than recorded after the fact (see “Strict-TDD integrity note”)
-**Skill resolution**: `paths-injected` — read `/Users/jack.smith/.config/opencode/skills/go-testing/SKILL.md` and `/Users/jack.smith/.config/opencode/skills/work-unit-commits/SKILL.md` before writing code; no registry fallback was needed
+**Skill resolution**: `paths-injected` — read `/home/luisalt20/.config/opencode/skills/go-testing/SKILL.md` and `/home/luisalt20/.config/opencode/skills/work-unit-commits/SKILL.md` before writing code; no registry fallback was needed
 **Delivery path consumed**: `auto-chain` / `stacked-to-main` — this run implements **only** the assigned slice and stops at its PR boundary; the PR 1, PR 2, PR 3 and PR 4 sections above are preserved unchanged
 **Commit status**: nothing committed, staged, pushed or branched by this phase; the work is left in the working tree for the orchestrator
 **How to read this file**: PR 5's entry is the section below. The current change-wide remainder is restated at the end of this section.
@@ -772,8 +772,8 @@ This file is the **authoritative** artefact. Its Engram mirror is split in **thr
 | `applyState` | `ready` |
 | `dependencies.apply` / `.verify` / `.archive` | `ready` / `blocked` / `blocked` |
 | `actionContext.mode` | `repo-local` |
-| `actionContext.workspaceRoot` | `/Users/jack.smith/projects/work/herdr-reach` |
-| `actionContext.allowedEditRoots` | `["/Users/jack.smith/projects/work/herdr-reach"]` — every file written lives inside it |
+| `actionContext.workspaceRoot` | `/home/luisalt20/projects/close/herdr-reach` |
+| `actionContext.allowedEditRoots` | `["/home/luisalt20/projects/close/herdr-reach"]` — every file written lives inside it |
 | `artifactStore` | `both` declared by the parent prompt (native `openspec`); files written under `openspec/changes/reach-diagnosis-core/` and mirrored to Engram |
 | `taskProgress` before this run | 165 total / 34 completed / 131 pending (PR 1 + PR 2 + PR 3 + PR 4) |
 | `taskProgress` after this run | 165 total / **43 completed** / 122 pending |
