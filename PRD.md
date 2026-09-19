@@ -284,6 +284,14 @@ Naming is a deliberate choice: **hub** is the place where the orchestrator lives
 └────────────────────────────────────────────────────────────────────┘
 ```
 
+> **Slice-scope note (2026-09-19).** The Step 2 mock above shows the product's verdict wording, and slice
+> R1a is narrower by design: its QUIC probe sends a raw UDP datagram and never claims that QUIC "works" or
+> is "blocked" — silence is reported as unresolved (design D8) — and the transport layer only recommends
+> forcing HTTP/2, without claiming it was applied (`specs/transport-feasibility/spec.md`, R-HR-05). Forcing
+> it is R5. The `2026-09-19` hand-run did force it on the node and confirmed the override with
+> `systemctl show cloudflared -p Environment`; that is an R5 behaviour demonstrated by hand, not a
+> capability of this slice.
+
 Note what Step 4 does **not** do: it does not touch anything without showing the plan first, and it never edits a file without backing it up. On a work laptop, a tool that silently rewrites `sshd_config` deserves to be uninstalled.
 
 ### 4.3 Hub Flow
@@ -626,6 +634,12 @@ Three independent mechanisms shut a WSL2 distribution down:
 | Forced kill | `wsl --shutdown` — by a user, an update, or another application | — |
 
 The counter-intuitive part, and the reason this took a measurement to discover: **systemd services do not count as children of `/init`.** A perfectly healthy `sshd` running as a systemd unit does not keep the instance alive. Neither does `cloudflared` as a unit. This is the single most expensive misunderstanding in the whole problem space, because the failure looks like a network fault.
+
+> **Slice-scope note (2026-09-19).** The three mechanisms below are the product's problem (R-HR-21 and
+> R-HR-22, owned by R7), but slice R1a is forbidden from stating them: its WSL2 output is limited to
+> detection and to the documented `vmIdleTimeout` semantics, and must not mention the child-of-init rule,
+> a `-1` sentinel, or keepalive and watchdog behaviour (`specs/diagnosis/spec.md`, last requirement;
+> design §10 risk RG-4). The rules stay researched-but-unstated in R1a by decision, not by omission.
 
 So persistence on WSL2 has three layers, and all three are required:
 
@@ -1042,6 +1056,18 @@ Both are cheap, both are counter-intuitive, and both are now product requirement
 | R-HR-NF-09 | The tool MUST complete a full node diagnosis in under 60 seconds on the motivating network, and MUST bound every probe with a timeout | P0 |
 | R-HR-NF-10 | The tool MUST NOT transmit telemetry or any data to a remote service | P0 |
 
+> **Slice-scope notes (2026-09-19).** Two requirements above are satisfied by a deliberately narrower
+> behaviour in slice R1a, with the owner slice named:
+>
+> - **R-HR-05** — R1a *recommends* forcing HTTP/2 and states the post-quantum trade-off; it never claims
+>   the fallback was applied or that a configuration was changed
+>   (`specs/transport-feasibility/spec.md`). The forcing itself is R5.
+> - **R-HR-16** — R1a carries the pin as *report-only knowledge with a single home*; it does not install,
+>   verify or pin anything on the machine (`specs/transport-feasibility/spec.md`). Install plus SHA256 and
+>   self-version verification are R5.
+>
+> Both are scoping, not a reversal: the product promise stands, the slice does less.
+
 ---
 
 ## 10. Screens
@@ -1090,6 +1116,16 @@ Both are cheap, both are counter-intuitive, and both are now product requirement
 | Applying fails midway | Report each step's outcome, list every path already changed with its backup, and offer undo. |
 | The selected transport's third-party requirement disappears later | `status` reports the specific missing prerequisite rather than a generic tunnel failure. |
 | `$EDITOR` is unset for a manual edit action | Fall back to `vi`, then to an in-TUI read-only view with copy instructions. |
+
+> **Slice-scope notes (2026-09-19).** Two rows above are not yet expressible by the measurement layer, and
+> today's end-to-end hand-run on the motivating network proved both matter:
+>
+> - **Access policy uses `Emails` instead of `Service Auth`** — no probe validates the front door and no
+>   reason code can carry an Access verdict: the closed set has nothing for the 403/302/530/200 signatures,
+>   and `Access` and `service token` do not appear in the three slice specs at all. Owner: R6, or a
+>   dedicated slice. Until then this row is a promise, not a capability.
+> - **QUIC fails, TCP succeeds** — R1a recommends the protocol change and never applies it; applying it is
+>   R5 (see the R-HR-05 note in §9).
 
 ---
 
