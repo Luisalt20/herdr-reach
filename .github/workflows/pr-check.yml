@@ -1,0 +1,194 @@
+# Pull-request policy for herdr-reach.
+#
+# The repository is public, so this workflow is the contribution contract as much as
+# it is a gate: it is the automated version of what a maintainer would otherwise have
+# to say by hand in every review.
+#
+# Two of these checks exist here for a specific reason: **a user-owned repository
+# cannot express `commit_message_pattern` or `branch_name_pattern` as branch-ruleset
+# rules** (GitHub answers HTTP 422; they are organization-only rules). The only place
+# left for those conventions is a CI job, so they live here and can be required
+# checks like any other.
+#
+# Every job reads the PR through the REST API instead of checking out the tree: the
+# answers are metadata, the jobs stay under ten seconds, and nothing here can be
+# influenced by the code under review.
+name: PR Policy
+
+on:
+  pull_request:
+    # Policy depends on metadata that changes without a push: the body, the labels.
+    # `reopened` is included because a reopened PR must re-earn its gates.
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+env:
+  API: ${{ github.api_url }}/repos/${{ github.repository }}
+  PR: ${{ github.event.pull_request.number }}
+  TOKEN: ${{ github.token }}
+
+jobs:
+  conventional-commits:
+    # The repository's history is Conventional Commits all the way back, and the
+    # changelog and the release notes are read from it. A commit that does not follow
+    # the convention breaks that reading, so it is checked rather than requested.
+    name: Conventional Commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every commit subject to follow the convention
+        run: |
+          set -euo pipefail
+          pattern='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9._-]+\))?!?: .+'
+          subjects="$(curl -sSf -H "Authorization: Bearer $TOKEN" \
+            "$API/pulls/$PR/commits?per_page=100" | jq -r '.[].commit.message | split("\n")[0]')"
+          if [ -z "$subjects" ]; then
+            echo "::error::no commits found for this pull request"
+            exit 1
+          fi
+          failures=0
+          while IFS= read -r subject; do
+            [ -z "$subject" ] && continue
+            if ! printf '%s' "$subject" | grep -Eq "$pattern"; then
+              echo "::error::not a Conventional Commit: \"$subject\""
+              failures=$((failures + 1))
+            fi
+          done <<< "$subjects"
+          if [ "$failures" -gt 0 ]; then
+            echo "::error::$failures commit subject(s) do not follow the Conventional Commits specification"
+            echo "Allowed types: build, chore, ci, docs, feat, fix, perf, refactor, revert, style, test"
+            exit 1
+          fi
+          echo "all commit subjects follow the convention"
+
+  branch-name:
+    # Same reason as the commit convention: the ruleset rule is unavailable on a
+    # user-owned repository, and the branch name is what the chain, the PR titles and
+    # the release notes are organised by.
+    name: Branch Name
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the head branch to be type/description
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          pattern='^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)/[a-z0-9._-]+$'
+          if printf '%s' "$HEAD_REF" | grep -Eq "$pattern"; then
+            echo "branch name ok: $HEAD_REF"
+            exit 0
+          fi
+          echo "::error::branch name \"$HEAD_REF\" does not follow type/description"
+          echo "Allowed types: feat, fix, chore, docs, style, refactor, perf, test, build, ci, revert"
+          echo "Example: feat/cloudflare-runbook"
+          exit 1
+
+  pr-size:
+    # The review budget is 400 changed lines, which is the project's own number: it is
+    # the point where one reviewer can still hold the change in their head. Above it,
+    # the change is split or the exception is explicit and labelled - never implicit.
+    name: PR Size
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the review budget or an explicit exception
+        run: |
+          set -euo pipefail
+          pr="$(curl -sSf -H "Authorization: Bearer $TOKEN" "$API/pulls/$PR")"
+          total=$(( $(jq -r '.additions' <<< "$pr") + $(jq -r '.deletions' <<< "$pr") ))
+          exception="$(jq -r '[.labels[].name] | index("size:exception") != null' <<< "$pr")"
+          echo "changed lines: $total (budget 400)"
+          if [ "$total" -le 400 ]; then
+            echo "inside the review budget"
+            exit 0
+          fi
+          if [ "$exception" = "true" ]; then
+            echo "::warning::$total changed lines exceed the 400-line budget, accepted by the size:exception label"
+            exit 0
+          fi
+          echo "::error::$total changed lines exceed the 400-line review budget"
+          echo "Split the change into reviewable slices, or ask a maintainer for the size:exception label."
+          exit 1
+
+  type-label:
+    # Exactly one type, because a change that is two things at once is usually two
+    # changes - and because the label is what the release notes are grouped by.
+    name: Type Label
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require exactly one type:* label
+        run: |
+          set -euo pipefail
+          labels="$(curl -sSf -H "Authorization: Bearer $TOKEN" "$API/pulls/$PR" \
+            | jq -r '[.labels[].name | select(startswith("type:"))] | join(" ")')"
+          count="$(printf '%s' "$labels" | wc -w | tr -d ' ')"
+          if [ "$count" = "1" ]; then
+            echo "type label ok: $labels"
+            exit 0
+          fi
+          echo "::error::expected exactly one type:* label, found $count (${labels:-none})"
+          echo "Available: type:feature, type:bug, type:docs, type:chore, type:refactor, type:test, type:ci, type:perf"
+          exit 1
+
+  linked-issue:
+    name: Linked Issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      issues: ${{ steps.parse.outputs.issues }}
+    steps:
+      - id: parse
+        name: Require a linked issue in the pull request body
+        run: |
+          set -euo pipefail
+          body="$(curl -sSf -H "Authorization: Bearer $TOKEN" "$API/pulls/$PR" | jq -r '.body // ""')"
+          # Deliberately simple: `Closes|Fixes|Resolves #N`, case-insensitive, anywhere in
+          # the body. It is a contract for humans to read, not a parser to be clever in.
+          numbers="$(printf '%s' "$body" \
+            | grep -oiE '(closes|fixes|resolves)[[:space:]]+#[0-9]+' \
+            | grep -oE '[0-9]+' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+          if [ -z "$numbers" ]; then
+            echo "::error::no linked issue found in the pull request body"
+            echo "Add a line like: Closes #12"
+            exit 1
+          fi
+          echo "linked issues: $numbers"
+          echo "issues=$numbers" >> "$GITHUB_OUTPUT"
+
+  issue-approved:
+    # Work starts on an approved issue, not on a pull request: this is the check that
+    # turns "someone is working on it" into something a maintainer actually agreed to,
+    # and it is what protects a public repository from well-meant drive-by changes.
+    name: Issue Approved
+    needs: linked-issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every linked issue to carry status:approved
+        env:
+          ISSUES: ${{ needs.linked-issue.outputs.issues }}
+        run: |
+          set -euo pipefail
+          failures=0
+          for n in $ISSUES; do
+            issue="$(curl -sS -H "Authorization: Bearer $TOKEN" "$API/issues/$n")"
+            state="$(jq -r '.state // "missing"' <<< "$issue")"
+            approved="$(jq -r '[(.labels // [])[].name] | index("status:approved") != null' <<< "$issue")"
+            if [ "$state" = "open" ] && [ "$approved" = "true" ]; then
+              echo "issue #$n is open and approved"
+              continue
+            fi
+            echo "::error::issue #$n is $state and approved=$approved"
+            failures=$((failures + 1))
+          done
+          if [ "$failures" -gt 0 ]; then
+            echo "::error::$failures linked issue(s) are not open and labelled status:approved"
+            echo "A maintainer adds status:approved after the issue's scope is agreed."
+            exit 1
+          fi
