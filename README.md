@@ -279,6 +279,10 @@ credentials. `herdr-reach` documents exactly what to ask for, in copy-pasteable 
 | TLS to the Cloudflare edge, unmodified | **yes** | if something inspects TLS, its CA must be in the trust store |
 | Outbound internet from the node | **yes** | the node never accepts an inbound connection |
 
+> **Slice-scope note (2026-09-19).** "forced automatically" is the product's behaviour. Slice R1a only
+> measures and recommends: it reports UDP/QUIC silence as unresolved rather than as a block, and it never
+> claims a fallback was applied. Forcing the protocol belongs to R5.
+
 All of these are measured for you. If one fails, you get the verdict and the reason, not a
 generic error.
 
