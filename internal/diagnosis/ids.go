@@ -32,10 +32,11 @@ import (
 // The question is the human-facing label of the rules, and it is not always the probe's name.
 // Design §5.2 names the fact question of `egress.ssh.known` `ssh.public_22`, of `egress.ssh.443`
 // `ssh.public_443` and of `egress.hub.direct` `hub.reachability`. Where §5.2 gives a probe's own
-// name to a hand-named question group (`local.sshd`, `tls.interception`, `tls.truststore`), the
-// fact question carries a `.fact` suffix instead: these rules are declared first and would
-// otherwise win the first-match race for a question name their owning slice has yet to fill, and
-// a name reserved for another slice is never consumed here.
+// name to a hand-named question group (`local.sshd`), the fact question carries a `.fact` suffix
+// instead: these rules are declared first and would otherwise win the first-match race for a
+// question name the group owns, and a reserved name is never consumed here. `tls.interception`
+// and `tls.truststore` keep their plain names because their hand-named groups were restated to
+// the derived fact ids, so those names are theirs alone.
 type factQuestion struct {
 	probe    string
 	question string
@@ -56,8 +57,8 @@ var factQuestions = []factQuestion{
 	{"egress.cf.7844", "egress.cf.7844"},
 	{"egress.cf.443", "egress.cf.443"},
 	{"egress.quic", "egress.quic"},
-	{"tls.interception", "tls.interception.fact"},
-	{"tls.truststore", "tls.truststore.fact"},
+	{"tls.interception", "tls.interception"},
+	{"tls.truststore", "tls.truststore"},
 }
 
 // factSlot is one derived fact rule's slot: the matchable state the rule states, and the exact
@@ -96,11 +97,17 @@ var factSlots = []factSlot{
 // rules.go builds its rows on these names and AllRuleIDs reports them, so one hand-named id cannot
 // be spelled two ways.
 //
-// The table of §5.2 is longer than this slice lands — the `tls.*`, `local.sshd` and `node.platform`
-// groups belong to the slice that owns their conclusions — and a later slice declares its ids here
-// in the same change that declares their rules, which is what keeps AllRuleIDs and the table in
-// step: an id without a rule and a rule without an id are the two drift directions the case that
-// compares them refuses.
+// The table of §5.2 is complete as of this slice. The two `tls.*` groups are restated to the
+// derived fact ids of `tls.interception` and `tls.truststore` — the platform/override split lives
+// in the observation's reason code and verbatim detail, which the fact conclusion already prints —
+// and the `local.sshd` and `node.platform` groups are declared here. §5.2's
+// `NODE_WSL2_SYSTEMD_ABSENT` is deliberately not declared: the service-manager signal has no
+// structured home in this slice, and matching a conclusion on wording is forbidden (R-HR-07), so
+// that id belongs to the slice that carries the signal structurally.
+//
+// A later slice declares its ids here in the same change that declares their rules, which is what
+// keeps AllRuleIDs and the table in step: an id without a rule and a rule without an id are the two
+// drift directions the case that compares them refuses.
 const (
 	// ruleSSHDestBlockedByPublicSSH is the port-versus-protocol conclusion of design §5.2's
 	// `ssh.destination` group: a public SSH measurement passed, so the protocol is not blocked, and
@@ -151,6 +158,33 @@ const (
 	// ruleCFHTTP2AdvisoryNotAssessed is the conclusion of a run whose edge did not answer on TCP: no
 	// HTTP/2 advice is given, because no measured TCP path could carry one.
 	ruleCFHTTP2AdvisoryNotAssessed = "CF_HTTP2_ADVISORY_NOT_ASSESSED"
+
+	// ruleSSHDPresentConfigDivergent is the `local.sshd` divergence conclusion: the written
+	// configuration and the configuration in force were both measured and they disagree. It is
+	// never the configured conclusion.
+	ruleSSHDPresentConfigDivergent = "SSHD_PRESENT_CONFIG_DIVERGENT"
+	// ruleSSHDAbsent is the `local.sshd` absence conclusion: no sshd binary is present at the
+	// documented path. It is reached only through the binary observation's own label, so a stopped
+	// service can never produce it.
+	ruleSSHDAbsent = "SSHD_ABSENT"
+	// ruleSSHDEffectiveConfigNotMeasured is the `local.sshd` weaker conclusion: the configuration in
+	// force was not measured. It is the default live case, because the zero-execution boundary
+	// excludes `sshd -T` and the probe reports the excluded capability itself.
+	ruleSSHDEffectiveConfigNotMeasured = "SSHD_EFFECTIVE_CONFIG_NOT_MEASURED"
+	// ruleSSHDPresentConfigured is the `local.sshd` positive conclusion: the binary is present and
+	// the configuration in force was measured and agrees with the written one.
+	ruleSSHDPresentConfigured = "SSHD_PRESENT_CONFIGURED"
+
+	// ruleNodePlatformRefusedNativeWindows is the `node.platform` refusal conclusion: `local.env`
+	// classified this machine as native Windows, which cannot host a supported node. The conclusion
+	// names WSL2 as the supported path and decides no transport.
+	ruleNodePlatformRefusedNativeWindows = "NODE_PLATFORM_REFUSED_NATIVE_WINDOWS"
+	// ruleNodePlatformUnknown is the `node.platform` absence conclusion: the signals matched no
+	// supported classification, so no platform is assumed.
+	ruleNodePlatformUnknown = "NODE_PLATFORM_UNKNOWN"
+	// ruleNodePlatformSupported is the `node.platform` positive conclusion: the classification and
+	// architecture `local.env` measured. It is a detection, not a viability decision.
+	ruleNodePlatformSupported = "NODE_PLATFORM_SUPPORTED"
 )
 
 // handNamedRuleIDs is the ordered declaration of the hand-named ids, in the order rules.go declares
@@ -171,6 +205,13 @@ var handNamedRuleIDs = []string{
 	ruleCFHTTP2AdvisedQUICUnconfirmed,
 	ruleCFNoHTTP2AdviceQUICUsable,
 	ruleCFHTTP2AdvisoryNotAssessed,
+	ruleSSHDPresentConfigDivergent,
+	ruleSSHDAbsent,
+	ruleSSHDEffectiveConfigNotMeasured,
+	ruleSSHDPresentConfigured,
+	ruleNodePlatformRefusedNativeWindows,
+	ruleNodePlatformUnknown,
+	ruleNodePlatformSupported,
 }
 
 // RuleID derives the rule id of one matchable state of one probe: the probe's stable name

@@ -12,12 +12,22 @@ package diagnosis
 // same findings and the same open questions.
 //
 // Scope. This slice declares the derived fact rules — one per fact slot of ids.go, so one per
-// registered probe and observable state — and the first of §5.2's hand-named question groups: the
-// `ssh.destination` group (PRD §1.1's port-versus-protocol disambiguation) and the
-// `cloudflare.edge` and `cloudflare.http2` groups. Hand-named ids are declared in ids.go beside the
-// derivation, so no id is spelled twice. The remaining groups of §5.2 (`tls.*`, `local.sshd`,
-// `node.platform`) are declared by the slices that own their conclusions; the mechanism expresses
-// them exactly as it expresses these, and no conclusion text for them is invented here.
+// registered probe and observable state — and every hand-named question group of §5.2: the
+// `ssh.destination` group (PRD §1.1's port-versus-protocol disambiguation), the `cloudflare.edge`
+// and `cloudflare.http2` groups, and the `local.sshd` and `node.platform` groups. The two `tls.*`
+// groups are restated to the derived fact ids of `tls.interception` and `tls.truststore` rather
+// than declared as hand-named groups: the fact conclusions already carry each observation's reason
+// code and verbatim detail, which is where the platform/override split lives (RG-3). Hand-named
+// ids are declared in ids.go beside the derivation, so no id is spelled twice.
+//
+// `Need` gained an optional observation label in this slice. `local.sshd` reports three
+// observations and §5.2's rows must tell an absent binary from a stopped service, which share one
+// (resolution, verdict) pair; a non-empty Label matches only the observation the probe reported
+// under that label, while an empty one keeps the semantics every earlier row has.
+//
+// No transport viability is derived anywhere in this package. The `node.platform` refusal names
+// WSL2 as the supported path because the classification does, and every conclusion that borders on
+// transport states that the transport decision belongs to the transport layer.
 //
 // A hand-named id may be carried by more than one row, and that is the one thing this file adds to
 // the mechanism PR 10 landed. §5.2's `Requires` column contains disjunctions — a hub failure beside
@@ -40,16 +50,27 @@ import (
 	"github.com/Luisalt20/herdr-reach/internal/probe"
 )
 
-// Need is one observable state a rule requires: the probe that reported it, and the exact
-// resolution and verdict the measurement layer attached to that observation.
+// Need is one observable state a rule requires: the probe that reported it, the exact resolution
+// and verdict the measurement layer attached to that observation, and — when the probe reported
+// several observations — the label of the one observation the need is about.
 //
 // It is deliberately the triple rather than a State value. The table states what must have been
 // measured, and the matchable state is derived from exactly this triple in one place (StateOf,
 // facts.go); matching on the triple also means an observation the vocabulary forbids — a definite
 // verdict on a not-measured observation, for instance — satisfies no need at all, instead of
 // being quietly mapped onto the absence of an answer.
+//
+// Label is the optional fourth part, and it exists because one probe can report several
+// observations whose triples are identical: `local.sshd`'s absent binary and stopped service are
+// both measured failures with the vocabulary's shared `sshd_absent` reason code, and a row that
+// must match one of them cannot say which with the triple alone. An empty Label means "any
+// observation of the probe" — exactly the semantics every earlier row has — and a non-empty Label
+// matches only the observation the probe reported under that label. Labels are the probe's own
+// declared, stable ones: the reasoning layer and the human projection both quote them, so a rename
+// is a contract change on both sides rather than an internal detail.
 type Need struct {
 	Probe      string
+	Label      string
 	Resolution probe.Resolution
 	Verdict    probe.Verdict
 }
@@ -134,9 +155,18 @@ const (
 	// questionCloudflareHTTP2 is the HTTP/2 advice question: should this run recommend forcing the
 	// tunnel transport to HTTP/2?
 	questionCloudflareHTTP2 = "cloudflare.http2"
+	// questionLocalSSHD is the sshd question: is an sshd present on this machine, and is the
+	// configuration in force the one that was written? It is the group question, distinct from the
+	// fact question `local.sshd.fact`, because §5.2 gives the probe's own name to the group.
+	questionLocalSSHD = "local.sshd"
+	// questionNodePlatform is the node-classification question: what kind of machine is this node,
+	// and is it one this tool supports?
+	questionNodePlatform = "node.platform"
 )
 
-// needInState builds the need for one probe in one matchable state.
+// needInState builds the need for one probe in one matchable state, matching any observation the
+// probe reported: the label-less form of needLabeled, and the semantics every derived fact rule
+// and every earlier group row has.
 //
 // It reads the slot declaration the derived fact rules are built from (ids.go), so a hand-named row
 // and a derived rule can never spell one observable two ways: the state names which of the four
@@ -145,12 +175,26 @@ const (
 // yields a need no observation can satisfy — the empty pair — instead of a need that would match
 // anything.
 func needInState(probeName string, state State) Need {
+	return needLabeled(probeName, "", state)
+}
+
+// needLabeled builds the need for one labeled observation of one probe in one matchable state.
+//
+// An empty label keeps needInState's semantics exactly: any observation of the probe satisfies the
+// need. A non-empty label narrows the need to the observation the probe reported under that label,
+// which is what lets a row distinguish two observations that carry the same (resolution, verdict)
+// pair. The label is compared verbatim and is never parsed: the probe's own stable label is the
+// contract, and a conclusion that quotes the observation quotes the same string.
+//
+// The slot lookup is shared with needInState, so a hand-named row and a derived rule cannot spell
+// one observable two ways, and an unknown state still yields a need no observation can satisfy.
+func needLabeled(probeName, label string, state State) Need {
 	for _, slot := range factSlots {
 		if slot.state == state {
-			return Need{Probe: probeName, Resolution: slot.resolution, Verdict: slot.verdict}
+			return Need{Probe: probeName, Label: label, Resolution: slot.resolution, Verdict: slot.verdict}
 		}
 	}
-	return Need{Probe: probeName}
+	return Need{Probe: probeName, Label: label}
 }
 
 // groupRules is the hand-named question groups of §5.2 that this slice lands. Their rows are built
@@ -161,6 +205,8 @@ func groupRules() []Rule {
 	table = append(table, sshDestinationRules()...)
 	table = append(table, cloudflareEdgeRules()...)
 	table = append(table, cloudflareHTTP2Rules()...)
+	table = append(table, sshdRules()...)
+	table = append(table, nodePlatformRules()...)
 	return table
 }
 
@@ -406,6 +452,83 @@ func cloudflareHTTP2Rules() []Rule {
 	}
 }
 
+// sshdRules is the `local.sshd` group of design §5.2: is an sshd present on this machine, and is
+// the configuration in force the one that was written (R-HR-18)?
+//
+// The group reads two of the probe's three observations by their labels. `binary present` and
+// `service state` share the vocabulary's `sshd_absent` reason code and the measured-failure triple
+// — the closed reason set has no code for "installed but not running" — so without the label an
+// absent binary and a stopped service would match the same row, and the conclusion that says
+// "installing sshd is a later slice" could be produced by a binary that is installed and merely
+// stopped. The labels are the probe's own stable ones, declared in local.go, and the cases pin them
+// literally.
+//
+// The order follows the table's FAIL → NOT_MEASURED → PASS discipline, which is what §5.2's
+// suppression requires: a diverging configuration fires the divergence conclusion and an absent
+// binary fires the absence conclusion, so neither can ever be reported as configured, and the
+// not-measured row stays the default live case — the zero-execution boundary excludes `sshd -T`,
+// so a live run reports the excluded capability rather than a configured sshd.
+//
+// The service state is deliberately not required. A stopped service is a fact the probe reports and
+// the derived fact rule states; it does not change whether the binary is present and its
+// configuration agrees, which is the question this group answers. Requiring the service would also
+// mean a machine that has sshd installed and configured but not running could not receive the
+// positive conclusion its measurements support.
+func sshdRules() []Rule {
+	return []Rule{
+		// The written configuration and the configuration in force were both measured and they
+		// disagree. This is the first row so a divergence can never fall through to the positive
+		// conclusion below.
+		newRule(ruleSSHDPresentConfigDivergent, questionLocalSSHD, namedConclusion(ruleSSHDPresentConfigDivergent),
+			needLabeled("local.sshd", "effective config", StateFail),
+		),
+		// No sshd binary at the documented path. The label keeps a stopped service out of this row.
+		newRule(ruleSSHDAbsent, questionLocalSSHD, namedConclusion(ruleSSHDAbsent),
+			needLabeled("local.sshd", "binary present", StateFail),
+		),
+		// The configuration in force was not measured: the probe reports the excluded capability, and
+		// no claim is made about what configuration is in force. This is the default live case.
+		newRule(ruleSSHDEffectiveConfigNotMeasured, questionLocalSSHD, namedConclusion(ruleSSHDEffectiveConfigNotMeasured),
+			needLabeled("local.sshd", "effective config", StateNotMeasured),
+		),
+		// The positive conclusion: the binary is present and the effective configuration agrees with
+		// the written one. Both labels are required, so neither half can stand in for the other.
+		newRule(ruleSSHDPresentConfigured, questionLocalSSHD, namedConclusion(ruleSSHDPresentConfigured),
+			needLabeled("local.sshd", "binary present", StatePass),
+			needLabeled("local.sshd", "effective config", StatePass),
+		),
+	}
+}
+
+// nodePlatformRules is the `node.platform` group of design §5.2: what kind of machine is this node,
+// and is it one this tool supports?
+//
+// `local.env` reports one observation, so every row needs the probe without a label and the group
+// answers the classification's own question over the probe's derived states. The order follows the
+// same FAIL → UNRESOLVED → PASS discipline as the fact slots: a measured refusal is declared first
+// so it can never be reported as supported, and an unclassifiable machine is the absence it is
+// rather than a default.
+//
+// The refusal conclusion names WSL2 as the supported path because the classification's own wording
+// does (R-HR-30), and it decides no transport: whether any transport can reach the hub is the
+// transport layer's decision, and this package derives no viability anywhere.
+func nodePlatformRules() []Rule {
+	return []Rule{
+		// Native Windows: a measured refusal, declared before any weaker reading.
+		newRule(ruleNodePlatformRefusedNativeWindows, questionNodePlatform, namedConclusion(ruleNodePlatformRefusedNativeWindows),
+			needInState("local.env", StateFail),
+		),
+		// The signals matched no supported classification: no platform is assumed.
+		newRule(ruleNodePlatformUnknown, questionNodePlatform, namedConclusion(ruleNodePlatformUnknown),
+			needInState("local.env", StateUnresolved),
+		),
+		// One of the supported classifications was measured.
+		newRule(ruleNodePlatformSupported, questionNodePlatform, namedConclusion(ruleNodePlatformSupported),
+			needInState("local.env", StatePass),
+		),
+	}
+}
+
 // dependsOn is the observable set a rule rests on: the probes its Match names, in Match order,
 // each once. It is §5.2's DependsOn contract, and it is derived here so a rule cannot declare a
 // dependency its Match does not carry.
@@ -461,15 +584,21 @@ func matchRule(question string, facts []Fact) (Rule, []Fact, bool) {
 // returns the facts that satisfied them in Match order, each need's own matches in the order the
 // run reported its observations.
 //
-// The comparison is the exact triple, never the fact's derived state: a need states what the
-// measurement layer had to report, and an observation whose triple the vocabulary forbids must
-// satisfy no need rather than inherit the state the mapping assigns to it.
+// The comparison is the exact triple — plus the need's label when it declares one — never the
+// fact's derived state: a need states what the measurement layer had to report, and an observation
+// whose triple the vocabulary forbids must satisfy no need rather than inherit the state the
+// mapping assigns to it. A need with an empty label matches any observation of its probe, which is
+// the semantics every earlier row has; a labeled need matches only the observation reported under
+// that label, so two observations sharing one triple are still distinguishable.
 func matchNeeds(needs []Need, facts []Fact) ([]Fact, bool) {
 	var matched []Fact
 	for _, need := range needs {
 		satisfied := false
 		for _, fact := range facts {
 			if fact.Probe != need.Probe || fact.Resolution != need.Resolution || fact.Verdict != need.Verdict {
+				continue
+			}
+			if need.Label != "" && fact.Observation.Label != need.Label {
 				continue
 			}
 			matched = append(matched, fact)
@@ -497,7 +626,9 @@ func questions() []string {
 }
 
 // neededStates names the observable states the table declared for one question, in declaration
-// order and without duplicates, one entry per (probe, state) pair: "<probe> <STATE>".
+// order and without duplicates, one entry per observable: "<probe> <STATE>" for a need that matches
+// any observation of its probe, and "<probe> (<label>) <STATE>" for a need that matches one labeled
+// observation — the label is how a reader tells two states of one probe apart.
 //
 // It is what an open question reports when no rule of the question matched, so a reader can see
 // which measurements the table looked for and did not get — design §5.2's no-fall-through rule
@@ -519,10 +650,16 @@ func neededStates(question string) []string {
 	return needed
 }
 
-// needState names one need the way an open question reports it: the probe, then the matchable
-// state the need's resolution and verdict pair maps to. The mapping is StateOf — the same one
+// needState names one need the way an open question reports it: the probe, then the observation's
+// label when the need carries one, then the matchable state the need's resolution and verdict pair
+// maps to. A label-less need keeps the original "<probe> <STATE>" spelling, which the cases pin
+// literally; a labeled need reports "<probe> (<label>) <STATE>", because two needs of one probe can
+// map to the same state and only the label tells them apart. The mapping is StateOf — the same one
 // facts.go uses — so a state the table needs and a state a fact carries are spelled identically.
 func needState(need Need) string {
 	state := StateOf(probe.Observation{Resolution: need.Resolution, Verdict: need.Verdict})
-	return need.Probe + " " + string(state)
+	if need.Label == "" {
+		return need.Probe + " " + string(state)
+	}
+	return need.Probe + " (" + need.Label + ") " + string(state)
 }

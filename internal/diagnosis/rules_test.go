@@ -369,6 +369,13 @@ func TestRuleIDsCoverEveryProbeState(t *testing.T) {
 		"CF_HTTP2_ADVISED_QUIC_UNCONFIRMED",
 		"CF_NO_HTTP2_ADVICE_QUIC_USABLE",
 		"CF_HTTP2_ADVISORY_NOT_ASSESSED",
+		"SSHD_PRESENT_CONFIG_DIVERGENT",
+		"SSHD_ABSENT",
+		"SSHD_EFFECTIVE_CONFIG_NOT_MEASURED",
+		"SSHD_PRESENT_CONFIGURED",
+		"NODE_PLATFORM_REFUSED_NATIVE_WINDOWS",
+		"NODE_PLATFORM_UNKNOWN",
+		"NODE_PLATFORM_SUPPORTED",
 	}
 
 	// Both halves are checked the same way: every id AllRuleIDs reports has to be a derived id of a
@@ -753,10 +760,11 @@ func TestRulesOneCasePerID(t *testing.T) {
 		}
 	}
 
-	// The fact questions design §5.2 names for the derived rules, pinned literally, together with
-	// the three whose probe's own name is the label of a hand-named question group a later slice
-	// owns: those fact questions carry a `.fact` suffix so the reserved name stays free, and the
-	// suffix is a decision that has to be visible rather than an accident of naming.
+	// The fact questions design §5.2 names for the derived rules, pinned literally. `local.sshd`
+	// answers its fact question under `local.sshd.fact` because §5.2 gives the probe's own name to
+	// the hand-named group, and the suffix is a decision that has to be visible rather than an
+	// accident of naming. The two `tls.*` questions keep their plain names because this slice
+	// restated §5.2's hand-named tls ids to the derived ones, so no group shadows them.
 	named := []struct {
 		probe    string
 		question string
@@ -767,8 +775,8 @@ func TestRulesOneCasePerID(t *testing.T) {
 		{"egress.quic", "egress.quic"},
 		{"local.env", "local.env"},
 		{"local.sshd", "local.sshd.fact"},
-		{"tls.interception", "tls.interception.fact"},
-		{"tls.truststore", "tls.truststore.fact"},
+		{"tls.interception", "tls.interception"},
+		{"tls.truststore", "tls.truststore"},
 	}
 	for _, want := range named {
 		rule := ruleFor(t, diagnosis.RuleID(want.probe, diagnosis.StatePass))
@@ -1709,4 +1717,517 @@ func TestCloudflareCounterfactuals(t *testing.T) {
 			t.Errorf("the conclusion %q does not name why the edge was not measured", finding.Conclusion)
 		}
 	})
+}
+
+// sshdFixture names one scripted observation of the `local.sshd` probe: the observation's own label
+// — one of the three the probe declares in local.go — and the state it reported.
+type sshdFixture struct {
+	label string
+	state diagnosis.State
+}
+
+// The three observation labels the `local.sshd` probe declares, pinned literally because the
+// probe's constants are unexported and the group's rows match on these exact strings: a rename has
+// to be an explicit act on both sides.
+const (
+	testSSHDLabelBinary  = "binary present"
+	testSSHDLabelService = "service state"
+	testSSHDLabelConfig  = "effective config"
+)
+
+// sshdObservation builds the observation one `local.sshd` label reports in one state, with the
+// target, reason code and verbatim detail the probe's own wording carries: the documented binary
+// path for the binary observation, the unit list for the service observation, and the written
+// configuration path for the effective-config observation. The two configurations of the diverging
+// and agreeing cases are stated in the detail because the group conclusion quotes it.
+func sshdObservation(t *testing.T, label string, state diagnosis.State) probe.Observation {
+	t.Helper()
+	switch label {
+	case testSSHDLabelBinary:
+		switch state {
+		case diagnosis.StatePass:
+			return observation(label, "/usr/sbin/sshd", probe.Measured, probe.Pass, probe.ReasonOK,
+				"the sshd binary is present at /usr/sbin/sshd")
+		case diagnosis.StateFail:
+			return observation(label, "/usr/sbin/sshd", probe.Measured, probe.Fail, probe.ReasonSSHDAbsent,
+				"the sshd binary is not present at /usr/sbin/sshd: no sshd is installed here, and installing it is not part of this run but work owned by a later slice; nothing was changed")
+		case diagnosis.StateNotMeasured:
+			return observation(label, "/usr/sbin/sshd", probe.NotMeasured, probe.Indeterminate, probe.ReasonCapabilityExcluded,
+				"/usr/sbin/sshd: no filesystem seam is injected for this run, so the sshd binary cannot be checked")
+		case diagnosis.StateUnresolved:
+			return observation(label, "/usr/sbin/sshd", probe.Unresolved, probe.Indeterminate, probe.ReasonInternalError,
+				"/usr/sbin/sshd: the path could not be checked, so its absence is not claimed")
+		}
+	case testSSHDLabelService:
+		switch state {
+		case diagnosis.StatePass:
+			return observation(label, "sshd.service,ssh.service", probe.Measured, probe.Pass, probe.ReasonOK,
+				"the sshd service is running: systemctl is-active sshd.service ssh.service reported \"active\" for sshd.service,ssh.service")
+		case diagnosis.StateFail:
+			return observation(label, "sshd.service,ssh.service", probe.Measured, probe.Fail, probe.ReasonSSHDAbsent,
+				"the sshd service is not running: systemctl is-active sshd.service ssh.service answered \"inactive\" for sshd.service,ssh.service, so no sshd unit is active on this machine; this run reports the state it read and changes nothing")
+		case diagnosis.StateNotMeasured:
+			return observation(label, "sshd.service,ssh.service", probe.NotMeasured, probe.Indeterminate, probe.ReasonCapabilityExcluded,
+				"systemctl is-active sshd.service ssh.service: no command runner is injected for this run")
+		case diagnosis.StateUnresolved:
+			return observation(label, "sshd.service,ssh.service", probe.Unresolved, probe.Indeterminate, probe.ReasonInternalError,
+				"systemctl is-active sshd.service ssh.service: the command produced no answer to classify")
+		}
+	case testSSHDLabelConfig:
+		switch state {
+		case diagnosis.StatePass:
+			return observation(label, "/etc/ssh/sshd_config", probe.Measured, probe.Pass, probe.ReasonOK,
+				"/etc/ssh/sshd_config agrees with the configuration in force reported by sshd -T for every one of the 2 directive(s) the written file sets; written configuration of /etc/ssh/sshd_config: Port 22, PermitRootLogin no; effective configuration reported by sshd -T: port 22, permitrootlogin no")
+		case diagnosis.StateFail:
+			return observation(label, "/etc/ssh/sshd_config", probe.Measured, probe.Fail, probe.ReasonSSHDConfigDivergence,
+				"the written configuration at /etc/ssh/sshd_config is not the configuration in force: sshd -T disagrees with it on 1 of the 2 directive(s) the written file sets (port); written configuration of /etc/ssh/sshd_config: Port 22; effective configuration reported by sshd -T: port 2222")
+		case diagnosis.StateNotMeasured:
+			return observation(label, "/etc/ssh/sshd_config", probe.NotMeasured, probe.Indeterminate, probe.ReasonCapabilityExcluded,
+				"sshd -T: no command runner is injected for this run, so the configuration in force cannot be measured")
+		case diagnosis.StateUnresolved:
+			return observation(label, "/etc/ssh/sshd_config", probe.Unresolved, probe.Indeterminate, probe.ReasonInternalError,
+				"sshd -T: the command produced no answer to classify")
+		}
+	}
+	t.Fatalf("the local.sshd cases have no fixture for the label %q in state %q", label, state)
+	return probe.Observation{}
+}
+
+// sshdRun builds the run the fixtures describe: one `local.sshd` result carrying its observations in
+// the order the probe reports them — the binary, the service state and the effective configuration.
+// A label no fixture names is not reported at all, which is how a case expresses a measurement the
+// run did not make, distinct from a not-measured observation the probe reports itself.
+func sshdRun(t *testing.T, fixtures ...sshdFixture) []probe.Result {
+	t.Helper()
+	var observations []probe.Observation
+	for _, label := range []string{testSSHDLabelBinary, testSSHDLabelService, testSSHDLabelConfig} {
+		for _, fixture := range fixtures {
+			if fixture.label != label {
+				continue
+			}
+			observations = append(observations, sshdObservation(t, fixture.label, fixture.state))
+		}
+	}
+	if len(observations) == 0 {
+		return nil
+	}
+	return []probe.Result{result("local.sshd", probe.ProbeLocal, observations...)}
+}
+
+// TestSSHDGroupOneCasePerID is design §5.2's per-rule case for the `local.sshd` group: one case per
+// id, each asserting that the declared row fired, that its conclusion carries the measurement the
+// row rested on, and that DependsOn names exactly that probe and no other.
+//
+// The rows match on the probe's own observation labels, so every case is expressed as the
+// observations the probe reported and the labels disappear behind the rule that fired. The two
+// absences matter as much as the outcomes: a diverging configuration is a measured divergence and
+// never a success, and a configuration that could not be measured is the weaker conclusion rather
+// than a configured sshd.
+//
+// As in the node group, each `wantContains` list pins at least one phrase from the conclusion's own
+// sentence: the absent-binary case asserts "Installing sshd is not part of this run", which its
+// quoted detail ("installing it is not part of this run") does not carry, and the configured case
+// asserts "its effective configuration was measured" and "reports the measurement".
+func TestSSHDGroupOneCasePerID(t *testing.T) {
+	cases := []struct {
+		name string
+		run  []sshdFixture
+		// want is the rule id the run must fire.
+		want string
+		// wantContains lists phrases the conclusion must carry: the row's own evidence.
+		wantContains []string
+		// wantAbsent lists phrases the conclusion must not carry.
+		wantAbsent []string
+		// wantDepends is the observable set the fired clause rests on, in Match order.
+		wantDepends []string
+	}{
+		{
+			name: "a present binary beside a diverging effective configuration reports the divergence",
+			run: []sshdFixture{
+				{testSSHDLabelBinary, diagnosis.StatePass},
+				{testSSHDLabelConfig, diagnosis.StateFail},
+			},
+			want:         "SSHD_PRESENT_CONFIG_DIVERGENT",
+			wantContains: []string{"differs from the written one", "not a success", testSSHDLabelConfig, "/etc/ssh/sshd_config", "Port 22", "port 2222"},
+			wantAbsent:   []string{"agrees with the written one"},
+			wantDepends:  []string{"local.sshd"},
+		},
+		{
+			name: "an absent binary reports the absence and the later slice",
+			run: []sshdFixture{
+				{testSSHDLabelBinary, diagnosis.StateFail},
+				{testSSHDLabelConfig, diagnosis.StateNotMeasured},
+			},
+			want:         "SSHD_ABSENT",
+			wantContains: []string{"no sshd binary is present", "/usr/sbin/sshd", "later slice", "nothing was changed", "Installing sshd is not part of this run"},
+			wantAbsent:   []string{"differs from the written one", "agrees with the written one"},
+			wantDepends:  []string{"local.sshd"},
+		},
+		{
+			name: "an effective configuration that could not be measured is the weaker conclusion",
+			run: []sshdFixture{
+				{testSSHDLabelBinary, diagnosis.StatePass},
+				{testSSHDLabelService, diagnosis.StateNotMeasured},
+				{testSSHDLabelConfig, diagnosis.StateNotMeasured},
+			},
+			want:         "SSHD_EFFECTIVE_CONFIG_NOT_MEASURED",
+			wantContains: []string{"was not measured", "capability_excluded", "no command runner", "No claim is made about the configuration in force"},
+			wantAbsent:   []string{"agrees with the written one", "no sshd binary is present"},
+			wantDepends:  []string{"local.sshd"},
+		},
+		{
+			name: "a present binary with an agreeing effective configuration is the positive conclusion",
+			run: []sshdFixture{
+				{testSSHDLabelBinary, diagnosis.StatePass},
+				{testSSHDLabelService, diagnosis.StatePass},
+				{testSSHDLabelConfig, diagnosis.StatePass},
+			},
+			want:         "SSHD_PRESENT_CONFIGURED",
+			wantContains: []string{testSSHDLabelBinary, testSSHDLabelConfig, "binary is present", "agrees with the written one", "/usr/sbin/sshd", "/etc/ssh/sshd_config", "its effective configuration was measured", "reports the measurement"},
+			wantAbsent:   []string{"differs from the written one", "no sshd binary is present"},
+			wantDepends:  []string{"local.sshd"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := diagnosis.Diagnose(sshdRun(t, tc.run...))
+			finding := findingFor(t, got, "local.sshd")
+			if finding.Rule != tc.want {
+				t.Errorf("the run fired %q, want %q", finding.Rule, tc.want)
+			}
+			if finding.Conclusion == "" {
+				t.Fatalf("the rule %q concluded nothing", tc.want)
+			}
+			for _, want := range tc.wantContains {
+				if !strings.Contains(finding.Conclusion, want) {
+					t.Errorf("the conclusion %q does not carry %q", finding.Conclusion, want)
+				}
+			}
+			for _, absent := range tc.wantAbsent {
+				if strings.Contains(finding.Conclusion, absent) {
+					t.Errorf("the conclusion %q carries %q, which this row must not claim", finding.Conclusion, absent)
+				}
+			}
+			if !reflect.DeepEqual(finding.DependsOn, tc.wantDepends) {
+				t.Errorf("the conclusion depends on %v, want %v", finding.DependsOn, tc.wantDepends)
+			}
+		})
+	}
+}
+
+// nodePlatformObservation builds the one observation `local.env` reports in one state, with the
+// label, target, reason code and verbatim detail the probe's own wording carries: the classification
+// and the architecture in the target, and the classification's own detail text.
+func nodePlatformObservation(t *testing.T, state diagnosis.State) probe.Observation {
+	t.Helper()
+	switch state {
+	case diagnosis.StateFail:
+		return observation("platform", "windows-native/x86_64", probe.Measured, probe.Fail, probe.ReasonNodePlatformUnsupported,
+			"native Windows node (GOOS \"windows\", architecture \"x86_64\"): this tool does not operate on Windows itself, and WSL2 is the supported path on a Windows machine; nothing was changed")
+	case diagnosis.StateUnresolved:
+		return observation("platform", "unknown/unknown", probe.Unresolved, probe.Indeterminate, probe.ReasonPlatformUnknown,
+			"the platform signals (GOOS \"plan9\", architecture \"unknown\") match no supported classification (linux, macOS, wsl2 or native Windows); no platform is assumed and no default is guessed")
+	case diagnosis.StatePass:
+		return observation("platform", "linux/x86_64", probe.Measured, probe.Pass, probe.ReasonOK,
+			"linux node (architecture \"x86_64\"): systemd is the running service manager; this run detects and reports the environment and changes nothing")
+	}
+	t.Fatalf("the node.platform cases have no observation for the state %q", state)
+	return probe.Observation{}
+}
+
+// TestNodePlatformOneCasePerID is design §5.2's per-rule case for the `node.platform` group: one
+// case per id, each asserting that the classification `local.env` measured decides the conclusion
+// and that the conclusion quotes the classification it rests on.
+//
+// The refusal names WSL2 as the supported path and decides nothing about transport; the unknown
+// case assumes no platform; the supported case quotes the classification and the architecture the
+// observation's target carries.
+//
+// Each `wantContains` list also pins at least one phrase that appears only in the conclusion's own
+// sentence. The fixture detail and the conclusion deliberately share wording (the conclusion quotes
+// the observation), so a list built only from shared phrases cannot tell a dropped conclusion claim
+// from a quoted one — the refusal case's own sentence, for instance, must be asserted through
+// "cannot host a supported node" and "No transport is decided here", which the detail never carries.
+func TestNodePlatformOneCasePerID(t *testing.T) {
+	cases := []struct {
+		name string
+		// state is the state `local.env` reports, the group's whole evidence.
+		state diagnosis.State
+		// want is the rule id the run must fire.
+		want string
+		// wantContains lists phrases the conclusion must carry.
+		wantContains []string
+		// wantAbsent lists phrases the conclusion must not carry.
+		wantAbsent []string
+	}{
+		{
+			name:         "native Windows is a measured refusal that names WSL2",
+			state:        diagnosis.StateFail,
+			want:         "NODE_PLATFORM_REFUSED_NATIVE_WINDOWS",
+			wantContains: []string{"measured refusal", "native Windows", "WSL2", "nothing was changed", "transport layer", "cannot host a supported node", "No transport is decided here"},
+			wantAbsent:   []string{"node platform is supported"},
+		},
+		{
+			name:         "signals matching no supported classification assume no platform",
+			state:        diagnosis.StateUnresolved,
+			want:         "NODE_PLATFORM_UNKNOWN",
+			wantContains: []string{"platform is unknown", "platform_unknown", "No platform is assumed", "unknown/unknown"},
+			wantAbsent:   []string{"node platform is supported"},
+		},
+		{
+			name:         "a supported classification quotes the classification and the architecture",
+			state:        diagnosis.StatePass,
+			want:         "NODE_PLATFORM_SUPPORTED",
+			wantContains: []string{"node platform is supported", "linux", "x86_64", "changes nothing", "it changes nothing"},
+			wantAbsent:   []string{"measured refusal"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			run := []probe.Result{result("local.env", probe.ProbeLocal, nodePlatformObservation(t, tc.state))}
+			got := diagnosis.Diagnose(run)
+			finding := findingFor(t, got, "node.platform")
+			if finding.Rule != tc.want {
+				t.Errorf("the run fired %q, want %q", finding.Rule, tc.want)
+			}
+			if finding.Conclusion == "" {
+				t.Fatalf("the rule %q concluded nothing", tc.want)
+			}
+			for _, want := range tc.wantContains {
+				if !strings.Contains(finding.Conclusion, want) {
+					t.Errorf("the conclusion %q does not carry %q", finding.Conclusion, want)
+				}
+			}
+			for _, absent := range tc.wantAbsent {
+				if strings.Contains(finding.Conclusion, absent) {
+					t.Errorf("the conclusion %q carries %q, which this row must not claim", finding.Conclusion, absent)
+				}
+			}
+			if !reflect.DeepEqual(finding.DependsOn, []string{"local.env"}) {
+				t.Errorf("the conclusion depends on %v, want the classification probe", finding.DependsOn)
+			}
+		})
+	}
+}
+
+// TestSSHDGroupCounterfactuals is the `local.sshd` group's triangulation: the runs the label and
+// the row order exist for.
+//
+// Three properties are asserted rather than assumed. A diverging configuration beside a present
+// binary fires the divergence conclusion and never the configured one (R-HR-18). The default live
+// case — every one of the probe's three observations not measured, as the deny-all seams produce —
+// fires the not-measured conclusion and makes no claim about the configuration in force. And a
+// present binary with an agreeing configuration fires the positive conclusion even beside a stopped
+// service: the group does not require the service, while the fact layer still reports the stopped
+// service as its own finding and no conclusion claims the binary is absent.
+func TestSSHDGroupCounterfactuals(t *testing.T) {
+	t.Run("a diverging configuration never fires the configured conclusion", func(t *testing.T) {
+		run := sshdRun(t,
+			sshdFixture{testSSHDLabelBinary, diagnosis.StatePass},
+			sshdFixture{testSSHDLabelConfig, diagnosis.StateFail},
+		)
+		finding := findingFor(t, diagnosis.Diagnose(run), "local.sshd")
+		if finding.Rule != "SSHD_PRESENT_CONFIG_DIVERGENT" {
+			t.Fatalf("the run fired %q, want %q", finding.Rule, "SSHD_PRESENT_CONFIG_DIVERGENT")
+		}
+		if finding.Rule == "SSHD_PRESENT_CONFIGURED" {
+			t.Errorf("a diverging configuration fired the configured conclusion")
+		}
+		if strings.Contains(finding.Conclusion, "agrees with the written one") {
+			t.Errorf("the divergence conclusion claims the configurations agree: %s", finding.Conclusion)
+		}
+	})
+
+	t.Run("the default live case is the not-measured conclusion", func(t *testing.T) {
+		// A live run under the zero-execution boundary: no filesystem seam and no command runner, so
+		// every `local.sshd` observation reports the capability it was denied. The group must report
+		// the weaker conclusion and neither a configured nor an absent sshd.
+		run := sshdRun(t,
+			sshdFixture{testSSHDLabelBinary, diagnosis.StateNotMeasured},
+			sshdFixture{testSSHDLabelService, diagnosis.StateNotMeasured},
+			sshdFixture{testSSHDLabelConfig, diagnosis.StateNotMeasured},
+		)
+		finding := findingFor(t, diagnosis.Diagnose(run), "local.sshd")
+		if finding.Rule != "SSHD_EFFECTIVE_CONFIG_NOT_MEASURED" {
+			t.Fatalf("the run fired %q, want %q", finding.Rule, "SSHD_EFFECTIVE_CONFIG_NOT_MEASURED")
+		}
+		for _, want := range []string{"capability_excluded", "No claim is made about the configuration in force"} {
+			if !strings.Contains(finding.Conclusion, want) {
+				t.Errorf("the conclusion %q does not carry %q", finding.Conclusion, want)
+			}
+		}
+		for _, absent := range []string{"no sshd binary is present", "agrees with the written one"} {
+			if strings.Contains(finding.Conclusion, absent) {
+				t.Errorf("the default live case claims %q: %s", absent, finding.Conclusion)
+			}
+		}
+	})
+
+	t.Run("a stopped service beside a present binary keeps both facts apart", func(t *testing.T) {
+		run := sshdRun(t,
+			sshdFixture{testSSHDLabelBinary, diagnosis.StatePass},
+			sshdFixture{testSSHDLabelService, diagnosis.StateFail},
+			sshdFixture{testSSHDLabelConfig, diagnosis.StatePass},
+		)
+		got := diagnosis.Diagnose(run)
+
+		// The group answers its own question — binary present, configuration in force agreeing — and
+		// does not require the service state.
+		group := findingFor(t, got, "local.sshd")
+		if group.Rule != "SSHD_PRESENT_CONFIGURED" {
+			t.Fatalf("the run fired %q, want %q", group.Rule, "SSHD_PRESENT_CONFIGURED")
+		}
+
+		// The stopped service is still its own finding: the fact layer reports it under
+		// `local.sshd.fact`, and it is the measured failure of the service observation, not the
+		// binary's absence.
+		fact := findingFor(t, got, "local.sshd.fact")
+		if fact.Rule != diagnosis.RuleID("local.sshd", diagnosis.StateFail) {
+			t.Errorf("the fact layer fired %q, want the failure of the stopped service", fact.Rule)
+		}
+		for _, want := range []string{testSSHDLabelService, "not running"} {
+			if !strings.Contains(fact.Conclusion, want) {
+				t.Errorf("the fact conclusion %q does not name the stopped service via %q", fact.Conclusion, want)
+			}
+		}
+
+		// And no conclusion of the run may claim the binary is absent.
+		for _, finding := range got.Findings {
+			for _, absent := range []string{"no sshd binary is present", "binary is not present"} {
+				if strings.Contains(finding.Conclusion, absent) {
+					t.Errorf("the finding %q claims %q: %s", finding.Rule, absent, finding.Conclusion)
+				}
+			}
+		}
+	})
+}
+
+// TestTLSFactQuestionsReachTrustStoreConclusions is the RG-3 case for the restated `tls.truststore`
+// question: the two platform limitations §5.2 split into hand-named ids reach a conclusion through
+// the derived `TLS_TRUSTSTORE_UNRESOLVED` id, each carrying its own reason code and verbatim detail.
+//
+// The macOS limitation is quoted from the probe's own documented sentence — the constant is
+// unexported, so the case pins a distinctive substring — and the override case pins the wording that
+// says the platform verifier is bypassed. Both are absences: the conclusion reports what was not
+// measured, never a rejected or an accepted chain, and the platform/override split that §5.2's
+// hand-named ids carried survives in exactly the reason code and detail this case asserts.
+func TestTLSFactQuestionsReachTrustStoreConclusions(t *testing.T) {
+	t.Run("the macOS trust-store limitation reaches a conclusion through the derived id", func(t *testing.T) {
+		run := []probe.Result{
+			result("tls.truststore", probe.ProbeTLS,
+				observation("tls 443 truststore", "example.com:443", probe.Unresolved, probe.Indeterminate, probe.ReasonTrustStorePlatformUnavailable,
+					"tls example.com:443: the local trust store's answer for the chain presented by the declared TLS target cannot be resolved on this platform, and the documented limitation is that Go cannot enumerate macOS system roots, and keychain trust is only visible through the platform verifier when no explicit root pool is supplied"),
+			),
+		}
+		finding := findingFor(t, diagnosis.Diagnose(run), "tls.truststore")
+		if want := diagnosis.RuleID("tls.truststore", diagnosis.StateUnresolved); finding.Rule != want {
+			t.Fatalf("the run fired %q, want %q", finding.Rule, want)
+		}
+		for _, want := range []string{"truststore_platform_unavailable", "Go cannot enumerate macOS system roots", "attempted and unresolved"} {
+			if !strings.Contains(finding.Conclusion, want) {
+				t.Errorf("the conclusion %q does not carry %q", finding.Conclusion, want)
+			}
+		}
+		if strings.Contains(finding.Conclusion, "rejected the chain") {
+			t.Errorf("an absence was reported as a rejection: %s", finding.Conclusion)
+		}
+	})
+
+	t.Run("the override case reaches the same id carrying the override wording", func(t *testing.T) {
+		run := []probe.Result{
+			result("tls.truststore", probe.ProbeTLS,
+				observation("tls 443 truststore", "example.com:443", probe.Unresolved, probe.Indeterminate, probe.ReasonTrustStoreOverridePlatformBypass,
+					"tls example.com:443: SSL_CERT_FILE=\"/tmp/roots.pem\" is set for this run, so Go loads that pool in place of the platform trust store and the platform verifier is bypassed; the chain is reported as unresolved rather than accepted or rejected, because an answer about that pool would not be an answer about the local trust store's answer for the chain presented by the declared TLS target"),
+			),
+		}
+		finding := findingFor(t, diagnosis.Diagnose(run), "tls.truststore")
+		if want := diagnosis.RuleID("tls.truststore", diagnosis.StateUnresolved); finding.Rule != want {
+			t.Fatalf("the run fired %q, want %q", finding.Rule, want)
+		}
+		for _, want := range []string{"truststore_override_platform_bypass", "the platform verifier is bypassed", "SSL_CERT_FILE", "attempted and unresolved"} {
+			if !strings.Contains(finding.Conclusion, want) {
+				t.Errorf("the conclusion %q does not carry %q", finding.Conclusion, want)
+			}
+		}
+	})
+}
+
+// TestDeferredHandNamedRuleIDs is this slice's deferral assertion, not an assumption: the hand-named
+// tls spellings §5.2 prints are not declared, because the two `tls.*` groups were restated to the
+// derived fact ids, and `NODE_WSL2_SYSTEMD_ABSENT` is not implemented because the service-manager
+// signal has no structured home in this slice and matching a conclusion on wording is forbidden
+// (R-HR-07).
+//
+// One collision is stated rather than hidden: `TLS_INTERCEPTION_UNRESOLVED` is both one of §5.2's
+// hand-named spellings and the derived id of `tls.interception` in the unresolved state, so it
+// necessarily stays in the vocabulary — carrying the derived fact conclusion, which is what the
+// restatement decided. That is why the case asserts the exact `TLS_*`/`TRUSTSTORE_*` set instead of
+// only listing forbidden spellings: the set is the eight derived ids of the two probes in the fact
+// slots' declaration order (FAIL, UNRESOLVED, NOT_MEASURED, PASS), and an id this case's list did
+// not foresee fails the equality too.
+func TestDeferredHandNamedRuleIDs(t *testing.T) {
+	notDeclared := []string{
+		"TLS_INTERCEPTION_DETECTED",
+		"TLS_CHAIN_AS_EXPECTED",
+		"TRUSTSTORE_ACCEPTS_CHAIN",
+		"TRUSTSTORE_REJECTS_CHAIN",
+		"TRUSTSTORE_UNRESOLVED_PLATFORM",
+		"TRUSTSTORE_UNRESOLVED_OVERRIDE",
+		"NODE_WSL2_SYSTEMD_ABSENT",
+	}
+	ids := diagnosis.AllRuleIDs()
+	for _, id := range notDeclared {
+		if slices.Contains(ids, id) {
+			t.Errorf("AllRuleIDs() declares %q, which this slice deliberately does not implement", id)
+		}
+	}
+
+	wantTLS := []string{
+		"TLS_INTERCEPTION_FAIL",
+		"TLS_INTERCEPTION_UNRESOLVED",
+		"TLS_INTERCEPTION_NOT_MEASURED",
+		"TLS_INTERCEPTION_PASS",
+		"TLS_TRUSTSTORE_FAIL",
+		"TLS_TRUSTSTORE_UNRESOLVED",
+		"TLS_TRUSTSTORE_NOT_MEASURED",
+		"TLS_TRUSTSTORE_PASS",
+	}
+	var gotTLS []string
+	for _, id := range ids {
+		if strings.HasPrefix(id, "TLS_") || strings.HasPrefix(id, "TRUSTSTORE_") {
+			gotTLS = append(gotTLS, id)
+		}
+	}
+	if !slices.Equal(gotTLS, wantTLS) {
+		t.Errorf("the tls vocabulary is %v, want exactly the restated derived ids %v", gotTLS, wantTLS)
+	}
+}
+
+// TestRemainingGroupsOpenQuestionNeededStates pins what the open questions of the two new groups
+// report when nothing matched: the labeled `local.sshd` states in declaration order, and the
+// label-less `local.env` states with the original "<probe> <STATE>" spelling. The spelling reaches
+// the payload and the human projection, so it is a contract, and the labeled form is the only way
+// a reader can tell two needs of one probe apart.
+func TestRemainingGroupsOpenQuestionNeededStates(t *testing.T) {
+	got := diagnosis.Diagnose(nil)
+
+	sshd := openQuestionFor(t, got, "local.sshd")
+	wantSSHD := []string{
+		"local.sshd (effective config) FAIL",
+		"local.sshd (binary present) FAIL",
+		"local.sshd (effective config) NOT_MEASURED",
+		"local.sshd (binary present) PASS",
+		"local.sshd (effective config) PASS",
+	}
+	if !reflect.DeepEqual(sshd.NeededStates, wantSSHD) {
+		t.Errorf("the open question for %q needs %v, want %v", sshd.Question, sshd.NeededStates, wantSSHD)
+	}
+
+	platform := openQuestionFor(t, got, "node.platform")
+	wantPlatform := []string{"local.env FAIL", "local.env UNRESOLVED", "local.env PASS"}
+	if !reflect.DeepEqual(platform.NeededStates, wantPlatform) {
+		t.Errorf("the open question for %q needs %v, want %v", platform.Question, platform.NeededStates, wantPlatform)
+	}
 }
