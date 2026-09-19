@@ -1,15 +1,15 @@
 # CI for herdr-reach.
 #
-# The gates are exactly the ones `openspec/config.yaml` declares: `go test ./...`
-# (the strict-TDD runner), `go vet ./...` (quality.typecheck) and `gofmt -l .`
+# The gates are the ones `openspec/config.yaml` declares: `go test ./...` (the
+# strict-TDD runner), `go vet ./...` (quality.typecheck) and `gofmt -l .`
 # (quality.format). No linter is wired, because `quality.lint` is deliberately
 # empty — choosing one is a decision, not a default to guess at.
 #
-# Shape borrowed from the Gentle AI pipeline, including the reason it works:
-# only a check that the branch ruleset requires can block a merge, and the
-# required check here is `Unit Tests`. That job therefore refuses to run when the
-# format job failed, so a format regression cannot arrive as a "skipped"
-# dependency and turn the required check green by accident.
+# Only `Unit Tests` is a required status check in the branch ruleset, and it
+# refuses to run when the format job failed: a guard that cannot block a merge is
+# decoration, and a required check that goes green through a *skipped* dependency
+# is worse than no check at all. The other jobs exist to make the expensive
+# questions visible without putting them on the merge's critical path.
 #
 # There is deliberately no `concurrency` block: cancelling a superseded run can
 # leave a required check cancelled, which reads as blocked rather than as
@@ -74,5 +74,143 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -count=1 ./...
+
+  race:
+    # The probe runner is concurrent by design (bounded worker pool, per-probe
+    # deadlines, a run budget and cancellation), so a data race there is a
+    # correctness bug rather than a performance footnote.
+    name: Race Detector
+    needs: go-format
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Require successful Go format
+        run: |
+          if [ "${{ needs.go-format.result }}" != "success" ]; then
+            echo "::error::the Go Format job did not succeed (${{ needs.go-format.result }})"
+            exit 1
+          fi
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.mod
       - name: Test under the race detector
         run: go test -race -count=1 ./...
+
+  platform-tests:
+    # The tool runs on Linux, macOS and Windows and refuses only *native Windows
+    # nodes*, so all three hosts are legitimate platforms for the test suite. Kept
+    # off the required path on purpose: the Linux leg is the gate, these legs are
+    # the evidence that a platform-specific assumption did not creep in.
+    name: Platform Tests (${{ matrix.os }})
+    needs: go-format
+    if: always()
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Require successful Go format
+        run: |
+          if [ "${{ needs.go-format.result }}" != "success" ]; then
+            echo "::error::the Go Format job did not succeed (${{ needs.go-format.result }})"
+            exit 1
+          fi
+        shell: bash
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.mod
+      - name: Typecheck
+        run: go vet ./...
+      - name: Test
+        run: go test -count=1 ./...
+
+  cross-build:
+    # The release builds binaries for these platforms; compiling for each of them
+    # catches a platform-specific import or build tag before packaging does.
+    name: Cross-Build
+    needs: go-format
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - name: Require successful Go format
+        run: |
+          if [ "${{ needs.go-format.result }}" != "success" ]; then
+            echo "::error::the Go Format job did not succeed (${{ needs.go-format.result }})"
+            exit 1
+          fi
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.mod
+      - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: go build ./...
+
+  no-egress-guard:
+    # The product's whole credibility rest depends on tests never touching the
+    # real network, and the mechanism is a deny-all seam set that every probe test
+    # starts from. That guarantee is only as strong as the tests that prove the
+    # sentinel still denies, so this job fails when those tests are missing or
+    # renamed away — the failure mode `go test -run` cannot report on its own,
+    # because a selector matching nothing exits 0.
+    name: No-Real-Network Guard
+    needs: go-format
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require successful Go format
+        run: |
+          if [ "${{ needs.go-format.result }}" != "success" ]; then
+            echo "::error::the Go Format job did not succeed (${{ needs.go-format.result }})"
+            exit 1
+          fi
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.mod
+      - name: Require the deny-all default to be proven
+        run: |
+          set -o pipefail
+          selector='TestDenyAllSeams|TestNoPackageLevelSeamVariable'
+          out="$(go test -count=1 -v ./internal/probe/ -run "$selector" 2>&1)" || {
+            printf '%s\n' "$out"
+            exit 1
+          }
+          printf '%s\n' "$out" | grep -q 'no tests to run' && {
+            echo "::error::the selector matched no test: the guard is not running"
+            exit 1
+          }
+          passed="$(printf '%s\n' "$out" | grep -c '^--- PASS' || true)"
+          if [ "$passed" -lt 2 ]; then
+            echo "::error::expected at least 2 passing sentinel tests, saw $passed — a renamed or removed test silently disables this guard"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf 'sentinel tests passing: %s\n' "$passed"
