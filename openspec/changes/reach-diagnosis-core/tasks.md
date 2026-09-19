@@ -264,26 +264,26 @@ Second-split boundary if this group lands above 600: the QUIC probe (WU14) first
 `Files`: `internal/diagnosis/ids.go`, `rules.go`, `findings.go`, `diagnose.go`, `rules_test.go` (additions). `Depends on`: PR 9.
 Second-split boundary if this group lands above 600: the rule-id scheme with its coverage case (WU17a) first, then the mechanism, findings, `Diagnose` and the derived fact rules (WU18).
 
-- [ ] **RED** — add `TestRuleIDsCoverEveryProbeState` to `rules_test.go`: every registered probe × `{PASS, FAIL, UNRESOLVED, NOT_MEASURED}` has exactly one rule id, and `AllRuleIDs()` has no duplicate and no orphan. Prove the failure first. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `ids.go`: derived `<PROBE_NAME_UPPERCASED>_<STATE>` ids for the four states and `AllRuleIDs()` in declaration order. <!-- sdd-owner: implementation -->
-- [ ] **RED** — add the first-match case: for each question the first matching rule wins, there is **no** fall-through default, and a question with no matching rule emits an explicit open question naming the states the table needed. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `rules.go` (`[]Rule{ID, Question, Match []Need, Conclusion, DependsOn}` with `Need{Probe, Resolution, Verdict}`, plus the derived fact rules for the ten probes), `findings.go` (`Finding`, `OpenQuestion`, `Diagnosis`, conclusion texts) and `diagnose.go` (`Diagnose([]Result) Diagnosis`). <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add one case per derived fact rule id, asserting the conclusion is the plain fact and `DependsOn` equals the matched observable set. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — ids only in `ids.go`, conclusion texts only in `findings.go`; `gofmt -l .`, `go vet ./...`, `go test ./internal/diagnosis/`. <!-- sdd-owner: implementation -->
+- [x] **RED** — add `TestRuleIDsCoverEveryProbeState` to `rules_test.go`: every registered probe × `{PASS, FAIL, UNRESOLVED, NOT_MEASURED}` has exactly one rule id, and `AllRuleIDs()` has no duplicate and no orphan. Prove the failure first. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `ids.go`: derived `<PROBE_NAME_UPPERCASED>_<STATE>` ids for the four states and `AllRuleIDs()` in declaration order. <!-- sdd-owner: implementation -->
+- [x] **RED** — add the first-match case: for each question the first matching rule wins, there is **no** fall-through default, and a question with no matching rule emits an explicit open question naming the states the table needed. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `rules.go` (`[]Rule{ID, Question, Match []Need, Conclusion, DependsOn}` with `Need{Probe, Resolution, Verdict}`, plus the derived fact rules for the ten probes), `findings.go` (`Finding`, `OpenQuestion`, `Diagnosis`, conclusion texts) and `diagnose.go` (`Diagnose([]Result) Diagnosis`). <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add one case per derived fact rule id, asserting the conclusion is the plain fact and `DependsOn` equals the matched observable set. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — ids only in `ids.go`, conclusion texts only in `findings.go`; `gofmt -l .`, `go vet ./...`, `go test ./internal/diagnosis/`. <!-- sdd-owner: implementation -->
 
 ### PR 11 — WU19 + WU20 · The destination-block group with the §1.1 replay, and the Cloudflare rule groups
 
 `Files`: `internal/diagnosis/rules.go` (additions), `internal/diagnosis/matrix_test.go`, `internal/diagnosis/rules_test.go` (additions). `Depends on`: PR 10.
 Second-split boundary if this group lands above 600: the `ssh.destination` group with the §1.1 matrix replay (WU19) first, then the Cloudflare edge and HTTP/2 advice groups (WU20).
 
-- [ ] **RED** — write `matrix_test.go` replaying the six literal rows of PRD §1.1 with scripted results: the `ssh.destination` conclusion is "outbound SSH is allowed; the hub address is blocked", the reason names `203.0.113.10` with its port, and rule id `SSH_DEST_BLOCKED_BY_PUBLIC_SSH` is present (R-HR-03, PRD §13). <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement the `ssh.destination` group in `rules.go`: `SSH_DEST_BLOCKED_BY_PUBLIC_SSH`, `..._443`, `SSH_DEST_BLOCK_UNESTABLISHED_PUBLIC_UNRESOLVED`, `..._FAILED`, `SSH_NO_DEST_BLOCK_OBSERVED`, `SSH_DEST_BLOCK_NOT_ASSESSED`. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add the counterfactuals: both signals passing ⇒ no block conclusion; public probe `fail` or not-measured while the hub fails ⇒ the weaker rule fires and never claims "outbound SSH works"; hub unresolved or not-measured ⇒ `SSH_DEST_BLOCK_NOT_ASSESSED` with nothing claimed about the hub. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/diagnosis/ -run TestMatrixReplay`. <!-- sdd-owner: implementation -->
-- [ ] **RED** — add one case per id: `CF_EDGE_REACHABLE`, `CF_EDGE_PARTIAL`, `CF_EDGE_UNREACHABLE`, `CF_EDGE_UNRESOLVED`, `CF_HTTP2_ADVISED_QUIC_FAILED`, `CF_HTTP2_ADVISED_QUIC_UNCONFIRMED`, `CF_NO_HTTP2_ADVICE_QUIC_USABLE`, `CF_HTTP2_ADVISORY_NOT_ASSESSED`. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement both question groups in `rules.go` over the per-region observations of PR 7. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert the unconfirmed path names the unresolved measurement it rests on, and that a working QUIC measurement produces no downgrade advice. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/diagnosis/`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `matrix_test.go` replaying the six literal rows of PRD §1.1 with scripted results: the `ssh.destination` conclusion is "outbound SSH is allowed; the hub address is blocked", the reason names `203.0.113.10` with its port, and rule id `SSH_DEST_BLOCKED_BY_PUBLIC_SSH` is present (R-HR-03, PRD §13). <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement the `ssh.destination` group in `rules.go`: `SSH_DEST_BLOCKED_BY_PUBLIC_SSH`, `..._443`, `SSH_DEST_BLOCK_UNESTABLISHED_PUBLIC_UNRESOLVED`, `..._FAILED`, `SSH_NO_DEST_BLOCK_OBSERVED`, `SSH_DEST_BLOCK_NOT_ASSESSED`. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add the counterfactuals: both signals passing ⇒ no block conclusion; public probe `fail` or not-measured while the hub fails ⇒ the weaker rule fires and never claims "outbound SSH works"; hub unresolved or not-measured ⇒ `SSH_DEST_BLOCK_NOT_ASSESSED` with nothing claimed about the hub. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/diagnosis/ -run TestMatrixReplay`. <!-- sdd-owner: implementation -->
+- [x] **RED** — add one case per id: `CF_EDGE_REACHABLE`, `CF_EDGE_PARTIAL`, `CF_EDGE_UNREACHABLE`, `CF_EDGE_UNRESOLVED`, `CF_HTTP2_ADVISED_QUIC_FAILED`, `CF_HTTP2_ADVISED_QUIC_UNCONFIRMED`, `CF_NO_HTTP2_ADVICE_QUIC_USABLE`, `CF_HTTP2_ADVISORY_NOT_ASSESSED`. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement both question groups in `rules.go` over the per-region observations of PR 7. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert the unconfirmed path names the unresolved measurement it rests on, and that a working QUIC measurement produces no downgrade advice. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/diagnosis/`. <!-- sdd-owner: implementation -->
 
 ### PR 12 — WU21 + WU22 · The remaining rule groups with the suppression and agnosticism suites
 
