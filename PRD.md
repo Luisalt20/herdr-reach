@@ -261,7 +261,7 @@ Naming is a deliberate choice: **hub** is the place where the orchestrator lives
 │      permitrootlogin no                                            │
 │  ✓ Authorized key at /home/user/.ssh/authorized_keys             │
 │      owner user:user · mode 600                                │
-│  ✓ Key fingerprint SHA256:Er5hPcHaKlDNA/... matches the hub        │
+│  ✓ Key fingerprint SHA256:AbCdEfGhIjKlMn/... matches the hub       │
 │  ✓ Tunnel registered (protocol=http2, verified from logs)          │
 │  ✓ Persistence unit active and enabled                             │
 │                                                                    │
@@ -324,7 +324,7 @@ Note what Step 4 does **not** do: it does not touch anything without showing the
 │                                                                    │
 │  Received:                                                         │
 │    hostname    ssh.example.com                                     │
-│    key         SHA256:Er5hPcHaKlDNA/sZsJoEAdMFilCzM8IydsaT0...     │
+│    key         SHA256:AbCdEfGhIjKlMn/OpQrStUvWxYz0123456789ab...   │
 │    transport   cloudflare-tunnel                                   │
 │    access       configured (service token required)                │
 │                                                                    │
@@ -555,7 +555,7 @@ The two machines cannot reach each other. That is the problem. So the handoff is
 // PairingBundle travels hub → node. Contains no secrets.
 type PairingBundle struct {
 	Version     string   // "herdr-reach-bundle/v1"
-	HubName     string   // human label, e.g. "lmgg2006"
+	HubName     string   // human label, e.g. "hub.example.net"
 	PublicKey   string   // the key the hub will authenticate with
 	Fingerprint string   // SHA256 of PublicKey, for the node to display
 	Transport   string   // the transport the hub expects
