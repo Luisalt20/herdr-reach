@@ -1,0 +1,78 @@
+# CI for herdr-reach.
+#
+# The gates are exactly the ones `openspec/config.yaml` declares: `go test ./...`
+# (the strict-TDD runner), `go vet ./...` (quality.typecheck) and `gofmt -l .`
+# (quality.format). No linter is wired, because `quality.lint` is deliberately
+# empty — choosing one is a decision, not a default to guess at.
+#
+# Shape borrowed from the Gentle AI pipeline, including the reason it works:
+# only a check that the branch ruleset requires can block a merge, and the
+# required check here is `Unit Tests`. That job therefore refuses to run when the
+# format job failed, so a format regression cannot arrive as a "skipped"
+# dependency and turn the required check green by accident.
+#
+# There is deliberately no `concurrency` block: cancelling a superseded run can
+# leave a required check cancelled, which reads as blocked rather than as
+# superseded.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  # Manual re-run for a commit that is otherwise ready.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go-format:
+    name: Go Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.mod
+      - name: Require gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt-formatted:"
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+
+  unit-tests:
+    name: Unit Tests
+    needs: go-format
+    # `always()` keeps this job in the required-check set even when the format job
+    # failed; the first step then turns that into an explicit failure instead of a
+    # silent skip.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Require successful Go format
+        run: |
+          if [ "${{ needs.go-format.result }}" != "success" ]; then
+            echo "::error::the Go Format job did not succeed (${{ needs.go-format.result }})"
+            exit 1
+          fi
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.mod
+      - name: Typecheck
+        run: go vet ./...
+      - name: Test
+        run: go test -count=1 ./...
+      - name: Test under the race detector
+        run: go test -race -count=1 ./...
