@@ -364,9 +364,17 @@ Nothing in this path writes, creates, moves or deletes anything; the only outbou
 
 ### 5.2 Rule table (`internal/diagnosis/rules.go`)
 
-Mechanism: `[]Rule{ID, Question, Match []Need, Conclusion, DependsOn}` where `Need{Probe, Resolution, Verdict}` is an exact observable state. Evaluation: for each question, the **first matching rule wins**; every rule is a pure predicate over the observations. **There is no fall-through default**: a question with no matching rule emits an explicit `open_question` naming the states the table needed. `DependsOn` is exactly the set of observables in `Match`, which is how the payload can show what each conclusion rests on.
+Mechanism: `[]Rule{ID, Question, Match []Need, Conclusion, DependsOn}` where `Need{Probe, Label?, Resolution, Verdict}` is an exact observable state. The probe, the resolution and the verdict are always required; `Label` is optional, and an empty label means "any observation of the probe" while a non-empty one matches only the observation the probe reported under that label. The label exists because one probe can report several observations with identical triples — `local.sshd`'s absent binary and its stopped service are both measured failures carrying the vocabulary's shared `sshd_absent` code — and this table's rows for that probe have to tell them apart. Evaluation: for each question, the **first matching rule wins**; every rule is a pure predicate over the observations. **There is no fall-through default**: a question with no matching rule emits an explicit `open_question` naming the states the table needed, spelling a labeled state as `<probe> (<label>) <STATE>`. `DependsOn` is exactly the set of observables in `Match`, which is how the payload can show what each conclusion rests on.
 
 **Unresolved propagation is structural, not a check** (obligation 5): a rule that needs `measured/pass` or `measured/fail` cannot fire when the observation is unresolved or not measured, so the confident conclusion is simply unreachable, and the weaker rule — which requires the unresolved state — is the one that matches and names the unresolved probe. No rendering decision is involved.
+
+> **Dated note — 2026-09-19, PR 12 adjudication (S3).** Three parts of this table could not coexist with §3.6 or with the `Need` triple as written. PR 12 settled them before writing any id:
+>
+> 1. **The `tls.interception` and `tls.truststore` rows are restated to their derived ids** (`<PROBE>_<STATE>`). Their own `Requires` column is *a derived state of the probe*, so the hand-named spellings were renames of the derived fact rules rather than a second interpretation, and two of them (`TRUSTSTORE_UNRESOLVED_PLATFORM` and `TRUSTSTORE_UNRESOLVED_OVERRIDE`) are one `(tls.truststore, unresolved, indeterminate)` triple — shipping them would have left one id unreachable and a third state unnamed. The platform/override split stays where the vocabulary already carries it: the reason code (`truststore_platform_unavailable` vs `truststore_override_platform_bypass`) and the verbatim detail the conclusion prints, which is exactly what RG-3 requires the output to state. The two fact questions therefore keep §5.2's own question names (`tls.interception`, `tls.truststore`); only `local.sshd` keeps a `.fact` suffix, because its group owns the probe's name.
+> 2. **`local.sshd`'s rows are expressed through `Need.Label`** (mechanism above), which is what lets an absent binary, a stopped service and a diverging configuration be told apart and keeps `SSHD_ABSENT` unreachable for a stopped service.
+> 3. **`NODE_WSL2_SYSTEMD_ABSENT` is not implemented in R1a.** The service-manager signal has no structured home — the observation's target carries `<platform>|<arch>` and the systemd state lives only in the verbatim detail — and matching a conclusion on wording is forbidden (R-HR-07), so the id belongs to the slice that carries the signal structurally. The WSL2 wording and its derived fact conclusion already report the systemd state and that enabling it is a later slice, which is the RG-4 scenario.
+>
+> Consequence inherited by the documentation slice: `docs/diagnosis-report.md`'s rule-id table is compared with `AllRuleIDs()` by set equality, so it lists the derived tls ids and none of the spellings above.
 
 | Question | Rule id | Requires | Conclusion |
 |---|---|---|---|
@@ -385,15 +393,15 @@ Mechanism: `[]Rule{ID, Question, Match []Need, Conclusion, DependsOn}` where `Ne
 | | `CF_HTTP2_ADVISED_QUIC_UNCONFIRMED` | `egress.quic ∈ {unresolved, not_measured}` ∧ edge reachable | same advice, and the note names the unresolved measurement it rests on |
 | | `CF_NO_HTTP2_ADVICE_QUIC_USABLE` | `egress.quic = pass` | no downgrade recommended |
 | | `CF_HTTP2_ADVISORY_NOT_ASSESSED` | edge unreachable/unresolved | no advice |
-| `tls.interception` | `TLS_INTERCEPTION_DETECTED` / `TLS_CHAIN_AS_EXPECTED` / `TLS_INTERCEPTION_UNRESOLVED` | derived state of `tls.interception` | observed issuer + verification code always present |
-| `tls.truststore` | `TRUSTSTORE_ACCEPTS_CHAIN` / `TRUSTSTORE_REJECTS_CHAIN` / `TRUSTSTORE_UNRESOLVED_PLATFORM` / `TRUSTSTORE_UNRESOLVED_OVERRIDE` | derived state of `tls.truststore` | the platform limitation is emitted **in the output**, not only in code (RG-3) |
-| `local.sshd` | `SSHD_PRESENT_CONFIGURED` | binary present ∧ effective config measured ∧ no divergence | positive |
+| `tls.interception` | `TLS_INTERCEPTION_PASS` / `TLS_INTERCEPTION_FAIL` / `TLS_INTERCEPTION_UNRESOLVED` / `TLS_INTERCEPTION_NOT_MEASURED` (derived) | derived state of `tls.interception` | observed issuer + verification code always present; the failure state names the unexpected issuer or the verification failure through its reason code |
+| `tls.truststore` | `TLS_TRUSTSTORE_PASS` / `TLS_TRUSTSTORE_FAIL` / `TLS_TRUSTSTORE_UNRESOLVED` / `TLS_TRUSTSTORE_NOT_MEASURED` (derived) | derived state of `tls.truststore` | the platform limitation is emitted **in the output**, not only in code (RG-3); the two unresolved reasons are told apart by the reason code and the verbatim detail the conclusion carries |
+| `local.sshd` | `SSHD_PRESENT_CONFIGURED` | binary present ∧ effective config measured ∧ no divergence (each observation by its `Need.Label`) | positive; the service state is deliberately not required, and the fact layer reports it as its own finding |
 | | `SSHD_PRESENT_CONFIG_DIVERGENT` | divergence measured | names both configurations (never "success") |
-| | `SSHD_ABSENT` | binary measured absent | states that installation is a later slice |
+| | `SSHD_ABSENT` | binary measured absent (by its `Need.Label`) | states that installation is a later slice; unreachable for a stopped service |
 | | `SSHD_EFFECTIVE_CONFIG_NOT_MEASURED` | effective-config observation not measured | weaker: names the excluded capability; this is the default live case |
 | `node.platform` | `LOCAL_ENV_PASS` / `LOCAL_ENV_FAIL` / `LOCAL_ENV_UNRESOLVED` | derived state of `local.env` | classification + arch |
 | | `NODE_PLATFORM_SUPPORTED` / `NODE_PLATFORM_REFUSED_NATIVE_WINDOWS` / `NODE_PLATFORM_UNKNOWN` | classification result | the refusal names WSL2 as the supported path; no transport is viable for a refused node |
-| | `NODE_WSL2_SYSTEMD_ABSENT` | WSL2 ∧ systemd not enabled | detection only; enabling systemd is stated as a later slice |
+| | ~~`NODE_WSL2_SYSTEMD_ABSENT`~~ **deferred** | WSL2 ∧ systemd not enabled | **not implemented in this change** — the service-manager signal has no structured home and matching on wording is forbidden; see the dated PR 12 note above |
 
 WSL2 text is limited to the documented semantics (milliseconds idle, default 60000, Windows 11 only). The child-of-init rule and the `vmIdleTimeout=-1` sentinel must not appear anywhere in R1a output (RG-4); a test asserts their absence from both projections.
 
@@ -448,7 +456,7 @@ Production seams are constructed in exactly one place (`internal/probe/real.go`,
 
 ### 6.4 How a test-only transport proves NF-04 without touching the reasoning layer
 
-`internal/transport/testtransport_test.go` registers a `testTunnel` that implements only `Candidate` with a fixed viability and reason, and asserts: the produced feasibility list contains it with its stated viability and reason; every `diagnosis` finding is byte-identical to the run without it; and `internal/diagnosis/agnostic_test.go` — a guard that reads the `diagnosis` package's own sources — asserts the package contains none of the strings `direct-ssh`, `reverse-ssh`, `cloudflare-tunnel`, `tailscale`, `argotunnel`, `7844`, so per-transport knowledge provably lives outside the reasoning layer.
+`internal/transport/testtransport_test.go` registers a `testTunnel` that implements only `Candidate` with a fixed viability and reason, and asserts: the produced feasibility list contains it with its stated viability and reason; every `diagnosis` finding is byte-identical to the run without it; and `internal/diagnosis/agnostic_test.go` — a guard that reads the `diagnosis` package's own **non-test** sources — asserts they contain none of the strings `direct-ssh`, `reverse-ssh`, `cloudflare-tunnel`, `tailscale`, `argotunnel`, `7844`, so per-transport knowledge provably lives outside the reasoning layer. Two scoping decisions are part of the guard rather than accidents of it: it reads production sources only (the PRD §1.1 replay in `matrix_test.go` quotes the matrix's literal rows, which is acceptance evidence rather than reasoning knowledge), and it removes the registered probe names before searching (`egress.cf.7844` is exactly such a name, and it belongs to the measurement layer), with a positive control so a guard that read nothing fails instead of passing silently.
 
 ---
 
