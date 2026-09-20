@@ -349,17 +349,18 @@ Second-split boundary if this group lands above 600: the HTTP/2 advice and the p
 ### PR 16 — WU29 + WU30 · Report DTO, the single mapping, coverage, completeness and determinism
 
 `Files`: `internal/report/report.go`, `internal/report/map.go`, `internal/report/map_test.go`. `Depends on`: PR 15.
+Decision recorded 2026-09-20 (design §4's PR 16 note): the mapping takes a documented input struct whose effective `probe.Options` supplies `concurrency`, `run_budget_ms` and the single clock, and the transports arrive paired with their names because `transport.Feasibility` carries none; the probe rows, their observations and `targets.hub` are the payload's only nullable fields.
 Second-split boundary if this group lands above 600: the DTO and the single mapping with its key-set cases (WU29) first, then the coverage, completeness, determinism and NF-03 cases (WU30).
 
-- [ ] **RED** — write `map_test.go` asserting, with a fixed clock, the exact key set at every payload level (`schema_version`, `generated_at`, `tool`, `run`, `targets`, `probes`, `findings`, `open_questions`, `node`, `transports`) and that `schema_version` is `"1"`. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `report.go` (DTO types with explicit JSON field names) and `map.go` (the single mapping function), with probes in registry order, transports sorted by name and no map iteration. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert the mapping is the only producer: an internal structure changed without touching `map.go` leaves the payload unchanged, and `elapsed_ms` is an integer in one documented unit. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — one mapping, no duplicated field names; `gofmt -l .`, `go vet ./...`, `go test ./internal/report/`. <!-- sdd-owner: implementation -->
-- [ ] **RED** — add the coverage case: a not-measured observation appears with `resolution: "not_measured"` and a reason naming the missing input while `run.not_measured` lists it; an unresolved observation appears in `run.unresolved` with `completeness: "incomplete"`; a not-measured probe alone does not make the run incomplete; `targets.hub` is JSON `null` when no hub was supplied (R-HR-NF-02, design §5.3). <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — extend the mapping for the coverage and completeness fields without adding a derived success boolean anywhere. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add the determinism case: repeated runs on the same inputs are byte-identical; probes follow registry order and transports are sorted; a clock-only change moves only `generated_at` and the elapsed values. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add the NF-03 payload assertion: an unresolved probe carries `verdict: "indeterminate"` verbatim, no derived boolean, status or summary field marks it successful, and no field maps it to `pass`. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/report/`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `map_test.go` asserting, with a fixed clock, the exact key set at every payload level (`schema_version`, `generated_at`, `tool`, `run`, `targets`, `probes`, `findings`, `open_questions`, `node`, `transports`) and that `schema_version` is `"1"`. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `report.go` (DTO types with explicit JSON field names) and `map.go` (the single mapping function), with probes in registry order, transports sorted by name and no map iteration. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert the mapping is the only producer: an internal structure changed without touching `map.go` leaves the payload unchanged, and `elapsed_ms` is an integer in one documented unit. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — one mapping, no duplicated field names; `gofmt -l .`, `go vet ./...`, `go test ./internal/report/`. <!-- sdd-owner: implementation -->
+- [x] **RED** — add the coverage case: a not-measured observation appears with `resolution: "not_measured"` and a reason naming the missing input while `run.not_measured` lists it; an unresolved observation appears in `run.unresolved` with `completeness: "incomplete"`; a not-measured probe alone does not make the run incomplete; `targets.hub` is JSON `null` when no hub was supplied (R-HR-NF-02, design §5.3). <!-- sdd-owner: implementation -->
+- [x] **GREEN** — extend the mapping for the coverage and completeness fields without adding a derived success boolean anywhere. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add the determinism case: repeated runs on the same inputs are byte-identical; probes follow registry order and transports are sorted; a clock-only change moves only `generated_at` and the elapsed values. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add the NF-03 payload assertion: an unresolved probe carries `verdict: "indeterminate"` verbatim, no derived boolean, status or summary field marks it successful, and no field maps it to `pass`. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/report/`. <!-- sdd-owner: implementation -->
 
 ### PR 17 — WU31 + WU32 · Human projection and `docs/diagnosis-report.md` with its drift test
 

@@ -322,6 +322,8 @@ doctor.Run
   → exit code from completeness
 ```
 
+> **Dated note — 2026-09-20, PR 16 (S7).** The mapping takes a documented input struct rather than the illustrative positional call above, because §3.3's `run` requires `concurrency` and `run_budget_ms` while that call carries neither: the honest source of both, and of the single clock that stamps `generated_at`, is the run's **effective `probe.Options`** after its documented defaults, which is exactly what `Runner.Options()` reports. `transport.Feasibility` carries no transport name while §3.3 requires one per row, so the transports reach the mapping paired with their names in a report-local type, which makes a name impossible to misalign with its viability silently. The mapping is the only producer of the DTO, and design D3's nullable target is what makes an absent target JSON `null` instead of an empty string: the probe rows, their observations and `targets.hub` are the only nullable fields, and every key is always present.
+
 Nothing in this path writes, creates, moves or deletes anything; the only outbound traffic is the declared measurements (§6).
 
 ---
