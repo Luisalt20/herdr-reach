@@ -38,6 +38,8 @@ row here — or a row without a constant — fails the suite.
 - Without `--json`, standard output stays empty. The human report still goes to standard error.
 - The split is what makes piping the machine-readable document into another program safe. On exit
   `2` no diagnosis is presented as completed and standard output stays empty.
+- `--version` prints the tool's version to standard output and exits `0`; it is not a run and carries
+  no diagnosis. A help request (`-h`/`--help`) prints usage to standard error and exits `0`.
 
 ## Payload shape
 
