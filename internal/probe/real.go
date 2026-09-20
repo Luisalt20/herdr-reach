@@ -331,21 +331,72 @@ func verificationFailureCode(err error) string {
 // deadline and cancellation reach the attempt.
 type productionPacketDialer struct{ dialer *net.Dialer }
 
-// DialPacket opens the datagram socket under the context's cancellation.
+// connectedDatagram is the smallest surface the packet adapter needs from the
+// connected socket net.Dialer returned. *net.UDPConn satisfies it, and naming it
+// here is what lets the adapter be pinned by a scripted fake that never opens a
+// socket.
+type connectedDatagram interface {
+	// Write sends one datagram to the socket's fixed peer.
+	Write(p []byte) (int, error)
+	// ReadFrom reads one datagram and its sender address.
+	ReadFrom(p []byte) (int, net.Addr, error)
+	// SetDeadline bounds the reads and writes that follow.
+	SetDeadline(t time.Time) error
+	// Close releases the socket.
+	Close() error
+}
+
+// connectedPacketConn adapts the connected datagram socket to the PacketConn
+// seam.
+//
+// A connected UDP socket fixes its peer at dial time, and the kernel refuses
+// WriteTo on it ("use of WriteTo with pre-connected connection"), so the seam's
+// WriteTo is served by Write: the address argument is the target the caller
+// asked for, and the dial has already fixed that peer, so nothing is
+// re-targeted here. ReadFrom, SetDeadline and Close pass through unchanged. The
+// socket stays connected because connectedness is what makes the ICMP
+// port-unreachable observable to the classification table.
+type connectedPacketConn struct{ conn connectedDatagram }
+
+// WriteTo sends one datagram through the connected socket's Write. The address
+// argument is the target the caller asked for; the dial fixed that peer, so the
+// kernel's WriteTo refusal on a connected socket is never reached.
+func (c connectedPacketConn) WriteTo(p []byte, _ net.Addr) (int, error) {
+	return c.conn.Write(p)
+}
+
+// ReadFrom reads one datagram and its sender address, unchanged.
+func (c connectedPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
+	return c.conn.ReadFrom(p)
+}
+
+// SetDeadline bounds the reads and writes that follow, unchanged.
+func (c connectedPacketConn) SetDeadline(t time.Time) error {
+	return c.conn.SetDeadline(t)
+}
+
+// Close releases the socket, unchanged.
+func (c connectedPacketConn) Close() error {
+	return c.conn.Close()
+}
+
+// DialPacket opens the datagram socket under the context's cancellation and
+// adapts it to the seam: the socket is connected, and the adapter serves the
+// seam's WriteTo through Write.
 func (d productionPacketDialer) DialPacket(ctx context.Context, network, addr string) (PacketConn, error) {
 	conn, err := d.dialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
-	packet, ok := conn.(PacketConn)
+	socket, ok := conn.(connectedDatagram)
 	if !ok {
-		// The system returned a connection that cannot carry the
-		// WriteTo/ReadFrom exchange the seam promises; it is closed and reported
-		// rather than used as something it is not.
+		// The system returned a connection that cannot carry the datagram
+		// exchange the seam promises; it is closed and reported rather than used
+		// as something it is not.
 		_ = conn.Close()
 		return nil, fmt.Errorf("packet dial %s %s: the system returned %T, which cannot carry datagrams", network, addr, conn)
 	}
-	return packet, nil
+	return connectedPacketConn{conn: socket}, nil
 }
 
 // productionClock is the Clock seam over time.Now. Every timestamp a live run
