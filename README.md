@@ -53,6 +53,7 @@ transport that will work, proves it works, and makes it survive reboots.</strong
 > work. **Everything else in this document is still planned** &mdash; pairing, provisioning,
 > persistence, and the interface described below do not exist yet. [Beta testing](docs/beta-testing.md)
 > covers what the shipped binary does and, just as deliberately, what it does not.
+> [For agents](docs/for-agents.md) is the companion playbook: reading the payload, choosing a transport, and acting on the measurement.
 
 <div align="center"><sub>&middot; &middot; &middot;</sub></div>
 
