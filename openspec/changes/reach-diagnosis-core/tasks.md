@@ -318,17 +318,18 @@ Second-split boundary if this group lands above 600: the contract types, placeho
 
 ### PR 14 — WU25 + WU26 · The `tailscale` and `cloudflare-tunnel` adapters, the not-implemented proof and registry closure
 
-`Files`: `internal/transport/tailscale.go`, `internal/transport/notimplemented_test.go`, `internal/transport/cloudflare.go`, `internal/transport/registry_test.go`. `Depends on`: PR 13.
+`Files`: `internal/transport/{tailscale,cloudflare,registry}.go`, `internal/transport/{notimplemented,registry}_test.go`, and `internal/transport/contract_test.go` for the two consolidations this slice forces (the registry-order case and the per-member not-implemented loop, whose home is now `notimplemented_test.go`). `Depends on`: PR 13.
+Semantics fixed 2026-09-20 (design §3.2's PR 14 note): `tailscale` is never viable in R1a because no measurement of the adapter exists in this slice (`Verify`, R5/R6, owns that detection) and `cloudflare-tunnel` is never viable without a hostname, which R1a cannot supply; a partly reachable edge satisfies the edge half and is qualified in the reason rather than reported as a rejection.
 Second-split boundary if this group lands above 600: the `tailscale` adapter with the not-implemented proof (WU25) first, then `cloudflare-tunnel` feasibility with the registry closure (WU26).
 
-- [ ] **RED** — write `notimplemented_test.go`: for every registered adapter, `PlanHub`, `PlanNode` and `Verify` fail with the typed error naming the member and the owner slice (`PlanHub`/`PlanNode` → R3, `Verify` → R5/R6). <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `tailscale.go` (`Feasible` plus the three failing members) and register it. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert no value is returned alongside the error (the slice/handle is nil in every case) and the error is `errors.Is`-matchable, so a caller can never receive a plausible empty plan (RG-9). <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/transport/ -run TestNotImplemented`. <!-- sdd-owner: implementation -->
-- [ ] **RED** — write `registry_test.go`: exactly four transports in a stable order, nothing else registered, and no adapter researched for a later slice (for example Microsoft Dev Tunnels) present. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `cloudflare.go` `Feasible` plus `Requires()` rows (`hostname`, `zone_membership`) and complete `registry.go` with the fourth entry. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — on a reachable edge with no hostname: `viable == false`, a non-empty unsatisfied `requires` row naming the hostname, a note stating the prerequisite is unsatisfied, and no output describing the transport as ready to use (PRD §5.2, §14.5). <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/transport/ -run 'TestRegistry|TestCloudflareRequirements'`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `notimplemented_test.go`: for every registered adapter, `PlanHub`, `PlanNode` and `Verify` fail with the typed error naming the member and the owner slice (`PlanHub`/`PlanNode` → R3, `Verify` → R5/R6). <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `tailscale.go` (`Feasible` plus the three failing members) and register it. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert no value is returned alongside the error (the slice/handle is nil in every case) and the error is `errors.Is`-matchable, so a caller can never receive a plausible empty plan (RG-9). <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/transport/ -run TestNotImplemented`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `registry_test.go`: exactly four transports in a stable order, nothing else registered, and no adapter researched for a later slice (for example Microsoft Dev Tunnels) present. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `cloudflare.go` `Feasible` plus `Requires()` rows (`hostname`, `zone_membership`) and complete `registry.go` with the fourth entry. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — on a reachable edge with no hostname: `viable == false`, a non-empty unsatisfied `requires` row naming the hostname, a note stating the prerequisite is unsatisfied, and no output describing the transport as ready to use (PRD §5.2, §14.5). <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/transport/ -run 'TestRegistry|TestCloudflareRequirements'`. <!-- sdd-owner: implementation -->
 
 ### PR 15 — WU27 + WU28 · Recommendation wording, the pin note and the feasibility evidence table
 
