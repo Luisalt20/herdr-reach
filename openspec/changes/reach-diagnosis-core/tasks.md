@@ -394,17 +394,18 @@ Second-split boundary if this group lands above 600: the harness and the exit ma
 
 ### PR 19 — WU35 + WU36 · Entrypoint wiring, stream split, production seams and the static no-real-network guard
 
-`Files`: `cmd/herdr-reach/main.go`, `cmd/herdr-reach/main_test.go`, `internal/probe/real.go`, `internal/probe/guard_test.go`. `Depends on`: PR 18.
+`Files`: `cmd/herdr-reach/{main.go,main_test.go}`, `internal/probe/{real.go,guard_test.go}`, and the disclosed `internal/probe/real_test.go` — the internal-package cases that pin the verifier's two refusals and the issuer fold's agreement with the declared set, which `real.go` reached this slice without. `Depends on`: PR 18.
+Decision recorded 2026-09-20 (design §6.1's PR 19 note): the `PacketDialer` is a connected datagram socket (`net.ListenPacket` cannot bind a remote unicast address, verified, and a wildcard bind would hide the ICMP port-unreachable the table needs); the chain digest is the two-half contract with `declaredExpectedIssuers`; and the verifier refuses `InsecureSkipVerify` and never mutates the caller's config.
 Second-split boundary if this group lands above 600: the entrypoint wiring and production seams (WU35) first, then the static guard (WU36).
 
-- [ ] **RED** — write `main_test.go` driving the in-process `run(args, stdio, seams)`: with `--json` stdout parses as exactly one document and carries no prose, progress text or banner while the human text is on stderr; without `--json` stdout is empty; `--version` prints the version and exits `0`; exit codes are plumbed through. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `main.go` (build production seams, call `doctor.Run`, `os.Exit`) and `internal/probe/real.go`, the only file constructing real network primitives, with the production `CommandRunner` left **nil** so no code path can execute a third-party binary in R1a. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert a failing JSON write exits `2` with stdout empty and no diagnosis presented as completed. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./...`. <!-- sdd-owner: implementation -->
-- [ ] **RED** — write `guard_test.go`, parsing the module's `.go` sources and asserting that direct construction of `net.Dial*`, `net.Lookup*`, `tls.Dial*` and `os/exec` appears only in `internal/probe/real.go` and `cmd/herdr-reach/main.go` (design §6.2 level 3). <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — move into `real.go` whatever construction the guard reports outside those two files; do not widen the allowed list to make it pass. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — add the counter-case: a source string placed in a scratch fixture outside the allowed files fails the guard, so a permissive parser cannot pass vacuously; record in the test comment that this is a static check that narrows RG-7/RG-10 and does not replace the CI workflow R11 owns. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestStaticNoRealNetwork`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `main_test.go` driving the in-process `run(args, stdio, seams)`: with `--json` stdout parses as exactly one document and carries no prose, progress text or banner while the human text is on stderr; without `--json` stdout is empty; `--version` prints the version and exits `0`; exit codes are plumbed through. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `main.go` (build production seams, call `doctor.Run`, `os.Exit`) and `internal/probe/real.go`, the only file constructing real network primitives, with the production `CommandRunner` left **nil** so no code path can execute a third-party binary in R1a. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert a failing JSON write exits `2` with stdout empty and no diagnosis presented as completed. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./...`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `guard_test.go`, parsing the module's `.go` sources and asserting that direct construction of `net.Dial*`, `net.Lookup*`, `tls.Dial*` and `os/exec` appears only in `internal/probe/real.go` and `cmd/herdr-reach/main.go` (design §6.2 level 3). <!-- sdd-owner: implementation -->
+- [x] **GREEN** — move into `real.go` whatever construction the guard reports outside those two files; do not widen the allowed list to make it pass. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — add the counter-case: a source string placed in a scratch fixture outside the allowed files fails the guard, so a permissive parser cannot pass vacuously; record in the test comment that this is a static check that narrows RG-7/RG-10 and does not replace the CI workflow R11 owns. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/probe/ -run TestStaticNoRealNetwork`. <!-- sdd-owner: implementation -->
 
 ### PR 20 — WU37 + WU38 · Writes-nothing proof, closed dialed set and the end-to-end honesty suite
 
