@@ -21,7 +21,7 @@ set -eu
 # TOOL_TAG is the one home of the tool's release tag in this plugin. It must
 # match the manifest's `version` and the GitHub release tag: the manifest
 # mirrors the release so the two move together.
-TOOL_TAG="v0.1.0-beta.2"
+TOOL_TAG="v0.1.0-beta.3"
 REPO="Luisalt20/herdr-reach"
 
 # Map this machine to the release's asset suffix. The plugin declares linux and

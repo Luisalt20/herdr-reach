@@ -67,6 +67,31 @@ jobs:
           echo "version tag ok: $TAG"
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Require the plugin to declare the tagged version
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The plugin is a hybrid: its scripts come from main, while fetch.sh
+          # downloads the binary for the release the manifest declares. A tag
+          # the plugin does not declare would publish under scripts that name
+          # the new release while the installed binary stays the previous one,
+          # so the release refuses to run. The manifest's version is the tag
+          # without the leading v; fetch.sh's TOOL_TAG is held to that same
+          # version by the unit suite, so this pair cannot drift apart quietly.
+          declarations="$(grep -c '^version = "[^"]*"$' plugin/herdr-plugin.toml || true)"
+          if [ "$declarations" -ne 1 ]; then
+            echo "::error::plugin/herdr-plugin.toml declares $declarations top-level versions, want exactly one: the plugin's version must be set to the version being released"
+            exit 1
+          fi
+          declared="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' plugin/herdr-plugin.toml)"
+          want="${VERSION#v}"
+          if [ "$declared" != "$want" ]; then
+            echo "::error::plugin/herdr-plugin.toml declares version \"$declared\", but this release tags \"$VERSION\": the plugin declares the version of the tool it delivers, so set the plugin's version to \"$want\" (and fetch.sh's TOOL_TAG to \"v$want\") before cutting the tag"
+            exit 1
+          fi
+          echo "plugin version ok: $declared"
+
       - name: Require the tagged commit to be an ancestor of main
         id: ancestry
         run: |
