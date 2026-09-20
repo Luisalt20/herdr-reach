@@ -496,6 +496,8 @@ No `go.sum` is expected: R1a is stdlib-only. If the toolchain leaves an empty on
 | `doctor_test.go` | End-to-end in-process run over scripted seams; exit-code matrix |
 | `guard_test.go` | Writes-nothing, no-exec, closed-dialed-set proof (§6.3) |
 
+> **Dated note — 2026-09-20, PR 18 (S9).** The flag surface lives in `internal/doctor/flags.go` rather than under `cmd/herdr-reach/`: that directory is a `package main`, its `main.go` belongs to PR 19, and a `package main` with no `func main` fails `go build ./...` — which the CI's five `Cross-Build` jobs run, and those are deliberately not required checks, so the slice would have landed with five red jobs that nothing blocks. The `cmd/` directory therefore appears with the binary that justifies it, and PR 19's `main.go` calls the exported parser from here. The command line is `herdr-reach doctor [flags]`, with the subcommand owned by the flag parser so the documented shape is testable where it is defined; `--version` writes the version to standard output and `-h`/`--help` writes usage to standard error, both exiting `0`, because a version query is the answer a caller asked for rather than a run's human prose, and a help request is not a usage error. The exit-code constants ↔ document-table assertion lives in `internal/doctor/doctor_test.go`, which is why it is not in `internal/report/docs_test.go`.
+
 **`internal/probe/`**
 
 | Path | Purpose |
