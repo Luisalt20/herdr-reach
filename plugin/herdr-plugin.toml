@@ -1,0 +1,31 @@
+id = "herdr-reach.diagnose"
+name = "herdr-reach"
+version = "0.1.0-beta.2"
+min_herdr_version = "0.7.0"
+description = "Measure what a machine's network allows and say why a transport cannot work. Read-only: it changes nothing."
+platforms = ["linux", "macos"]
+
+# fetch.sh installs the released binary this plugin runs; the tag it carries and
+# this manifest's version mirror the tool's release tag, so the two move together.
+[[build]]
+command = ["sh", "fetch.sh"]
+
+# The role names what this machine is being treated as in the measurement; the
+# binary always measures this machine, and --hub always names the other side.
+[[actions]]
+id = "diagnose-node"
+title = "herdr-reach: diagnose this machine as the node"
+command = ["sh", "run.sh", "node"]
+
+[[actions]]
+id = "diagnose-hub"
+title = "herdr-reach: diagnose this machine as the hub"
+command = ["sh", "run.sh", "hub"]
+
+# The report pane holds its output open until the reader presses enter, since a
+# split pane closes when its command exits.
+[[panes]]
+id = "report"
+title = "herdr-reach report"
+placement = "split"
+command = ["sh", "report.sh"]
