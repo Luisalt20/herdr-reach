@@ -2231,3 +2231,120 @@ func TestRemainingGroupsOpenQuestionNeededStates(t *testing.T) {
 		t.Errorf("the open question for %q needs %v, want %v", platform.Question, platform.NeededStates, wantPlatform)
 	}
 }
+
+// TestEvidenceFindingsCarryTheObservationsTheyRestedOn is the case for `Finding.Evidence` (design
+// §3.2's dated PR 13 note): a finding hands a consumer the observations its conclusion rests on as
+// structured facts — the probe, the matchable state, and the observation's own label, target,
+// reason code and detail — so a consumer that must name the measured target it rejected does not
+// parse the prose conclusion.
+//
+// The facts `matchRule` selected are exactly what the finding must carry, and the cases below pin
+// the three properties that make the field usable rather than decorative: the evidence is the
+// fired rule's own match (not the whole run, and for a hand-named id carried by several clauses
+// not the sibling clause's observations), every finding of a run carries at least one observation
+// because a fired rule has at least one satisfied need, and what a caller gets back is a copy —
+// mutating it cannot reach a later `Diagnose`.
+func TestEvidenceFindingsCarryTheObservationsTheyRestedOn(t *testing.T) {
+	t.Run("a derived fact finding carries exactly the observation it states", func(t *testing.T) {
+		run := []probe.Result{
+			result("egress.cf.443", probe.ProbeEgress,
+				observation("tcp 443 region1", "region1.v2.argotunnel.com:443", probe.Measured, probe.Fail, probe.ReasonConnRefused,
+					"dial tcp region1.v2.argotunnel.com:443: connect: connection refused"),
+			),
+		}
+		finding := findingFor(t, diagnosis.Diagnose(run), "egress.cf.443")
+		want := diagnosis.Facts(run)
+		if !reflect.DeepEqual(finding.Evidence, want) {
+			t.Fatalf("the finding carries evidence %+v, want exactly the observation it states %+v", finding.Evidence, want)
+		}
+	})
+
+	t.Run("a hand-named id carried by several clauses carries the fired clause's observations", func(t *testing.T) {
+		// The `ssh.destination` weaker id has one clause per (public probe, absence) pair. This run's
+		// port 22 measurement failed, so only the port 443 clause can fire: the evidence must be that
+		// clause's own two observations — the port 443 absence and the hub failure — and must never
+		// include the sibling public probe, which the clause never needed.
+		run := []probe.Result{
+			result("egress.ssh.known", probe.ProbeEgress,
+				observation("tcp 22 ssh banner", "github.com:22", probe.Measured, probe.Fail, probe.ReasonBannerNotSSH,
+					"tcp github.com:22: something answered and it is not an SSH server"),
+			),
+			result("egress.ssh.443", probe.ProbeEgress,
+				observation("tcp 443 ssh banner", "ssh.github.com:443", probe.Unresolved, probe.Indeterminate, probe.ReasonTLSHandshakeUnresolved,
+					"tls ssh.github.com:443: the handshake produced no classification"),
+			),
+			result("egress.hub.direct", probe.ProbeEgress,
+				observation("tcp 22", "203.0.113.10:22", probe.Measured, probe.Fail, probe.ReasonConnRefused,
+					"dial tcp 203.0.113.10:22: connect: connection refused"),
+			),
+		}
+		finding := findingFor(t, diagnosis.Diagnose(run), "ssh.destination")
+		if want := "SSH_DEST_BLOCK_UNESTABLISHED_PUBLIC_UNRESOLVED"; finding.Rule != want {
+			t.Fatalf("the run fired %q, want %q", finding.Rule, want)
+		}
+		if len(finding.Evidence) != 2 {
+			t.Fatalf("the fired clause carries %d observations, want the two it matched: %+v", len(finding.Evidence), finding.Evidence)
+		}
+		wantProbes := []string{"egress.ssh.443", "egress.hub.direct"}
+		for i, want := range wantProbes {
+			if got := finding.Evidence[i].Probe; got != want {
+				t.Errorf("evidence[%d] names probe %q, want %q: the evidence is in Match order", i, got, want)
+			}
+		}
+		if got := finding.Evidence[0].State; got != diagnosis.StateUnresolved {
+			t.Errorf("the public observation's evidence state = %q, want %q", got, diagnosis.StateUnresolved)
+		}
+		if got := finding.Evidence[1].State; got != diagnosis.StateFail {
+			t.Errorf("the hub observation's evidence state = %q, want %q", got, diagnosis.StateFail)
+		}
+		for _, fact := range finding.Evidence {
+			if fact.Probe == "egress.ssh.known" {
+				t.Errorf("the fired clause's evidence names egress.ssh.known, which the clause never needed")
+			}
+		}
+	})
+
+	t.Run("every finding of a run carries at least one observation", func(t *testing.T) {
+		run := append(factsFixture(),
+			result("egress.hub.direct", probe.ProbeEgress,
+				observation("tcp 22", "203.0.113.10:22", probe.Measured, probe.Fail, probe.ReasonConnRefused,
+					"dial tcp 203.0.113.10:22: connect: connection refused")),
+			result("egress.ssh.known", probe.ProbeEgress,
+				observation("tcp 22 ssh banner", "github.com:22", probe.Measured, probe.Pass, probe.ReasonOK,
+					"tcp github.com:22: an SSH identification string answered")),
+		)
+		got := diagnosis.Diagnose(run)
+		if len(got.Findings) == 0 {
+			t.Fatal("the run produced no findings, so the case proves nothing")
+		}
+		for _, finding := range got.Findings {
+			if len(finding.Evidence) == 0 {
+				t.Errorf("the finding %q (%s) carries no evidence: %s", finding.Question, finding.Rule, finding.Conclusion)
+			}
+		}
+	})
+
+	t.Run("the evidence is a copy of the matched observations", func(t *testing.T) {
+		run := []probe.Result{
+			result("egress.hub.direct", probe.ProbeEgress,
+				observation("tcp 22", "203.0.113.10:22", probe.Measured, probe.Fail, probe.ReasonConnRefused,
+					"dial tcp 203.0.113.10:22: connect: connection refused")),
+		}
+		baseline := diagnosis.Diagnose(run)
+		mutated := diagnosis.Diagnose(run)
+		if len(mutated.Findings) == 0 || len(mutated.Findings[0].Evidence) == 0 {
+			t.Fatalf("the run produced no finding with evidence, so the case proves nothing: %+v", mutated.Findings)
+		}
+		for i := range mutated.Findings {
+			for j := range mutated.Findings[i].Evidence {
+				mutated.Findings[i].Evidence[j].Probe = "mutated"
+				mutated.Findings[i].Evidence[j].State = diagnosis.StatePass
+				mutated.Findings[i].Evidence[j].Observation.Target = "mutated.example:22"
+			}
+		}
+		again := diagnosis.Diagnose(run)
+		if !reflect.DeepEqual(again, baseline) {
+			t.Errorf("mutating the evidence a caller got back changed a later Diagnose:\n got %+v\nwant %+v", again, baseline)
+		}
+	})
+}

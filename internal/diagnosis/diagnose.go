@@ -45,6 +45,9 @@ func Diagnose(results []probe.Result) Diagnosis {
 			// Copied, not aliased: the finding must not hand a caller a way to rewrite the table
 			// row the conclusion came from.
 			DependsOn: append([]string(nil), rule.DependsOn...),
+			// Copied for the same reason: the matched facts are this pass's own values, and the
+			// finding must not hand a caller a way to rewrite what it rests on.
+			Evidence: append([]Fact(nil), matched...),
 		})
 	}
 	return diagnosis
