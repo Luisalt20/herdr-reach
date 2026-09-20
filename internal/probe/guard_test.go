@@ -345,6 +345,68 @@ func productionSeamsCalls(sources []sourceFile) []finding {
 	return calls
 }
 
+// productionSeamsLiteral returns the composite literal ProductionSeams returns,
+// or reports that the constructor or its literal was not found, so the
+// no-execution case can fail on a missing subject rather than pass vacuously.
+func productionSeamsLiteral(source sourceFile) (*ast.CompositeLit, bool) {
+	for _, declaration := range source.file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name.Name != "ProductionSeams" || function.Body == nil {
+			continue
+		}
+		var literal *ast.CompositeLit
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			if literal != nil {
+				return false
+			}
+			candidate, ok := node.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			if identifier, ok := candidate.Type.(*ast.Ident); ok && identifier.Name == "Seams" {
+				literal = candidate
+				return false
+			}
+			return true
+		})
+		if literal != nil {
+			return literal, true
+		}
+	}
+	return nil, false
+}
+
+// commandRunnerFieldFindings reports every CommandRunner field in one Seams
+// composite literal: an absent field and the explicit nil R1a leaves are the same
+// absence, while any runner value is an execution path the no-execution boundary
+// forbids (R-HR-02, design §6.2). It is a static check like its siblings: it reads
+// the constructor's own literal and narrows the boundary the deny-all sentinel
+// tests already exercise.
+func commandRunnerFieldFindings(source sourceFile, literal *ast.CompositeLit) []finding {
+	var findings []finding
+	for _, element := range literal.Elts {
+		keyValue, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := keyValue.Key.(*ast.Ident)
+		if !ok || key.Name != "CommandRunner" {
+			continue
+		}
+		if value, ok := keyValue.Value.(*ast.Ident); ok && value.Name == "nil" {
+			// The explicit nil is the same absence as an omitted field: R1a's
+			// boundary is that no runner is wired, and nil wires none.
+			continue
+		}
+		findings = append(findings, finding{
+			path: source.path,
+			line: source.fset.Position(keyValue.Pos()).Line,
+			what: "Seams literal wires CommandRunner",
+		})
+	}
+	return findings
+}
+
 // TestNoRealNetworkConstructionGuard is design §6.2 level 3: the module's own
 // sources are the evidence, and the two allowed files are the only place a real
 // primitive may be built. The subtests are ordered so a broken scanner fails a
@@ -467,6 +529,58 @@ func offender() {
 			if !reported[want] {
 				t.Errorf("the scan did not report %s in a scratch test fixture; a detector that knows only one call form must fail this case", want)
 			}
+		}
+	})
+
+	t.Run("the production seam set carries no command runner", func(t *testing.T) {
+		var realSource sourceFile
+		for _, source := range sources {
+			if source.path == "internal/probe/real.go" {
+				realSource = source
+				break
+			}
+		}
+		if realSource.file == nil {
+			t.Fatalf("internal/probe/real.go was not among the parsed non-test sources, so the no-execution boundary cannot be checked")
+		}
+		literal, ok := productionSeamsLiteral(realSource)
+		if !ok {
+			t.Fatalf("ProductionSeams has no Seams composite literal to inspect, so the no-execution boundary cannot be checked")
+		}
+		for _, reported := range commandRunnerFieldFindings(realSource, literal) {
+			t.Errorf("%s wires a CommandRunner into the production seam set; R1a leaves it nil so no code path can execute a third-party binary (R-HR-02, design §6.2)", reported.String())
+		}
+
+		// Counter-case: a fixture constructor whose literal wires a runner is
+		// reported, so a check that read nothing or inspected nothing cannot pass
+		// vacuously.
+		scratch := t.TempDir()
+		fixture := filepath.Join(scratch, "runner.go")
+		const source = `package scratch
+
+func ProductionSeams() Seams {
+	return Seams{CommandRunner: runner{}}
+}
+`
+		if err := os.WriteFile(fixture, []byte(source), 0o600); err != nil {
+			t.Fatalf("writing the scratch fixture: %v", err)
+		}
+		fixtureSources := parseNonTestSources(t, scratch)
+		var fixtureSource sourceFile
+		for _, candidate := range fixtureSources {
+			if candidate.path == "runner.go" {
+				fixtureSource = candidate
+			}
+		}
+		if fixtureSource.file == nil {
+			t.Fatalf("the scratch fixture runner.go was not parsed, so the counter-case cannot run")
+		}
+		fixtureLiteral, ok := productionSeamsLiteral(fixtureSource)
+		if !ok {
+			t.Fatalf("the scratch fixture's ProductionSeams literal was not found")
+		}
+		if findings := commandRunnerFieldFindings(fixtureSource, fixtureLiteral); len(findings) == 0 {
+			t.Errorf("the scan did not report the scratch fixture's CommandRunner field; a check that reads nothing must fail this case")
 		}
 	})
 }

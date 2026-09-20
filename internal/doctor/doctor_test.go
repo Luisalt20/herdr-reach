@@ -21,12 +21,15 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -43,6 +46,9 @@ import (
 type scriptedPlatform struct {
 	goos string
 	arch string
+	// wsl2 is the scripted WSL2 signal. It is false unless a case describes a
+	// WSL2 instance: a machine a case did not describe must not claim one.
+	wsl2 bool
 }
 
 // GOOS reports the scripted operating system.
@@ -51,9 +57,8 @@ func (p scriptedPlatform) GOOS() string { return p.goos }
 // Arch reports the scripted architecture.
 func (p scriptedPlatform) Arch() string { return p.arch }
 
-// WSL2 reports no WSL2 signal: a machine a case did not describe must not claim
-// one.
-func (p scriptedPlatform) WSL2() bool { return false }
+// WSL2 reports the scripted WSL2 signal.
+func (p scriptedPlatform) WSL2() bool { return p.wsl2 }
 
 // Systemd reports no service-manager signal, for the same reason.
 func (p scriptedPlatform) Systemd() bool { return false }
@@ -127,12 +132,22 @@ type runDocument struct {
 		Hub *string `json:"hub"`
 	} `json:"targets"`
 	Probes     []probeRow     `json:"probes"`
+	Findings   []findingRow   `json:"findings"`
 	Transports []transportRow `json:"transports"`
 	Node       struct {
 		Platform string `json:"platform"`
 		Arch     string `json:"arch"`
 		Refused  bool   `json:"refused"`
+		Note     string `json:"note"`
 	} `json:"node"`
+}
+
+// findingRow is one entry of the document's findings array.
+type findingRow struct {
+	Question   string   `json:"question"`
+	Rule       string   `json:"rule"`
+	Conclusion string   `json:"conclusion"`
+	DependsOn  []string `json:"depends_on"`
 }
 
 // probeRow is one entry of the document's probes array.
@@ -142,6 +157,7 @@ type probeRow struct {
 	Verdict    string  `json:"verdict"`
 	Resolution string  `json:"resolution"`
 	Reason     string  `json:"reason"`
+	Detail     string  `json:"detail"`
 }
 
 // transportRow is one entry of the document's transports array.
@@ -677,4 +693,311 @@ func setDifference(a, b []string) []string {
 		}
 	}
 	return difference
+}
+
+// --- the recording seam set (design §6.2, level 2) ---------------------------
+
+// recordedTriple is one outbound attempt in the (host, port, protocol) form the
+// declared target set uses. Each recording seam records the triple the protocol
+// it owns measures, so the comparison with probe.EffectiveTargets compares like
+// values rather than a seam's private idea of what it dialed.
+type recordedTriple struct {
+	Host     string
+	Port     int
+	Protocol probe.Protocol
+}
+
+// recordingSeams is the recording seam set of design §6.2 level 2: every TCP
+// dial, packet socket and TLS handshake is recorded as the triple its protocol
+// measures and then denied with probe.ErrSeamDenied. An attempt is therefore
+// visible in the record, nothing leaves the process, and an attempt against a
+// target the declaration does not carry appears as an undeclared triple.
+//
+// The resolver is the one seam that answers instead of denying, and the reason is
+// structural rather than permissive: the name-based probes resolve before they
+// dial, so a denying resolver would stop them before the dial seam that measures
+// their protocol was reached and the declared set could never be compared. The
+// answer is a scripted documentation address and never leaves the process.
+//
+// The command runner is wired to the counter so a case can observe every
+// invocation. The writes-nothing proof asks for withoutCommandRunner — the
+// production command shape — because internal/probe/real.go leaves the
+// production CommandRunner nil and only a shape with no runner can be called
+// zero times.
+type recordingSeams struct {
+	mu       sync.Mutex
+	triples  map[recordedTriple]bool
+	commands *recordingCommandRunner
+	seams    probe.Seams
+}
+
+// newRecordingSeams builds a fresh recording set with the counting command
+// runner wired.
+func newRecordingSeams() *recordingSeams {
+	recording := &recordingSeams{
+		triples:  make(map[recordedTriple]bool),
+		commands: &recordingCommandRunner{},
+	}
+	seams := probe.DenyAllSeams()
+	seams.Platform = scriptedPlatform{goos: "linux", arch: "amd64"}
+	seams.Resolver = answeringResolver{}
+	seams.Dialer = recordingDialer{recording: recording}
+	seams.PacketDialer = recordingPacketDialer{recording: recording}
+	seams.TLSVerifier = recordingTLSVerifier{recording: recording}
+	seams.CommandRunner = recording.commands
+	recording.seams = seams
+	return recording
+}
+
+// withoutCommandRunner returns the recording set in the production command
+// shape: internal/probe/real.go leaves the production CommandRunner nil, so a
+// run in that shape has no execution path at all. It is the shape the
+// writes-nothing proof runs under.
+func (r *recordingSeams) withoutCommandRunner() probe.Seams {
+	seams := r.seams
+	seams.CommandRunner = nil
+	return seams
+}
+
+// record adds one outbound attempt to the set.
+func (r *recordingSeams) record(triple recordedTriple) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.triples[triple] = true
+}
+
+// recorded returns a copy of the recorded triple set.
+func (r *recordingSeams) recorded() map[recordedTriple]bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	recorded := make(map[recordedTriple]bool, len(r.triples))
+	for triple := range r.triples {
+		recorded[triple] = true
+	}
+	return recorded
+}
+
+// recordingDialer records every TCP dial attempt and denies it.
+type recordingDialer struct{ recording *recordingSeams }
+
+// DialContext records the declared address and returns the denial.
+func (d recordingDialer) DialContext(_ context.Context, _, addr string) (net.Conn, error) {
+	d.recording.record(tripleFromAddress(addr, probe.ProtocolTCP))
+	return nil, probe.ErrSeamDenied
+}
+
+// recordingPacketDialer records every packet socket attempt and denies it.
+type recordingPacketDialer struct{ recording *recordingSeams }
+
+// DialPacket records the declared address and returns the denial.
+func (d recordingPacketDialer) DialPacket(_ context.Context, _, addr string) (probe.PacketConn, error) {
+	d.recording.record(tripleFromAddress(addr, probe.ProtocolUDP))
+	return nil, probe.ErrSeamDenied
+}
+
+// recordingTLSVerifier records every handshake attempt and denies it.
+type recordingTLSVerifier struct{ recording *recordingSeams }
+
+// Verify records the declared address and returns the denial.
+func (v recordingTLSVerifier) Verify(_ context.Context, target string, _ *tls.Config) (probe.TLSVerification, error) {
+	v.recording.record(tripleFromAddress(target, probe.ProtocolTLS))
+	return probe.TLSVerification{}, probe.ErrSeamDenied
+}
+
+// tripleFromAddress parses the "host:port" address a seam was handed. An address
+// that cannot be parsed is recorded with port -1, which no declared target can
+// carry, so a malformed attempt fails the set comparison instead of being
+// silently dropped from it.
+func tripleFromAddress(address string, protocol probe.Protocol) recordedTriple {
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return recordedTriple{Host: address, Port: -1, Protocol: protocol}
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return recordedTriple{Host: host, Port: -1, Protocol: protocol}
+	}
+	return recordedTriple{Host: host, Port: port, Protocol: protocol}
+}
+
+// answeringResolver answers every lookup with one scripted documentation
+// address. It is the seam that lets a name-based probe reach the dial seam that
+// measures its protocol; the answer never leaves the process.
+type answeringResolver struct{}
+
+// LookupHost returns the scripted address.
+func (answeringResolver) LookupHost(context.Context, string) ([]string, error) {
+	return []string{"192.0.2.1"}, nil
+}
+
+// recordingCommandRunner records every invocation and denies it, so a case can
+// assert both that the run attempted an execution and that the attempt never
+// became one.
+type recordingCommandRunner struct {
+	mu    sync.Mutex
+	calls []commandInvocation
+}
+
+// commandInvocation is one recorded invocation: the command line the probe asked
+// for and the runner's answer.
+type commandInvocation struct {
+	Command string
+	Err     error
+}
+
+// Run records the invocation and returns the denial.
+func (r *recordingCommandRunner) Run(_ context.Context, name string, args ...string) ([]byte, []byte, error) {
+	command := name
+	if len(args) > 0 {
+		command += " " + strings.Join(args, " ")
+	}
+	r.mu.Lock()
+	r.calls = append(r.calls, commandInvocation{Command: command, Err: probe.ErrSeamDenied})
+	r.mu.Unlock()
+	return nil, nil, probe.ErrSeamDenied
+}
+
+// invocations returns a copy of the recorded invocations.
+func (r *recordingCommandRunner) invocations() []commandInvocation {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]commandInvocation(nil), r.calls...)
+}
+
+// declaredTripleSet converts the effective declared set into the recorded form,
+// so set equality is a comparison of two values of the same type.
+func declaredTripleSet(effective []probe.EffectiveTarget) map[recordedTriple]bool {
+	declared := make(map[recordedTriple]bool, len(effective))
+	for _, target := range effective {
+		declared[recordedTriple{Host: target.Host, Port: target.Port, Protocol: target.Protocol}] = true
+	}
+	return declared
+}
+
+// tripleSetDifference reports the two directions of the set comparison: attempts
+// that are not declared, and declared targets that were never attempted. An
+// empty result is set equality.
+func tripleSetDifference(got, want map[recordedTriple]bool) []string {
+	var difference []string
+	for triple := range got {
+		if !want[triple] {
+			difference = append(difference, fmt.Sprintf("undeclared attempt recorded: %s:%d %s", triple.Host, triple.Port, triple.Protocol))
+		}
+	}
+	for triple := range want {
+		if !got[triple] {
+			difference = append(difference, fmt.Sprintf("declared target never attempted: %s:%d %s", triple.Host, triple.Port, triple.Protocol))
+		}
+	}
+	sort.Strings(difference)
+	return difference
+}
+
+// findingFor returns the document's finding for question, failing the case when
+// the finding is absent: a conclusion must fail loudly rather than compare a
+// zero value against it.
+func findingFor(t *testing.T, document runDocument, question string) findingRow {
+	t.Helper()
+	for _, finding := range document.Findings {
+		if finding.Question == question {
+			return finding
+		}
+	}
+	t.Fatalf("the document carries no finding for question %q", question)
+	return findingRow{}
+}
+
+// --- the PRD §1.1 replay seams -----------------------------------------------
+
+// matrixReplaySeams builds the scripted seams PRD §1.1's matrix implies, through
+// the real pipeline: the hub address refuses, the two public SSH targets answer
+// with an identification string, the Cloudflare edge accepts a connection, and
+// the chain verifies with the issuer and code the specification recorded. The
+// seams the matrix does not script — the datagram probe and the command-derived
+// local.sshd observations — stay denied, which is a not-measured absence and
+// never an unresolved one, so the run is complete.
+func matrixReplaySeams() probe.Seams {
+	seams := probe.DenyAllSeams()
+	seams.Platform = scriptedPlatform{goos: "linux", arch: "amd64"}
+	seams.Resolver = answeringResolver{}
+	seams.Dialer = scriptedMatrixDialer{}
+	seams.TLSVerifier = verifyingTLSVerifier{}
+	return seams
+}
+
+// wsl2ReplaySeams is matrixReplaySeams on a WSL2 node, so the run's two
+// projections carry the WSL2 wording the RG-4 assertions inspect.
+func wsl2ReplaySeams() probe.Seams {
+	seams := matrixReplaySeams()
+	seams.Platform = scriptedPlatform{goos: "linux", arch: "amd64", wsl2: true}
+	return seams
+}
+
+// scriptedMatrixDialer answers the addresses PRD §1.1 measured: the hub address
+// refuses, the two public SSH targets speak SSH, and every other declared target
+// accepts a connection.
+type scriptedMatrixDialer struct{}
+
+// DialContext answers the declared address.
+func (scriptedMatrixDialer) DialContext(_ context.Context, _, addr string) (net.Conn, error) {
+	switch addr {
+	case "203.0.113.10:22":
+		return nil, syscall.ECONNREFUSED
+	case "github.com:22", "ssh.github.com:443":
+		return &scriptedConn{banner: []byte("SSH-2.0-herdr-reach-scripted\r\n")}, nil
+	default:
+		return &scriptedConn{}, nil
+	}
+}
+
+// scriptedConn is a connection a scripted dialer hands back: an optional SSH
+// identification string is readable once, the deadline calls are accepted, and
+// closing is a no-op. It is deliberately not a socket: a scripted seam must not
+// be able to reach one by accident.
+type scriptedConn struct {
+	banner []byte
+	read   bool
+}
+
+// Read returns the scripted banner once, then EOF.
+func (c *scriptedConn) Read(p []byte) (int, error) {
+	if c.read || len(c.banner) == 0 {
+		return 0, io.EOF
+	}
+	c.read = true
+	return copy(p, c.banner), nil
+}
+
+// Write accepts the bytes without doing anything with them.
+func (c *scriptedConn) Write(p []byte) (int, error) { return len(p), nil }
+
+// Close releases nothing: the connection was never a socket.
+func (c *scriptedConn) Close() error { return nil }
+
+// LocalAddr reports no address, for the same reason.
+func (c *scriptedConn) LocalAddr() net.Addr { return nil }
+
+// RemoteAddr reports no address, for the same reason.
+func (c *scriptedConn) RemoteAddr() net.Addr { return nil }
+
+// SetDeadline accepts the bound without a socket to enforce it on.
+func (c *scriptedConn) SetDeadline(time.Time) error { return nil }
+
+// SetReadDeadline accepts the bound without a socket to enforce it on.
+func (c *scriptedConn) SetReadDeadline(time.Time) error { return nil }
+
+// SetWriteDeadline accepts the bound without a socket to enforce it on.
+func (c *scriptedConn) SetWriteDeadline(time.Time) error { return nil }
+
+// verifyingTLSVerifier answers every handshake with the chain PRD §1.1 recorded.
+// It refuses a configuration that disables verification, so the scripted seam
+// cannot become the place where R-HR-04 is weakened.
+type verifyingTLSVerifier struct{}
+
+// Verify reports the recorded issuer and code.
+func (verifyingTLSVerifier) Verify(_ context.Context, _ string, cfg *tls.Config) (probe.TLSVerification, error) {
+	if cfg == nil || cfg.InsecureSkipVerify {
+		return probe.TLSVerification{}, errors.New("the scripted verifier refuses a configuration that disables verification")
+	}
+	return probe.TLSVerification{Issuer: "Let's Encrypt/ISRG", VerificationCode: "0"}, nil
 }
