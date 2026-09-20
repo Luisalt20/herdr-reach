@@ -172,21 +172,29 @@ A `fail` verdict is a measured negative — blocked, refused, absent — and it 
 answer. `unresolved` is no answer at all. The difference is the tool's whole point: when it
 cannot establish something it says so and names why, instead of guessing.
 
-### One failure to read carefully: an unexpected TLS issuer
+### One `unresolved` to read carefully: an unexpected TLS publisher
 
-`tls.interception` compares the issuer of the chain it observed against a **declared expected
-publisher set** for that host, and reports a `fail` when the observed issuer is not in it — naming
-both, and never claiming why they differ. That set was recorded from a single hand-run
-(`Let's Encrypt/ISRG`), while a large CDN legitimately serves its fronts from several certificate
-authorities: a live run on 2026-09-20 observed `Google Trust Services/GTS` for `www.cloudflare.com`
-on a healthy path, and the probe said exactly that — the chain verified, the issuer was simply not
-one the declaration expected.
+`tls.interception` compares the publisher of the chain it observed against a **declared expected
+publisher set** for that host. That set was recorded from a single hand-run (`Let's Encrypt/ISRG`),
+while a large CDN legitimately serves its fronts from several certificate authorities: a live run on
+2026-09-20 observed `Google Trust Services/GlobalSign` for `www.cloudflare.com` on a healthy path.
 
-So a `tls.interception` failure whose conclusion says the observed issuer is **not in the declared
-set** is a limitation of this beta's declared set rather than evidence of an interception. Send the
-observed issuer with your report: the set grows from what testers see. The other reason code,
-`tls_verify_failed` — a chain that does not verify at all — is a different and more serious signal,
-and worth reporting on its own.
+When the chain verifies but its publisher is outside that declared set, the probe reports
+**`unresolved`** — not a `fail`. The run establishes two things (the chain verified, and the
+publisher is not the one declared) and **cannot establish a third**: whether the difference is a
+publisher change or an interception. Reporting it as a failure would accuse a network this
+measurement cannot convict, so the divergence is left open and named as open.
+
+Two consequences to expect from that:
+
+- **The run is incomplete**, so it exits `1`. The question was attempted and could not be settled;
+  that is a result, and the `unresolved` line names it.
+- It is **not** evidence of interception. The reason code worth reporting on its own is
+  `tls_verify_failed` — a chain that does not verify at all — which is a different and more serious
+  signal.
+
+The declared set is a declaration, not a record of what has been observed: an entry is added when
+there is a stated reason for it, never by copying a publisher that a run happened to see.
 
 ### The completeness line
 
@@ -207,7 +215,7 @@ measurement named as a coverage gap.
 | Code | Meaning |
 |:---|:---|
 | `0` | A measurement completed — including "blocked" answers and a refused native-Windows node. Those are results, not failures of the run. |
-| `1` | The run is incomplete: at least one attempted measurement produced no answer. |
+| `1` | The run is incomplete: at least one attempted measurement produced no answer. Since 2026-09-20 this includes a verified chain whose publisher is outside the declared expected set — see the section above. |
 | `2` | Usage or internal error — a bad flag, an unusable address, a failed write. No diagnosis is presented as completed, and standard output stays empty. |
 
 One platform expectation to know before you file a bug: on macOS the run cannot resolve the local

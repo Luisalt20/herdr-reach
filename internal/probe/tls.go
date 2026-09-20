@@ -14,10 +14,13 @@ package probe
 //   - the chain verified and its issuer is in the declared expected set — a measured pass;
 //   - the chain failed verification — a measured failure whose detail carries the
 //     verifier's own code;
-//   - the chain verified but its issuer is outside the declared expected set — a measured
-//     failure whose wording says exactly that. It is the interception candidate R-HR-04
-//     exists for, and the wording never accuses: it reports the observed issuer and the
-//     declared set it was compared against, and claims nothing about why they differ;
+//   - the chain verified but its issuer is outside the declared expected set — unresolved.
+//     Publishers rotate, and the single declared entry means the first rotation lands here,
+//     where the run cannot tell a rotation from an interception (the dated note of
+//     2026-09-20 in the change's design.md records the measurement that settled this). The
+//     wording reports the observed issuer and the declared set it was compared against and
+//     states exactly what the run cannot establish: it never accuses, and it does not call
+//     the divergence harmless either;
 //   - the handshake produced no answer — unresolved. A handshake that produced nothing is
 //     not a rejected chain, and collapsing the two would report an interception-free
 //     network whenever a handshake failed for an unrelated reason.
@@ -182,12 +185,13 @@ func tlsObserve(label, address string, raw RawObservation) Observation {
 // as a rejected chain. A verification failure is a measurement of the target and carries
 // the verifier's own code into the detail. Any other error produced no answer at all and
 // is unresolved. Only when the handshake verified does the issuer decide between the pass
-// and the interception candidate, and that wording reports the observed issuer beside the
-// declared set it was compared against: it never accuses the network of causing the
-// difference.
+// and the recorded divergence, and that wording reports the observed issuer beside the
+// declared set it was compared against and states that the run cannot distinguish a
+// publisher change from an interception: it never accuses the network, and it does not
+// call the divergence harmless either.
 //
-// The observed issuer and the verification code are quoted into every definite outcome's
-// detail, because R-HR-04 requires the result itself to carry both. An empty value is
+// The observed issuer and the verification code are quoted into every outcome the handshake
+// produced, because R-HR-04 requires the result itself to carry both. An empty value is
 // reported as such rather than omitted, so a reader can tell "the verifier reported no
 // code" from "the code was dropped".
 func tlsChainFact(host, address string, verification TLSVerification, err error) RawObservation {
@@ -223,7 +227,7 @@ func tlsChainFact(host, address string, verification TLSVerification, err error)
 	default:
 		return RawObservation{
 			Kind: ObsTLSIssuerUnexpected,
-			Wording: fmt.Sprintf("tls %s: the chain verified and its observed issuer %q is not in the declared expected set for %s (verification code %q). The result records the observed issuer and the declared set it was compared against, and makes no claim about why the two differ",
+			Wording: fmt.Sprintf("tls %s: the chain verified and its observed issuer %q is not in the declared expected set for %s (verification code %q); the result records the observed publisher and the declared set it was compared against, and this run cannot distinguish a publisher change from an interception, so the divergence is reported as unresolved rather than as a failure",
 				address, issuer, host, code),
 		}
 	}

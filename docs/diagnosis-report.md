@@ -25,6 +25,11 @@ row here — or a row without a constant — fails the suite.
   not measured, and `sshd -T` is not measured by this slice's boundary.
 - A default live run on **macOS exits `1`**, because `tls.truststore` is attempted and unresolved
   there by decision (RG-3). The Linux expectation is not universal.
+- A TLS chain that verified with a publisher outside the declared expected set is an unresolved
+  observation as of 2026-09-20 (see the `tls_issuer_unexpected` row below): the run attempted a
+  question it could not settle, so it is incomplete and exits `1`. Where a plugin host reads a
+  non-zero action status as a failed action — the interaction issue #58 tracks for Herdr — a
+  publisher divergence now reaches that reading.
 - The constants are `ExitOK`, `ExitIncomplete` and `ExitUsage` in `internal/doctor/exit.go`. The
   assertion that those constants match this table lives in `internal/doctor/doctor_test.go`
   (PR 18), not in `internal/report/docs_test.go`: `internal/doctor` imports `internal/report`, and
@@ -98,7 +103,7 @@ stays in `detail`. The set is closed.
 | `udp_unreachable` | An ICMP port-unreachable surfaced by the socket: a definite negative. |
 | `udp_error_unclassified` | Any other UDP socket error: ambiguous. |
 | `tls_verify_failed` | A TLS chain that failed verification; the verification code is in `detail`. |
-| `tls_issuer_unexpected` | A verified chain whose issuer is not in the declared expected publisher set for the target. The wording never accuses the network. |
+| `tls_issuer_unexpected` | A verified chain whose issuer is not in the declared expected publisher set for the target. The run records the observed publisher and the declared set it was compared against and cannot establish whether the difference is a publisher change or an interception, so the observation is unresolved — it makes the run incomplete and exits `1`, and it is never a failure and never a pass. |
 | `tls_handshake_unresolved` | A TLS handshake error that is neither a verification failure nor an unexpected issuer: ambiguous. |
 | `truststore_rejects_chain` | The local trust pool rejected the chain: a definite negative. |
 | `truststore_platform_unavailable` | A platform verifier that cannot answer at all (macOS system roots): the capability was attempted and is unusable. |
@@ -168,7 +173,7 @@ reader can quote which rule fired.
 | `EGRESS_QUIC_UNRESOLVED` | `egress.quic` | The probe was attempted and produced no answer. |
 | `EGRESS_QUIC_NOT_MEASURED` | `egress.quic` | The probe was never attempted. |
 | `EGRESS_QUIC_PASS` | `egress.quic` | The probe reported a measured pass. |
-| `TLS_INTERCEPTION_FAIL` | `tls.interception` | The probe reported a measured failure. |
+| `TLS_INTERCEPTION_FAIL` | `tls.interception` | The probe reported a measured failure. Reachable through a chain that failed verification (`tls_verify_failed`); since 2026-09-20 a publisher outside the declared expected set is unresolved and fires `TLS_INTERCEPTION_UNRESOLVED` instead. |
 | `TLS_INTERCEPTION_UNRESOLVED` | `tls.interception` | The probe was attempted and produced no answer. |
 | `TLS_INTERCEPTION_NOT_MEASURED` | `tls.interception` | The probe was never attempted. |
 | `TLS_INTERCEPTION_PASS` | `tls.interception` | The probe reported a measured pass. |

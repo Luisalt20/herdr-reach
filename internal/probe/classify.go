@@ -91,9 +91,11 @@ const (
 	ObsTLSVerified Observable = "tls_verified"
 	// ObsTLSVerifyFailed is a chain that failed verification.
 	ObsTLSVerifyFailed Observable = "tls_verification_failed"
-	// ObsTLSIssuerUnexpected is a chain whose issuer is outside the declared
-	// expected set for the target. It is an interception candidate, and the
-	// wording never accuses.
+	// ObsTLSIssuerUnexpected is a verified chain whose issuer is outside the
+	// declared expected set for the target. The run records the divergence but
+	// cannot establish whether the publisher changed or the traffic is
+	// intercepted, so the table reports it as unresolved rather than as a
+	// failure, and the wording never accuses.
 	ObsTLSIssuerUnexpected Observable = "tls_issuer_unexpected"
 	// ObsTLSHandshakeError is a handshake error that is neither a verification
 	// failure nor an unexpected issuer.
@@ -246,7 +248,12 @@ var classificationTable = []classificationRow{
 	// expected publisher is a pass.
 	{PurposeTLSCertificate, ObsTLSVerified, Classification{Measured, Pass, ReasonOK}},
 	{PurposeTLSCertificate, ObsTLSVerifyFailed, Classification{Measured, Fail, ReasonTLSVerifyFailed}},
-	{PurposeTLSCertificate, ObsTLSIssuerUnexpected, Classification{Measured, Fail, ReasonTLSIssuerUnexpected}},
+	// A verified chain whose issuer is outside the declared set records a divergence the
+	// run cannot settle: a publisher that rotated and an interception look identical here,
+	// so the fact is an absence — the run attempted the question and could not answer it —
+	// rather than a failure. The wording records the observed publisher and the declared
+	// set it was compared against, and states the run cannot distinguish the two.
+	{PurposeTLSCertificate, ObsTLSIssuerUnexpected, Classification{Unresolved, Indeterminate, ReasonTLSIssuerUnexpected}},
 	{PurposeTLSCertificate, ObsTLSHandshakeError, Classification{Unresolved, Indeterminate, ReasonTLSHandshakeUnresolved}},
 	// A chain measurement can also be unable to run at all: no verifier was
 	// injected for the run, or the verifier seam refused. Both are attempts that

@@ -57,9 +57,12 @@ const (
 	// ReasonTLSVerifyFailed is a TLS chain that failed verification, with the
 	// verification code in the detail.
 	ReasonTLSVerifyFailed ReasonCode = "tls_verify_failed"
-	// ReasonTLSIssuerUnexpected is a verified chain whose issuer is not the
-	// declared expected publisher for the target. The wording says the issuer
-	// is not in the declared expected set and never accuses the network.
+	// ReasonTLSIssuerUnexpected is a verified chain whose issuer is not in the
+	// declared expected set for the target. The run cannot distinguish a
+	// publisher change from an interception, so the observation is unresolved —
+	// never a failure and never a pass — and the wording records the observed
+	// issuer and the declared set it was compared against without accusing the
+	// network.
 	ReasonTLSIssuerUnexpected ReasonCode = "tls_issuer_unexpected"
 	// ReasonTLSHandshakeUnresolved is a TLS handshake error that is neither a
 	// verification failure nor an unexpected issuer: ambiguous.
