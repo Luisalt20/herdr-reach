@@ -86,8 +86,12 @@ var classificationCases = []classificationCase{
 		probe.Classification{Resolution: probe.Measured, Verdict: probe.Fail, Reason: probe.ReasonTLSVerifyFailed},
 	},
 	{
+		// Design §5.1 printed this row as measured/fail; the dated note of 2026-09-20
+		// (design.md) revised it: the chain verified but its publisher was outside the
+		// declared set, and the run cannot establish whether the publisher rotated or
+		// the traffic was intercepted, so the fact is an absence and not a failure.
 		"issuer outside the declared expected set", probe.PurposeTLSCertificate, probe.ObsTLSIssuerUnexpected,
-		probe.Classification{Resolution: probe.Measured, Verdict: probe.Fail, Reason: probe.ReasonTLSIssuerUnexpected},
+		probe.Classification{Resolution: probe.Unresolved, Verdict: probe.Indeterminate, Reason: probe.ReasonTLSIssuerUnexpected},
 	},
 	{
 		"tls handshake error, neither verification nor issuer", probe.PurposeTLSCertificate, probe.ObsTLSHandshakeError,

@@ -8,9 +8,11 @@ package probe_test
 // — and reports four outcomes: a chain that verifies with an issuer in the declared
 // expected set (a measured pass), a chain that fails verification (a measured failure
 // carrying the verification code in its detail), a chain whose issuer is outside the
-// declared expected set (a measured failure whose wording says so and never accuses), and
-// a handshake that produced no answer (unresolved). No verifier injected, or a verifier
-// seam that refused, are two distinguishable not-measured facts.
+// declared expected set (unresolved: the wording records the observed publisher and the
+// declared set, and states that the run cannot distinguish a publisher change from an
+// interception, so it accuses no one and dismisses nothing), and a handshake that produced
+// no answer (unresolved). No verifier injected, or a verifier seam that refused, are two
+// distinguishable not-measured facts.
 //
 // The cases script the verifier seam rather than a real handshake, and the verifier
 // records the verifying configuration it was handed, so the two properties the spec's
@@ -112,8 +114,9 @@ func runTLSInterception(t *testing.T, seams probe.Seams, targets probe.TargetInp
 
 // TestTLSInterceptionReportsEveryChainOutcome is R-HR-04's outcome table: a verified chain
 // with the declared issuer is a measured pass; a verification failure is a measured
-// failure carrying the verification code; an issuer outside the declared expected set is a
-// measured failure whose wording says so and never accuses; any other handshake error is
+// failure carrying the verification code; an issuer outside the declared expected set is
+// unresolved — the wording records the divergence and states that the run cannot tell a
+// publisher change from an interception, and never accuses; any other handshake error is
 // unresolved. Each case asserts the declared target, the observation triple, the aggregate,
 // and the wording each outcome must carry.
 func TestTLSInterceptionReportsEveryChainOutcome(t *testing.T) {
@@ -154,12 +157,12 @@ func TestTLSInterceptionReportsEveryChainOutcome(t *testing.T) {
 			wantDetail:     []string{"1", "x509: certificate signed by unknown authority"},
 		},
 		{
-			name:           "an issuer outside the declared expected set never accuses",
+			name:           "an issuer outside the declared expected set is unresolved, never a failure and never an accusation",
 			verifier:       &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: "Acme Inspection CA", VerificationCode: "0"}},
-			wantResolution: probe.Measured,
-			wantVerdict:    probe.Fail,
+			wantResolution: probe.Unresolved,
+			wantVerdict:    probe.Indeterminate,
 			wantReason:     probe.ReasonTLSIssuerUnexpected,
-			wantDetail:     []string{"Acme Inspection CA", "not in the declared expected set", "0"},
+			wantDetail:     []string{"Acme Inspection CA", "not in the declared expected set", "0", "cannot distinguish a publisher change from an interception", "unresolved"},
 			forbidDetail:   []string{"attacker", "malicious", "hijack", "middlebox", "man in the middle", "intercepting"},
 		},
 		{
@@ -271,8 +274,9 @@ func TestTLSInterceptionReportsTheIndeterminateControlCase(t *testing.T) {
 
 // TestTLSInterceptionLeavesTheVerifyingConfigurationUnchanged is the spec's second
 // scenario: the configuration the probe verifies with is never weakened, is unchanged
-// after the run, and is used exactly once — no unverified retry. It covers the definite
-// outcomes, because a failure is where a retry-without-verification would be tempting.
+// after the run, and is used exactly once — no unverified retry. It covers the pass, the
+// verification failure and the recorded publisher divergence, because a result that is not
+// a pass is where a retry-without-verification would be tempting.
 func TestTLSInterceptionLeavesTheVerifyingConfigurationUnchanged(t *testing.T) {
 	address := declaredAddress(t, testTLSInterceptionProbe)
 
@@ -297,7 +301,7 @@ func TestTLSInterceptionLeavesTheVerifyingConfigurationUnchanged(t *testing.T) {
 		{
 			name:       "a chain whose issuer is outside the declared set",
 			verifier:   &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: "Acme Inspection CA", VerificationCode: "0"}},
-			wantStatus: "fail",
+			wantStatus: "unresolved",
 		},
 	}
 

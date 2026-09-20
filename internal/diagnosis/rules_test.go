@@ -2154,6 +2154,41 @@ func TestTLSFactQuestionsReachTrustStoreConclusions(t *testing.T) {
 	})
 }
 
+// TestTLSInterceptionPublisherDivergenceReachesTheUnresolvedID is the diagnosis-level half of the
+// 2026-09-20 revision (design.md's dated note): an issuer outside the declared expected set is an
+// absence the run could not settle, not a failure, so it fires the probe's unresolved derived id
+// and carries the probe's own wording — which records the observed publisher and the declared set
+// and states that the run cannot distinguish a publisher change from an interception.
+//
+// The case also asserts the negative the revision exists for: the divergence does not fire
+// `TLS_INTERCEPTION_FAIL`, because that id names an established failure and this run established
+// none. `TLS_INTERCEPTION_FAIL` stays declared and reachable through a chain that failed
+// verification, which is the one chain fact the probe still measures as a failure.
+func TestTLSInterceptionPublisherDivergenceReachesTheUnresolvedID(t *testing.T) {
+	run := []probe.Result{
+		result("tls.interception", probe.ProbeTLS,
+			observation("tls 443 chain", "www.cloudflare.com:443", probe.Unresolved, probe.Indeterminate, probe.ReasonTLSIssuerUnexpected,
+				"tls www.cloudflare.com:443: the chain verified and its observed issuer \"Google Trust Services/GlobalSign\" is not in the declared expected set for www.cloudflare.com (verification code \"0\"); the result records the observed publisher and the declared set it was compared against, and this run cannot distinguish a publisher change from an interception, so the divergence is reported as unresolved rather than as a failure"),
+		),
+	}
+	got := diagnosis.Diagnose(run)
+	finding := findingFor(t, got, "tls.interception")
+	if want := diagnosis.RuleID("tls.interception", diagnosis.StateUnresolved); finding.Rule != want {
+		t.Fatalf("the run fired %q, want %q", finding.Rule, want)
+	}
+	for _, want := range []string{"tls_issuer_unexpected", "cannot distinguish a publisher change from an interception", "attempted and unresolved"} {
+		if !strings.Contains(finding.Conclusion, want) {
+			t.Errorf("the conclusion %q does not carry %q", finding.Conclusion, want)
+		}
+	}
+	fail := diagnosis.RuleID("tls.interception", diagnosis.StateFail)
+	for _, f := range got.Findings {
+		if f.Rule == fail {
+			t.Fatalf("the publisher divergence fired %q, which claims the run established interception", fail)
+		}
+	}
+}
+
 // TestDeferredHandNamedRuleIDs is this slice's deferral assertion, not an assumption: the hand-named
 // tls spellings §5.2 prints are not declared, because the two `tls.*` groups were restated to the
 // derived fact ids, and `NODE_WSL2_SYSTEMD_ABSENT` is not implemented because the service-manager
