@@ -303,17 +303,18 @@ Second-split boundary applied in review: the rule groups landed first (WU21) and
 
 ### PR 13 — WU23 + WU24 · The transport contract, placeholders, registry and the two SSH adapters
 
-`Files`: `internal/transport/contract.go`, `internal/transport/pending.go`, `internal/transport/directssh.go`, `internal/transport/reversessh.go`, `internal/transport/registry.go`, `internal/transport/contract_test.go`. `Depends on`: PR 12.
+`Files`: `internal/transport/{contract,pending,directssh,reversessh,registry,contract_test}.go`, plus the disclosed enabling edits `internal/diagnosis/{findings.go,diagnose.go,rules_test.go}`. `Depends on`: PR 12.
+Adjudicated 2026-09-20 (design §3.2's dated note, issue #34): `Finding` gains `Evidence []Fact` so a rejection can name the measured target and its port (R-HR-06) without parsing prose; `Registry()`/`Evaluate` are typed on `Candidate` because D7 makes it the registration contract; `Verify` returns `([]probe.Result, error)`.
 Second-split boundary if this group lands above 600: the contract types, placeholders and typed error (WU23) first, then the two SSH adapters, the registry and the contract loop (WU24).
 
-- [ ] **RED** — write `contract_test.go` with the type-level cases: the `RequirementKind` set is closed (`hostname`, `zone_membership`, `third_party_permission`, `hub_address`, `sshd_effective_config`), viability is a strict boolean with no third value in the type, `Feasibility` carries `Requires`, and the typed error text names the member and the owner slice. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `contract.go` (`Requirement`, `RequirementKind`, `Feasibility`, `Candidate`, `Transport`) and `pending.go` (placeholder `PairingBundle`, `Step`, `Handle` with a doc comment naming the owning slice and the removal trigger, plus `ErrNotImplementedInThisPhase`). <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — register a fixture type implementing only `Candidate` in the test and assert it reports its requirement list; assert no value is returned alongside the typed error. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/transport/`. <!-- sdd-owner: implementation -->
-- [ ] **RED** — add the loop to `contract_test.go` over `transport.Registry()`: `!Viable ⟹ Reason != ""`; a viable transport names at least one measured observation in `Notes`; every kind declared by `Requires()` appears among the evaluated `Feasibility.Requires` rows. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement the two SSH adapters (`Feasible` only, derived from the `diagnosis` facts) and `registry.go` with the deterministic order. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert each rejection names the specific measured target or observation, and that a not-measured hub dependency yields a reason stating the measurement is missing rather than asserting a block (R-HR-06). <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — no per-transport branch inside `diagnosis`; `gofmt -l .`, `go vet ./...`, `go test ./...` and re-run the agnostic guard. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `contract_test.go` with the type-level cases: the `RequirementKind` set is closed (`hostname`, `zone_membership`, `third_party_permission`, `hub_address`, `sshd_effective_config`), viability is a strict boolean with no third value in the type, `Feasibility` carries `Requires`, and the typed error text names the member and the owner slice. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `contract.go` (`Requirement`, `RequirementKind`, `Feasibility`, `Candidate`, `Transport`) and `pending.go` (placeholder `PairingBundle`, `Step`, `Handle` with a doc comment naming the owning slice and the removal trigger, plus `ErrNotImplementedInThisPhase`). <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — register a fixture type implementing only `Candidate` in the test and assert it reports its requirement list; assert no value is returned alongside the typed error. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/transport/`. <!-- sdd-owner: implementation -->
+- [x] **RED** — add the loop to `contract_test.go` over `transport.Registry()`: `!Viable ⟹ Reason != ""`; a viable transport names at least one measured observation in `Notes`; every kind declared by `Requires()` appears among the evaluated `Feasibility.Requires` rows. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement the two SSH adapters (`Feasible` only, derived from the `diagnosis` facts) and `registry.go` with the deterministic order. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert each rejection names the specific measured target or observation, and that a not-measured hub dependency yields a reason stating the measurement is missing rather than asserting a block (R-HR-06). <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — no per-transport branch inside `diagnosis`; `gofmt -l .`, `go vet ./...`, `go test ./...` and re-run the agnostic guard. <!-- sdd-owner: implementation -->
 
 ### PR 14 — WU25 + WU26 · The `tailscale` and `cloudflare-tunnel` adapters, the not-implemented proof and registry closure
 
