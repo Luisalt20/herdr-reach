@@ -367,7 +367,10 @@ func unknownPlatformObservation(wording string) Observation {
 //  1. `binary present` — an sshd binary at the documented path, read through the
 //     injected FS seam. Absence is a measured negative, and its detail states that
 //     installing sshd is not part of this run: this slice detects, it does not
-//     provision (R-HR-02, R-HR-29).
+//     provision (R-HR-02, R-HR-29). On a native-Windows node the documented path
+//     is a POSIX path, so the check is not attempted at all and the observation is
+//     not measured: no absence is claimed, and the outcome cannot depend on the
+//     working directory the process was launched from (issue #66).
 //  2. `service state` — a read-only service-manager query through the injected
 //     CommandRunner. The query asks for the unit's state and changes nothing.
 //  3. `effective config` — the written configuration read through the FS seam
@@ -448,10 +451,14 @@ func runClockNow(seams Seams) time.Time {
 }
 
 // localSSHD is the `local.sshd` probe. It carries the run's seams and nothing
-// else, and it reads only two of them: the filesystem and the command runner. A
-// probe that reached the filesystem or executed a binary directly would measure
-// the machine the test runs on instead of the machine the case describes, and
-// would put an exec outside the run's capability set (R-HR-02).
+// else, and it reads three of them: the filesystem for the two local paths, the
+// command runner for the service query and the effective configuration, and the
+// platform seam for the one question that decides whether a documented path
+// applies at all — on a native-Windows node the binary check is not attempted,
+// because the documented path is a POSIX path (issue #66). A probe that reached
+// the filesystem, executed a binary or classified the platform directly would
+// measure the machine the test runs on instead of the machine the case describes,
+// and would put an exec outside the run's capability set (R-HR-02).
 type localSSHD struct {
 	seams Seams
 }
@@ -519,7 +526,37 @@ func (p *localSSHD) now() time.Time { return runClockNow(p.seams) }
 // A check that fails for any other reason is not absence: nothing answered about
 // the path itself, so the observation is unresolved and carries the failure
 // verbatim. Reporting it as absent would be a fabricated measurement.
+//
+// One platform is decided before the question is asked. On a native-Windows node
+// the documented path is a POSIX path, and this tool does not operate on that
+// node, so the check is not attempted at all. Not attempting it is what keeps the
+// outcome independent of the directory the process was launched from: on Windows
+// a path beginning with "/" resolves against the working directory, so a Stat
+// would measure whichever filesystem the process happened to start in — issue #66
+// recorded both a false absence and a false presence from that one behaviour. The
+// check also would not answer the question even when it found a file: the
+// Windows sshd is installed at its own path, which is the measurement a later
+// work unit owes native Windows. The observation reports the not-applicable fact
+// through the classification vocabulary's reusable "the attempt was not made by
+// design" observable, because the closed reason set has no "not applicable" code
+// and adding one is a contract change this fix does not need; the wording names
+// the platform reason, which is what tells a reader this was the POSIX path and
+// not a withheld capability. WSL2 is not caught by that branch: a WSL2 instance
+// reports GOOS "linux", which is exactly why the POSIX path remains meaningful
+// there.
 func (p *localSSHD) observeBinary() Observation {
+	// The platform comes first, before every filesystem read and before the
+	// missing-seam branch: on a native-Windows node the documented path is not a
+	// path this tool may check, and that holds whether or not a filesystem seam was
+	// injected. The branch reads the platform seam rather than the process, so it
+	// scripts and tests like every other local fact.
+	if p.nativeWindowsNode() {
+		return Observe(labelSSHDBinary, localSSHDBinaryPath, PurposeSSHDConfiguration, RawObservation{
+			Kind: ObsCapabilityExcluded,
+			Wording: fmt.Sprintf("%s: the documented path is a POSIX path and this tool does not operate on a native-Windows node, so the path was not checked and the absence of the sshd binary is not claimed",
+				localSSHDBinaryPath),
+		})
+	}
 	if p.seams.FS == nil {
 		return Observe(labelSSHDBinary, localSSHDBinaryPath, PurposeSSHDConfiguration, RawObservation{
 			Kind:    ObsCapabilityExcluded,
@@ -543,6 +580,21 @@ func (p *localSSHD) observeBinary() Observation {
 		Kind:    ObsSSHDBinaryPresent,
 		Wording: fmt.Sprintf("the sshd binary is present at %s", localSSHDBinaryPath),
 	})
+}
+
+// nativeWindowsNode reports whether the run's platform seam classified this
+// machine as Windows itself.
+//
+// The GOOS signal alone decides it, because the operating system alone is the
+// claim: the one thing the branch may conclude from it is that the documented
+// POSIX path does not denote a path on this machine. WSL2 reports GOOS "linux"
+// and is therefore never caught here — its filesystem is where the documented
+// path is real. A run with no platform seam is not a Windows node either: an
+// unclassified machine is not a machine this probe may declare the documented
+// path inapplicable for, so the check proceeds and reports whatever the
+// filesystem answers.
+func (p *localSSHD) nativeWindowsNode() bool {
+	return p.seams.Platform != nil && p.seams.Platform.GOOS() == goosWindows
 }
 
 // observeService asks the service manager whether an sshd unit is active.

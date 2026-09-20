@@ -967,6 +967,132 @@ func TestLocalSshdReportsAnAbsentBinary(t *testing.T) {
 	assertNoSSHDProvisioningAction(t, observation.Detail)
 }
 
+// TestLocalSshdDoesNotCheckThePosixPathOnNativeWindows is issue #66's case: the
+// documented binary path is a POSIX path, and on a native-Windows node it
+// neither denotes the Windows sshd nor fails honestly — on Windows a path
+// beginning with "/" resolves against the working directory, so a Stat would
+// measure whichever filesystem the process happened to start in. The probe must
+// therefore not attempt the check at all, and must report the attempt as not
+// made rather than as an absence.
+//
+// Three assertions carry that. The observation is not measured, never `fail` and
+// never `sshd_absent`. The filesystem seam is scripted to fail if the POSIX path
+// is asked for, and the call log is asserted exactly, so a regression that
+// reintroduces the Stat cannot pass by producing some other wording. And the
+// written configuration is still read, which proves the run reached the probe
+// instead of passing because nothing ran.
+func TestLocalSshdDoesNotCheckThePosixPathOnNativeWindows(t *testing.T) {
+	files := &scriptedFS{
+		files: map[string]string{testSSHDConfigPath: writtenConfigAgreeingWithEffect},
+		// The tripwire: if the probe asks for the POSIX binary path, the seam answers
+		// with a failure that is not absence, so the check would report an internal
+		// failure — and the call-log assertion below fails either way.
+		statErrs: map[string]error{
+			testSSHDBinaryPath: errors.New("tripwire: the POSIX sshd path must not be stat'ed on a native-Windows node"),
+		},
+	}
+	seams := localSSHDSeams(files, sshdRunner("permitrootlogin no\npasswordauthentication no\n"))
+	seams.Platform = scriptedPlatform{goos: "windows", arch: "amd64"}
+
+	result := runLocalSSHD(t, seams)
+
+	observation, ok := observationByLabel(result, "binary present")
+	if !ok {
+		t.Fatalf("local.sshd reported no binary observation: %+v", result.Observations)
+	}
+	if observation.Resolution != probe.NotMeasured || observation.Verdict != probe.Indeterminate {
+		t.Errorf("the native-Windows binary observation = (%q, %q), want (%q, %q): the POSIX path does not apply to this node, so the check was not an attempt that produced an answer",
+			observation.Resolution, observation.Verdict, probe.NotMeasured, probe.Indeterminate)
+	}
+	if observation.Reason == probe.ReasonSSHDAbsent {
+		t.Fatal("the native-Windows binary observation claims sshd_absent: issue #66 measured that claim to be false on a machine with sshd installed and running")
+	}
+	if observation.Reason != probe.ReasonCapabilityExcluded {
+		t.Errorf("the native-Windows binary observation reason = %q, want %q: the reused code whose meaning is that the attempt was not made by design",
+			observation.Reason, probe.ReasonCapabilityExcluded)
+	}
+	for _, want := range []string{"POSIX path", "native-Windows node", "not claimed"} {
+		if !strings.Contains(observation.Detail, want) {
+			t.Errorf("the native-Windows binary detail does not carry %q: %q", want, observation.Detail)
+		}
+	}
+	for _, absent := range []string{"not present", "no sshd is installed"} {
+		if strings.Contains(observation.Detail, absent) {
+			t.Errorf("the native-Windows binary detail claims %q, which this node cannot know: %q", absent, observation.Detail)
+		}
+	}
+	if result.Verdict == probe.Pass {
+		t.Fatal("the probe passed while the binary check was not measured")
+	}
+
+	wantFilesystem := []string{"ReadFile " + testSSHDConfigPath}
+	if !reflect.DeepEqual(files.calls, wantFilesystem) {
+		t.Errorf("the probe's filesystem calls = %v, want exactly %v: on a native-Windows node the POSIX binary path must not be read, while the written configuration is still read through the seam", files.calls, wantFilesystem)
+	}
+}
+
+// TestLocalSshdChecksThePosixPathOnEveryPosixPlatform is the other side of issue
+// #66: the branch that skips the check on native Windows must not catch a
+// platform the documented path is for. The three platforms are scripted through
+// the same seam, and WSL2 is the sharpest of them — it is a Windows machine
+// running Linux, and its seam reports GOOS "linux", so a branch that read
+// "Windows" from anything but the operating system would swallow it. Every case
+// asserts the binary path is stat'ed and keeps today's outcome: present passes,
+// absent is a measured `sshd_absent` failure.
+func TestLocalSshdChecksThePosixPathOnEveryPosixPlatform(t *testing.T) {
+	linux := scriptedPlatform{goos: "linux", arch: "x86_64", systemd: true}
+	macos := scriptedPlatform{goos: "darwin", arch: "arm64"}
+	wsl2 := scriptedPlatform{goos: "linux", arch: "x86_64", wsl2: true}
+
+	cases := []struct {
+		name        string
+		platform    scriptedPlatform
+		present     bool
+		wantVerdict probe.Verdict
+		wantReason  probe.ReasonCode
+	}{
+		{"linux and the binary is present", linux, true, probe.Pass, probe.ReasonOK},
+		{"linux and the binary is absent", linux, false, probe.Fail, probe.ReasonSSHDAbsent},
+		{"macos and the binary is present", macos, true, probe.Pass, probe.ReasonOK},
+		{"macos and the binary is absent", macos, false, probe.Fail, probe.ReasonSSHDAbsent},
+		{"wsl2 and the binary is present", wsl2, true, probe.Pass, probe.ReasonOK},
+		{"wsl2 and the binary is absent", wsl2, false, probe.Fail, probe.ReasonSSHDAbsent},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files := &scriptedFS{files: map[string]string{testSSHDConfigPath: writtenConfigAgreeingWithEffect}}
+			if tc.present {
+				files.files[testSSHDBinaryPath] = ""
+			}
+			seams := localSSHDSeams(files, sshdRunner("permitrootlogin no\npasswordauthentication no\n"))
+			seams.Platform = tc.platform
+
+			result := runLocalSSHD(t, seams)
+
+			observation, ok := observationByLabel(result, "binary present")
+			if !ok {
+				t.Fatalf("local.sshd reported no binary observation: %+v", result.Observations)
+			}
+			if observation.Resolution != probe.Measured {
+				t.Errorf("the binary observation resolution = %q, want %q: the POSIX path applies on this platform, so the check is a measurement", observation.Resolution, probe.Measured)
+			}
+			if observation.Verdict != tc.wantVerdict || observation.Reason != tc.wantReason {
+				t.Errorf("the binary observation = (%q, %q), want (%q, %q)", observation.Verdict, observation.Reason, tc.wantVerdict, tc.wantReason)
+			}
+			statCalled := false
+			for _, call := range files.calls {
+				if call == "Stat "+testSSHDBinaryPath {
+					statCalled = true
+				}
+			}
+			if !statCalled {
+				t.Errorf("the POSIX binary path was not stat'ed on this platform: the native-Windows branch caught a platform the documented path is for; calls = %v", files.calls)
+			}
+		})
+	}
+}
+
 // TestLocalSshdNeverPassesWhenAnObservationWasNotMeasured triangulates the
 // honesty rule the whole slice rests on: the probe may only pass when every one
 // of its observations was measured, and its result is exactly the reduction of
