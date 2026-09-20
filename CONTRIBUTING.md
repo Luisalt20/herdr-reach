@@ -91,6 +91,24 @@ overrun, is doing its job: the disclosures are the review's raw material, not no
 
 ## Release and versioning
 
-Releases are not automated yet. `go.mod` declares `go 1.25.10` deliberately, so a
-contributor on that toolchain is not silently forced to download a newer one; do not
-raise the directive without an explicit decision recorded in the change's artifacts.
+Releases are automated for tags: `.github/workflows/release.yml` publishes a pre-release on a
+`v<major>.<minor>.<patch>` tag, but **choosing the tag and the version stays a manual decision**, and
+so does the plugin's declaration of it. Cutting a release therefore means setting
+`plugin/herdr-plugin.toml`'s `version` and `plugin/fetch.sh`'s `TOOL_TAG` to the tag before the tag
+exists: the plugin declares the version of the tool it delivers, a script-only change needs no bump,
+and a release does. Two guards make forgetting impossible rather than merely discouraged — a Go test
+that the two declarations agree, and a release preflight that refuses a tag the plugin does not
+declare.
+
+`go.mod` declares `go 1.25.10` deliberately, so a contributor on that toolchain is not silently
+forced to download a newer one; do not raise the directive without an explicit decision recorded in
+the change's artifacts.
+
+The Herdr plugin declares the version of the tool it delivers: a release sets
+`plugin/herdr-plugin.toml`'s `version` and `plugin/fetch.sh`'s `TOOL_TAG` to the tag
+being cut, because the plugin's scripts come from `main` while `fetch.sh` downloads
+the binary the manifest declares. A script-only change needs no bump and keeps
+delivering the last released binary; a release does. Forgetting is impossible rather
+than merely discouraged: the Go suite fails when the manifest and `TOOL_TAG`
+disagree, and the release preflight fails when the manifest does not declare the
+version being tagged.
