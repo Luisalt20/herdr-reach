@@ -42,11 +42,6 @@ const (
 	humanRequirementWidth  = 22
 	humanSatisfactionWidth = 11
 
-	// humanProbeDetailColumn is where a probe row's DETAIL column starts: the
-	// five columns before it plus one separator space each. A detail the probe
-	// reported on several lines is indented to this column, so an embedded
-	// newline cannot break the table's shape.
-	humanProbeDetailColumn = humanProbeWidth + humanTargetWidth + humanVerdictWidth + humanResolutionWidth + humanReasonWidth + 5
 	// humanFindingConclusionColumn is where a finding's CONCLUSION column starts.
 	humanFindingConclusionColumn = humanQuestionWidth + humanRuleWidth + 2
 )
@@ -111,19 +106,24 @@ func humanNodeIdentity(node NodeInfo) string {
 
 // humanProbes writes one row per probe, in the payload's order, and the table's
 // header through the same row builder the rows use, so the header cannot drift
-// from the columns.
+// from the columns. A multi-line detail's continuation lines are indented to the
+// DETAIL column the rendered row actually reached — an overlong probe name or
+// target shifts it right — so the alignment follows the row rather than the
+// nominal geometry.
 func humanProbes(out *strings.Builder, rows []ProbeRow) {
 	out.WriteString("\nPROBES\n")
-	out.WriteString(humanProbeRow("PROBE", "TARGET", "VERDICT", "RESOLUTION", "REASON", "DETAIL") + "\n")
+	header, _ := humanProbeRow("PROBE", "TARGET", "VERDICT", "RESOLUTION", "REASON", "DETAIL")
+	out.WriteString(header + "\n")
 	if len(rows) == 0 {
 		out.WriteString(humanEmptyList + "\n")
 		return
 	}
 	for _, row := range rows {
 		lines := humanTextLines(row.Detail)
-		out.WriteString(humanProbeRow(row.Name, humanTarget(row.Target), string(row.Verdict), string(row.Resolution), string(row.Reason), lines[0]) + "\n")
+		line, detailColumn := humanProbeRow(row.Name, humanTarget(row.Target), string(row.Verdict), string(row.Resolution), string(row.Reason), lines[0])
+		out.WriteString(line + "\n")
 		for _, line := range lines[1:] {
-			out.WriteString(strings.Repeat(" ", humanProbeDetailColumn) + line + "\n")
+			out.WriteString(strings.Repeat(" ", detailColumn) + line + "\n")
 		}
 	}
 }
@@ -243,19 +243,24 @@ func humanTextLines(value string) []string {
 }
 
 // humanProbeRow builds one probe-table line through humanRow, so the header and
-// the rows share one column shape.
-func humanProbeRow(cells ...string) string {
+// the rows share one column shape. It also reports the column where the DETAIL
+// cell begins in the rendered line, which is what the continuation lines of a
+// multi-line detail are indented to; an overlong earlier cell shifts that column
+// right, exactly as the rendered row shows.
+func humanProbeRow(cells ...string) (string, int) {
 	return humanRow(cells, humanProbeWidth, humanTargetWidth, humanVerdictWidth, humanResolutionWidth, humanReasonWidth)
 }
 
 // humanFindingRow builds one finding-table line through humanRow.
 func humanFindingRow(cells ...string) string {
-	return humanRow(cells, humanQuestionWidth, humanRuleWidth)
+	line, _ := humanRow(cells, humanQuestionWidth, humanRuleWidth)
+	return line
 }
 
 // humanTransportRow builds one transport-table line through humanRow.
 func humanTransportRow(cells ...string) string {
-	return humanRow(cells, humanTransportWidth, humanViabilityWidth)
+	line, _ := humanRow(cells, humanTransportWidth, humanViabilityWidth)
+	return line
 }
 
 // humanRequirementRow builds one requirement line: the kind and the satisfaction
@@ -267,30 +272,50 @@ func humanRequirementRow(requirement RequirementRow) string {
 		humanText(requirement.Detail))
 }
 
-// humanRow joins one table row: every cell before the last is padded to its
-// column width and separated by one space, and the last cell is appended
-// verbatim. An empty last cell leaves no trailing padding behind it, so a row
-// with nothing in its final column does not end in invisible whitespace.
+// humanRow joins one table row and reports where its last cell begins: every cell
+// before the last is padded to its column width and separated by one space, and
+// the last cell is appended verbatim. An empty last cell leaves no trailing
+// padding behind it, so a row with nothing in its final column does not end in
+// invisible whitespace.
+//
+// The reported column is the rune column of the last cell's first character in
+// the line this function just built. Returning it from beside the rendering that
+// decides it is what keeps a continuation-line indent from drifting from the
+// actual row: a cell that outgrows its width shifts the column right and is
+// never truncated to keep the geometry nominal.
 //
 // Padding counts runes, not bytes, so a value outside ASCII still occupies one
 // column per visible character.
-func humanRow(cells []string, widths ...int) string {
+func humanRow(cells []string, widths ...int) (string, int) {
 	var line strings.Builder
 	last := len(cells) - 1
+	column := 0
+	lastColumn := 0
 	for i, cell := range cells {
 		if i > 0 {
 			line.WriteByte(' ')
+			column++
+		}
+		if i == last {
+			lastColumn = column
 		}
 		line.WriteString(cell)
+		runes := utf8.RuneCountInString(cell)
+		column += runes
 		if i == last {
 			break
 		}
-		for pad := widths[i] - utf8.RuneCountInString(cell); pad > 0; pad-- {
+		width := widths[i]
+		if runes > width {
+			width = runes
+		}
+		for pad := width - runes; pad > 0; pad-- {
 			line.WriteByte(' ')
+			column++
 		}
 	}
 	if cells[last] == "" {
-		return strings.TrimRight(line.String(), " ")
+		return strings.TrimRight(line.String(), " "), lastColumn
 	}
-	return line.String()
+	return line.String(), lastColumn
 }

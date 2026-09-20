@@ -163,13 +163,21 @@ func captureStdStreams(t *testing.T, fn func()) (stdout, stderr string) {
 	fn()
 
 	os.Stdout, os.Stderr = previousOut, previousErr
-	outWrite.Close()
-	errWrite.Close()
+	// These two closes are what give EOF to the reads below, so their errors are checked: a failed
+	// close could leave a read goroutine blocked and the captured output never collected.
+	if err := outWrite.Close(); err != nil {
+		t.Fatalf("closing the captured stdout pipe failed: %v", err)
+	}
+	if err := errWrite.Close(); err != nil {
+		t.Fatalf("closing the captured stderr pipe failed: %v", err)
+	}
 
 	outResult := <-outReads
 	errResult := <-errReads
-	outRead.Close()
-	errRead.Close()
+	// The reads have returned, so these closes only release the descriptors; their errors are
+	// discarded because the captured data and the read errors were already collected above.
+	_ = outRead.Close()
+	_ = errRead.Close()
 	if outResult.err != nil {
 		t.Fatalf("reading the captured stdout failed: %v", outResult.err)
 	}
@@ -408,6 +416,60 @@ func TestHumanProjectionIndentsMultiLineDetails(t *testing.T) {
 	}
 	if want := strings.Repeat(" ", 114) + secondLine; lines[rowAt+1] != want {
 		t.Errorf("the second detail line = %q, want %q indented to the DETAIL column", lines[rowAt+1], want)
+	}
+}
+
+// TestHumanProjectionIndentsToTheRenderedDetailColumn asserts the continuation indent follows the
+// row that was actually rendered: a target longer than its column shifts the DETAIL column right
+// (the raw evidence is never truncated to keep the nominal geometry), so the continuation must
+// start where the first detail character starts, not at the nominal constant.
+func TestHumanProjectionIndentsToTheRenderedDetailColumn(t *testing.T) {
+	const (
+		firstLine  = "the connection was established and closed"
+		secondLine = "the remainder of the verbatim detail"
+	)
+	longTarget := "an-overlong-target-that-outgrows-the-target-column.example.com:443"
+	if len(longTarget) <= 30 {
+		t.Fatalf("the fixture target %q is %d runes, want longer than the target column (30) so the row shifts", longTarget, len(longTarget))
+	}
+
+	input := fullInput()
+	input.Results = []probe.Result{
+		resultOf("egress.cf.443", probe.ProbeEgress, longTarget, 3*time.Millisecond,
+			firstLine+"\n"+secondLine,
+			passObservation("tcp 443 region1", longTarget, firstLine)),
+	}
+	input.Diagnosis = diagnosis.Diagnose(input.Results)
+
+	lines := strings.Split(renderHuman(t, report.Build(input)), "\n")
+	rowAt := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, "egress.cf.443 ") {
+			rowAt = i
+			break
+		}
+	}
+	if rowAt < 0 {
+		t.Fatal("the projection carries no egress.cf.443 row")
+	}
+	firstAt := strings.Index(lines[rowAt], firstLine)
+	if firstAt < 0 {
+		t.Fatalf("the egress.cf.443 row %q does not carry the first detail line %q", lines[rowAt], firstLine)
+	}
+	if rowAt+1 >= len(lines) {
+		t.Fatalf("the egress.cf.443 row has no continuation line for %q", secondLine)
+	}
+	secondAt := strings.Index(lines[rowAt+1], secondLine)
+	if secondAt < 0 {
+		t.Fatalf("the continuation line %q does not carry %q", lines[rowAt+1], secondLine)
+	}
+	if secondAt != firstAt {
+		t.Errorf("the continuation detail starts at column %d, want %d: the indent must follow the rendered row, not the nominal column", secondAt, firstAt)
+	}
+	// The shift is real: the overlong target moved the DETAIL column past the nominal 114, so the
+	// case cannot pass on the fixed indent the row builder used to apply.
+	if firstAt <= 114 {
+		t.Errorf("the detail starts at column %d, want past the nominal 114 so the case exercises the shifted row", firstAt)
 	}
 }
 
