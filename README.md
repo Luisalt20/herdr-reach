@@ -10,7 +10,7 @@
 <p><strong>Make a locked-down machine reachable to your Herdr.</strong></p>
 
 <p>
-<img src="https://img.shields.io/badge/status-design%20stage-E0C15A?style=for-the-badge&labelColor=1A1B26" alt="Status: design stage">
+<img src="https://img.shields.io/badge/status-beta%20%C2%B7%20diagnosis%20only-E0C15A?style=for-the-badge&labelColor=1A1B26" alt="Status: beta, diagnosis only">
 <img src="https://img.shields.io/badge/Linux%20%C2%B7%20macOS%20%C2%B7%20WSL2-7FB4CA?style=for-the-badge&labelColor=1A1B26" alt="Platform">
 <img src="https://img.shields.io/badge/Go-1.25.10-7FB4CA?style=for-the-badge&labelColor=1A1B26" alt="Go 1.25.10">
 <a href="LICENSE"><img src="https://img.shields.io/badge/MIT-B7CC85?style=for-the-badge&labelColor=1A1B26" alt="License: MIT"></a>
@@ -47,10 +47,12 @@ transport that will work, proves it works, and makes it survive reboots.</strong
 </div>
 
 > [!IMPORTANT]
-> **Status: design stage.** Nothing is implemented yet. The
-> [PRD](PRD.md) is the complete specification of what this tool will be, including
-> its architecture, requirements and edge cases. Install and usage commands below are
-> marked **(planned)** and do not exist yet.
+> **Status: beta, diagnosis only.** `herdr-reach doctor` ships in the
+> [v0.1.0-beta.1 pre-release](https://github.com/Luisalt20/herdr-reach/releases): one read-only
+> measurement run per invocation, which reports what your network allows and why a transport cannot
+> work. **Everything else in this document is still planned** &mdash; pairing, provisioning,
+> persistence, and the interface described below do not exist yet. [Beta testing](docs/beta-testing.md)
+> covers what the shipped binary does and, just as deliberately, what it does not.
 
 <div align="center"><sub>&middot; &middot; &middot;</sub></div>
 
@@ -102,8 +104,9 @@ Having picked a transport, an ordinary setup still runs into all of this:
 - **`cloudflared` `2026.6.0` is reported to ignore service tokens** on `access ssh`
   ([#1673](https://github.com/cloudflare/cloudflared/issues/1673) &mdash; open, unlabelled and
   single-source), so a headless connection falls into a browser flow that can never complete.
-- **Herdr cannot target native Windows**, so the real target is WSL2 &mdash; and systemd
-  services **do not** keep a WSL2 instance alive. Only children of Microsoft's `/init` do.
+- **Herdr added a Windows server only in 0.9.1**, and this tool does not provision a native Windows
+  node yet &mdash; so the Windows path it handles is WSL2, and systemd services **do not** keep a
+  WSL2 instance alive. Only children of Microsoft's `/init` do.
 - **`vmIdleTimeout` defaults to 60 seconds** and is a second, independent shutdown.
 - **Docker Desktop can take the whole VM down** when it quits, and you cannot stop it.
 - **A correct key in the wrong file** produces a correct fingerprint, a silent failure,
@@ -112,13 +115,26 @@ Having picked a transport, an ordinary setup still runs into all of this:
 Each of those is an evening lost by a competent developer, for a reason that is not
 their fault and is not documented anywhere in one place.
 
+> **Premise note (2026-09-20).** The Herdr bullet above was true when it was written and is not any
+> more: Herdr **0.9.1** (2026-09-16) added Windows SSH hosts, and on a Windows 11 24H2 host (build
+> 26100) running 0.9.1, `herdr machine add` saved the connection and the hub listed the agents
+> running natively on Windows. The trap was real when it was written; the premise changed underneath
+> it. What remains true is this tool's limit: `herdr-reach` does not provision a native Windows node
+> yet, so WSL2 stays the Windows path it handles.
+>
+> **Known limit.** The tool does not measure the node's Herdr version, so a node running Herdr older
+> than 0.9.1 is refused here although it also cannot host a saved-machine connection. Telling those
+> two cases apart needs a version measurement this tool does not make yet.
+
 <div align="right"><a href="#top">Back to top</a></div>
 
 <div align="center"><sub>&middot; &middot; &middot;</sub></div>
 
 ## What this is
 
-A single TUI. You tell it which of the two machines you are on, and it does the rest.
+The goal is a single interface: you tell it which of the two machines you are on, and it does the
+rest. What ships today is the measurement that flow depends on &mdash; `herdr-reach doctor`, a headless
+read-only run with no interface at all.
 
 <img width="100%" alt="How herdr-reach works. The hub and the locked-down node cannot reach each other directly over SSH, so the node dials outbound to the Cloudflare edge and the hub consumes that tunnel. Because the two machines cannot talk yet, pairing happens out of band: the hub emits a PairingBundle and the node answers with a NodeReceipt, neither containing a secret, both verified by fingerprint." src="docs/assets/diagrams/topology.svg" />
 
@@ -151,9 +167,10 @@ kills it. Verified by forcing a `wsl --shutdown`: **back in under 20 seconds, un
 Most of this problem is a network problem. The part that is genuinely undocumented is what
 happens on Windows.
 
-Herdr cannot target native Windows, so on a work laptop the real target is WSL2. And WSL2
-does not behave like a machine &mdash; it behaves like a VM trying to shut itself down,
-through three mechanisms that have nothing to do with each other:
+Herdr supports a Windows server as of 0.9.1, but this tool does not provision a native Windows
+node yet, so the Windows target it handles on a work laptop is WSL2. And WSL2 does not behave
+like a machine &mdash; it behaves like a VM trying to shut itself down, through three mechanisms
+that have nothing to do with each other:
 
 <img width="100%" alt="WSL2 lifetime. Three mechanisms shut the instance down: instance teardown when no child of Microsoft's init remains, a sixty second vmIdleTimeout, and any forced wsl shutdown. A highlighted note states that systemd services do not count as init children, which is why the failure looks like a network fault. Three layers keep it alive: the documented vmIdleTimeout setting, a keepalive that is a real init child and deliberately does no work, and a watchdog that relaunches it. A measured timeline shows the instance killed at zero seconds, relaunched at ten seconds, services up at fifteen, and the tunnel back at twenty, all unassisted." src="docs/assets/diagrams/wsl2-lifetime.svg" />
 
@@ -292,8 +309,8 @@ generic error.
 |:---|:---|:---|
 | **Hub** | Linux, macOS | Herdr's client only |
 | **Node** | Linux, macOS | needs `systemd` or `launchd` |
-| **Node** | **Windows with WSL2** | Herdr does not support native Windows as an SSH target. WSL2 is the supported path, and this tool handles its lifetime problem for you. |
-| **Node** | native Windows | **not supported**, upstream limitation |
+| **Node** | **Windows with WSL2** | **supported.** WSL2 is the Windows path this tool handles today, including its lifetime problem. Herdr supports a Windows server as of 0.9.1, but this tool does not provision a native Windows node yet. |
+| **Node** | native Windows | **not provisioned by this tool yet.** Herdr supports a Windows server as of 0.9.1; the missing piece is this tool's provisioning slice. |
 
 ### Before you use this on a machine you do not own
 
@@ -315,14 +332,15 @@ generic error.
 
 ## How you will use it
 
-**(planned)** Two roles, two flows, one artifact between them.
+**Two roles, two flows, one artifact between them.** Only `doctor` exists today; every other command
+below is planned.
 
 ```bash
-herdr-reach              # asks which machine this is, then does the work
-herdr-reach doctor       # read-only diagnosis of THIS machine
-herdr-reach status       # probe freshness, tunnel health, service state
-herdr-reach verify workbox
-herdr-reach remove workbox
+herdr-reach              # asks which machine this is, then does the work    (planned)
+herdr-reach doctor       # read-only diagnosis of THIS machine              (ships)
+herdr-reach status       # probe freshness, tunnel health, service state    (planned)
+herdr-reach verify workbox                                                  (planned)
+herdr-reach remove workbox                                                  (planned)
 ```
 
 The node side measures first and changes nothing until you approve a plan:
@@ -345,7 +363,13 @@ undone. Nothing in this tool changes a system as a side effect of thinking about
 
 ## Install
 
-**Not available yet.** The tool is at design stage. When it ships:
+**The diagnosis slice is available as a pre-release.**
+[`v0.1.0-beta.1`](https://github.com/Luisalt20/herdr-reach/releases) attaches one binary per platform
+plus a `SHA256SUMS` file. Verify the bytes and the build before you run it &mdash;
+[Beta testing](docs/beta-testing.md) walks through both, and through the two profiles the run is
+meant for.
+
+Package managers are planned, not available:
 
 ```bash
 # macOS (Homebrew)                                                      (planned)
@@ -354,8 +378,8 @@ brew install Luisalt20/tap/herdr-reach
 # macOS / Linux (curl)                                                  (planned)
 curl -fsSL https://raw.githubusercontent.com/Luisalt20/herdr-reach/main/scripts/install.sh | bash
 
-# Any platform with Go 1.25.10+                                         (planned)
-go install github.com/Luisalt20/herdr-reach/cmd/herdr-reach@latest
+# Any platform with Go 1.25.10+ — name the tag: a pre-release is never @latest
+go install github.com/Luisalt20/herdr-reach/cmd/herdr-reach@v0.1.0-beta.1
 ```
 
 Building from source will need only Go &mdash; the runtime dependencies are `ssh`, `sshd`,

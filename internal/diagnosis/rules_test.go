@@ -1924,7 +1924,7 @@ func nodePlatformObservation(t *testing.T, state diagnosis.State) probe.Observat
 	switch state {
 	case diagnosis.StateFail:
 		return observation("platform", "windows-native/x86_64", probe.Measured, probe.Fail, probe.ReasonNodePlatformUnsupported,
-			"native Windows node (GOOS \"windows\", architecture \"x86_64\"): this tool does not operate on Windows itself, and WSL2 is the supported path on a Windows machine; nothing was changed")
+			"native Windows node (GOOS \"windows\", architecture \"x86_64\"): upstream Herdr supports a Windows server as of 0.9.1, but this tool does not provision a native Windows node yet, and WSL2 is the Windows path this tool handles today; nothing was changed")
 	case diagnosis.StateUnresolved:
 		return observation("platform", "unknown/unknown", probe.Unresolved, probe.Indeterminate, probe.ReasonPlatformUnknown,
 			"the platform signals (GOOS \"plan9\", architecture \"unknown\") match no supported classification (linux, macOS, wsl2 or native Windows); no platform is assumed and no default is guessed")
@@ -1940,15 +1940,15 @@ func nodePlatformObservation(t *testing.T, state diagnosis.State) probe.Observat
 // case per id, each asserting that the classification `local.env` measured decides the conclusion
 // and that the conclusion quotes the classification it rests on.
 //
-// The refusal names WSL2 as the supported path and decides nothing about transport; the unknown
-// case assumes no platform; the supported case quotes the classification and the architecture the
-// observation's target carries.
+// The refusal names WSL2 as the Windows path this tool handles today and decides nothing about
+// transport; the unknown case assumes no platform; the supported case quotes the classification and
+// the architecture the observation's target carries.
 //
 // Each `wantContains` list also pins at least one phrase that appears only in the conclusion's own
 // sentence. The fixture detail and the conclusion deliberately share wording (the conclusion quotes
 // the observation), so a list built only from shared phrases cannot tell a dropped conclusion claim
 // from a quoted one — the refusal case's own sentence, for instance, must be asserted through
-// "cannot host a supported node" and "No transport is decided here", which the detail never carries.
+// "provisioning scope" and "No transport is decided here", which the detail never carries.
 func TestNodePlatformOneCasePerID(t *testing.T) {
 	cases := []struct {
 		name string
@@ -1962,11 +1962,11 @@ func TestNodePlatformOneCasePerID(t *testing.T) {
 		wantAbsent []string
 	}{
 		{
-			name:         "native Windows is a measured refusal that names WSL2",
+			name:         "native Windows is a measured refusal that names the tool's own scope and the two paths",
 			state:        diagnosis.StateFail,
 			want:         "NODE_PLATFORM_REFUSED_NATIVE_WINDOWS",
-			wantContains: []string{"measured refusal", "native Windows", "WSL2", "nothing was changed", "transport layer", "cannot host a supported node", "No transport is decided here"},
-			wantAbsent:   []string{"node platform is supported"},
+			wantContains: []string{"measured refusal", "native Windows", "WSL2", "0.9.1", "provisioning scope", "Two paths exist", "by hand", "neither provisions nor verifies", "nothing was changed", "transport layer", "No transport is decided here"},
+			wantAbsent:   []string{"node platform is supported", "cannot host a supported node", "WSL2 is the supported path"},
 		},
 		{
 			name:         "signals matching no supported classification assume no platform",

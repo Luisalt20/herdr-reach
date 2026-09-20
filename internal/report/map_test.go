@@ -762,7 +762,7 @@ func TestMappingCarriesFindingsAndOpenQuestionsVerbatim(t *testing.T) {
 // run that never classified the machine reports the unknown platform rather
 // than inventing one.
 func TestMappingNodeReadsTheClassificationAndTheRefusal(t *testing.T) {
-	note := "native Windows node (GOOS \"windows\", architecture \"amd64\"): this tool does not operate on Windows itself, and WSL2 is the supported path on a Windows machine; nothing was changed"
+	note := "native Windows node (GOOS \"windows\", architecture \"amd64\"): upstream Herdr supports a Windows server as of 0.9.1, but this tool does not provision a native Windows node yet, and WSL2 is the Windows path this tool handles today; nothing was changed"
 	windowsResult := resultOf("local.env", probe.ProbeLocal, "windows-native/amd64", time.Millisecond, note,
 		failObservation("platform", "windows-native/amd64", probe.ReasonNodePlatformUnsupported, note))
 	refusal := diagnosis.Diagnosis{Findings: []diagnosis.Finding{{

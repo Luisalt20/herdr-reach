@@ -98,8 +98,11 @@ herdr-reach doctor --hub <hub address>
   eventually reach. The configuration *in force* is not measured in this beta: the run is given
   no command runner, so it reports that question as `not measured` instead of reading silence as
   "configured";
-- what platform this is and whether the tool supports it. Native Windows as a node is measured
-  and refused, with WSL2 named as the supported path.
+- what platform this is and whether the tool supports it. Native Windows as a node is measured and
+  refused by this tool: upstream Herdr supports a Windows server as of 0.9.1, but this tool does
+  not provision a native Windows node yet, so WSL2 is the Windows path it handles today. The tool
+  does not measure the node's Herdr version, so a node running an older server is refused here
+  although it also cannot host a saved-machine connection.
 
 ### On the hub
 
