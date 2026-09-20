@@ -133,8 +133,11 @@ jobs:
         run: |
           set -euo pipefail
           # One commit, one build instant: the same Date reaches all five
-          # binaries, so the release carries one timestamp.
-          built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # binaries, so the release carries one timestamp. The instant is the
+          # tagged commit's own committer date, formatted in UTC — not the build
+          # time — because the same tag and the same commit must produce the same
+          # bytes, and a rerun must not change the artifact's identity.
+          built_at="$(date -u -d "@$(git show -s --format=%ct "$COMMIT")" +%Y-%m-%dT%H:%M:%SZ)"
           identity="github.com/Luisalt20/herdr-reach/internal/version"
           mkdir -p dist
           # The artifact scheme, and the only one:
@@ -147,8 +150,12 @@ jobs:
               artifact="${artifact}.exe"
             fi
             echo "building dist/${artifact}"
+            # -trimpath drops the checkout path and -buildvcs=false drops the
+            # local VCS state: the identity is what -ldflags injected, so the
+            # same inputs produce the same bytes.
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
               go build \
+                -trimpath -buildvcs=false \
                 -ldflags "-X ${identity}.Version=${VERSION} -X ${identity}.Commit=${COMMIT} -X ${identity}.Date=${built_at}" \
                 -o "dist/${artifact}" ./cmd/herdr-reach
           done
@@ -187,8 +194,10 @@ jobs:
           set -euo pipefail
           repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
           # A hyphenated tag is a pre-release because of its shape, not because
-          # someone remembered a flag.
-          args=(--title "$VERSION" --notes-file release-notes.md)
+          # someone remembered a flag. --verify-tag refuses a missing tag; the
+          # re-fetch below refuses a moved one, which --verify-tag alone never
+          # does.
+          args=(--title "$VERSION" --notes-file release-notes.md --verify-tag)
           if printf '%s' "$VERSION" | grep -q -- '-'; then
             args+=(--prerelease)
           fi
@@ -210,4 +219,17 @@ jobs:
           Tester guide for this tag:
           ${repo_url}/blob/${VERSION}/docs/beta-testing.md
           EOF
+          # The tag can move between preflight's ancestry check and this publish.
+          # Re-fetch it from the remote, resolve its peeled commit, and refuse to
+          # publish assets under a tag that no longer names the pinned commit.
+          # Tag protection is a repository setting this workflow cannot enforce —
+          # a ruleset that refuses updates and deletions of v* tags is the other
+          # half — so this is defence in depth, not a guarantee.
+          git fetch --force --no-tags origin "refs/tags/${VERSION}:refs/tags/${VERSION}"
+          published_commit="$(git rev-parse "refs/tags/${VERSION}^{commit}")"
+          if [ "$published_commit" != "$COMMIT" ]; then
+            echo "::error::tag ${VERSION} now points at ${published_commit}, but this release was built from ${COMMIT}: refusing to publish assets under a tag that names a different commit"
+            exit 1
+          fi
+          echo "tag ${VERSION} still resolves to the pinned commit ${COMMIT}"
           gh release create "$VERSION" "${args[@]}" dist/herdr-reach_* dist/SHA256SUMS
