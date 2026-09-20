@@ -6,11 +6,12 @@ package transport_test
 // registry's closure proof in `registry_test.go`; this file keeps the cases that are not a loop
 // over the shipped registry.
 //
-// Every transport is driven through `Feasible`, never through its internals: a test-only
-// transport proves that the registration contract needs nothing but `Candidate`, and the loop over
-// `Registry()` proves that every registered row explains its verdict. The fixtures are built from
-// the measurement layer's exported types and reduced through `probe.Aggregate`, so they describe
-// what a probe reported rather than a second opinion about verdicts.
+// Every transport is driven through `Feasible`, never through its internals: the loop over
+// `Registry()` proves that every registered row explains its verdict, and the test-only transport
+// proof that the registration contract needs nothing but `Candidate` lives in
+// `testtransport_test.go`. The fixtures are built from the measurement layer's exported types and
+// reduced through `probe.Aggregate`, so they describe what a probe reported rather than a second
+// opinion about verdicts.
 
 import (
 	"reflect"
@@ -110,93 +111,9 @@ func TestContractViabilityIsAStrictBooleanWithNoThirdValue(t *testing.T) {
 	}
 }
 
-// candidateOnly implements only the registration contract. It is the proof that a detect-only
-// transport — or a test-only one — can be evaluated without carrying the plan and verification
-// stubs a full Transport needs, which is why Candidate is the registration contract.
-type candidateOnly struct {
-	name        string
-	requires    []transport.Requirement
-	feasibility transport.Feasibility
-	// handed records the diagnosis the fixture was given, so a case can prove the evaluation did
-	// not mutate what it read.
-	handed *diagnosis.Diagnosis
-}
-
-func (c *candidateOnly) Name() string { return c.name }
-
-func (c *candidateOnly) Requires() []transport.Requirement {
-	return append([]transport.Requirement(nil), c.requires...)
-}
-
-func (c *candidateOnly) Feasible(d diagnosis.Diagnosis) transport.Feasibility {
-	handed := d
-	c.handed = &handed
-	return c.feasibility
-}
-
-// TestFixtureCandidateOnlyTransportIsEvaluatedWithoutTouchingTheDiagnosis is R-HR-NF-04's
-// test-only-transport case at the contract level: a fixture that implements only Candidate appears
-// in the produced feasibility list with its stated viability and reason, carries its declared
-// requirement list, and changes no diagnosis finding — the diagnosis it was handed is still the
-// diagnosis the run produced.
-func TestFixtureCandidateOnlyTransportIsEvaluatedWithoutTouchingTheDiagnosis(t *testing.T) {
-	d := diagnosis.Diagnose([]probe.Result{hubPassed(), sshdConfigured()})
-	before := cloneDiagnosis(d)
-
-	fixture := &candidateOnly{
-		name: "candidate-only",
-		requires: []transport.Requirement{{
-			Kind:   transport.KindHostname,
-			Detail: "a hostname in the fixture's account",
-		}},
-		feasibility: transport.Feasibility{
-			Viable: true,
-			Reason: "the fixture declares its own viability",
-			Notes:  []string{"fixture: declared, not measured"},
-			Requires: []transport.Requirement{{
-				Kind:      transport.KindHostname,
-				Satisfied: true,
-				Detail:    "a hostname in the fixture's account",
-			}},
-		},
-	}
-
-	// Evaluate twice through the shipped entry point: once without the fixture (the registered
-	// candidates) and once with it. The diagnosis must come out of both evaluations unchanged, and
-	// the fixture's row must be the one Evaluate produced — a Candidate-only adapter needs no
-	// conversion and nothing but the registration contract to flow through the shipped code path.
-	transport.Evaluate(transport.Registry(), d)
-	rows := transport.Evaluate([]transport.Candidate{fixture}, d)
-
-	if len(rows) != 1 {
-		t.Fatalf("evaluating the fixture produced %d rows, want one", len(rows))
-	}
-	if !rows[0].Viable || rows[0].Reason != fixture.feasibility.Reason {
-		t.Errorf("the fixture's row is %+v, want its stated viability and reason", rows[0])
-	}
-	for _, declared := range fixture.Requires() {
-		found := false
-		for _, evaluated := range rows[0].Requires {
-			if evaluated.Kind == declared.Kind && evaluated.Detail == declared.Detail {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("the fixture declares requirement %+v, which does not appear in its evaluated rows %+v", declared, rows[0].Requires)
-		}
-	}
-
-	if !reflect.DeepEqual(d, before) {
-		t.Errorf("evaluating the transports changed the diagnosis:\n got %+v\nwant %+v", d, before)
-	}
-	if fixture.handed == nil {
-		t.Fatal("the fixture never received the diagnosis")
-	}
-	if !reflect.DeepEqual(*fixture.handed, before) {
-		t.Errorf("the fixture was handed %+v, want the run's own diagnosis %+v", *fixture.handed, before)
-	}
-}
+// The Candidate-only test fixture and its case moved to `testtransport_test.go` (design §6.4),
+// where NF-04's test-only transport proof lives; nothing this file asserted about the contract
+// shape moved with it.
 
 // TestRegistryRowsExplainEveryVerdict is the loop design §3.2 requires over the four adapters'
 // shared contract: every row carries a non-empty reason, a non-viable row never explains nothing,
@@ -706,24 +623,6 @@ func transportNames(registry []transport.Candidate) []string {
 		names = append(names, tr.Name())
 	}
 	return names
-}
-
-// cloneDiagnosis deep-copies a diagnosis so a case can compare what a transport read against what
-// the run produced, slices included.
-func cloneDiagnosis(d diagnosis.Diagnosis) diagnosis.Diagnosis {
-	var out diagnosis.Diagnosis
-	for _, finding := range d.Findings {
-		copied := finding
-		copied.DependsOn = append([]string(nil), finding.DependsOn...)
-		copied.Evidence = append([]diagnosis.Fact(nil), finding.Evidence...)
-		out.Findings = append(out.Findings, copied)
-	}
-	for _, open := range d.OpenQuestions {
-		copied := open
-		copied.NeededStates = append([]string(nil), open.NeededStates...)
-		out.OpenQuestions = append(out.OpenQuestions, copied)
-	}
-	return out
 }
 
 // measured builds one measured observation a fixture reports.
