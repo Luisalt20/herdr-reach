@@ -20,6 +20,7 @@ package diagnosis_test
 // so a fixture is a run in miniature rather than a second opinion about verdicts.
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"slices"
@@ -2102,6 +2103,90 @@ func TestSSHDGroupCounterfactuals(t *testing.T) {
 			}
 		}
 	})
+}
+
+// windowsPlatform scripts the platform signals of a native-Windows node: GOOS "windows" and no WSL2
+// or systemd signal. WSL2 is deliberately not scripted here — it reports GOOS "linux", which is the
+// point of the probe case that proves the POSIX check survives on WSL2.
+type windowsPlatform struct{}
+
+// GOOS reports the Windows operating system.
+func (windowsPlatform) GOOS() string { return "windows" }
+
+// Arch reports a 64-bit x86 architecture.
+func (windowsPlatform) Arch() string { return "amd64" }
+
+// WSL2 reports no WSL2 signal: this is Windows itself, not a Linux instance on it.
+func (windowsPlatform) WSL2() bool { return false }
+
+// Systemd reports no service-manager signal.
+func (windowsPlatform) Systemd() bool { return false }
+
+// runRegisteredProbe builds one registered probe from the run's seams and runs it, exactly as a run
+// reaches it, so a case can measure the probe's own outcome instead of a hand-written fixture.
+func runRegisteredProbe(t *testing.T, name string, seams probe.Seams) probe.Result {
+	t.Helper()
+	for _, entry := range probe.Registry() {
+		if entry.Name != name {
+			continue
+		}
+		if entry.New == nil {
+			t.Fatalf("the registry declares %q without a constructor, so no run could measure it", name)
+		}
+		return entry.New(seams, probe.TargetInput{}).Run(context.Background())
+	}
+	t.Fatalf("the registry does not declare %q", name)
+	return probe.Result{}
+}
+
+// TestSshdOnNativeWindowsNeverReportsTheBinaryAbsent is issue #66's consequence case: the real
+// `local.sshd` probe is run over a scripted native-Windows node, and the reasoning layer must not
+// report the binary as absent from what the probe reports.
+//
+// The case runs the registered probe rather than a hand-written fixture, because the defect it
+// guards against is exactly a probe outcome: on a native-Windows node the documented binary path is
+// a POSIX path, and a Stat of it resolves against the working directory, which is how the recorded
+// run produced both a false absence and a false presence. The probe reports the check as not
+// measured; this case proves the absence conclusion is unreachable from that state, and that no
+// finding of the run claims the binary is absent.
+func TestSshdOnNativeWindowsNeverReportsTheBinaryAbsent(t *testing.T) {
+	seams := probe.DenyAllSeams()
+	seams.Platform = windowsPlatform{}
+	run := []probe.Result{runRegisteredProbe(t, "local.sshd", seams)}
+
+	binary, ok := observationByLabel(run[0], testSSHDLabelBinary)
+	if !ok {
+		t.Fatalf("the registered local.sshd probe reported no binary observation: %+v", run[0].Observations)
+	}
+	if binary.Resolution != probe.NotMeasured || binary.Verdict != probe.Indeterminate {
+		t.Errorf("the native-Windows binary observation = (%q, %q), want (%q, %q): the POSIX path does not apply on this node",
+			binary.Resolution, binary.Verdict, probe.NotMeasured, probe.Indeterminate)
+	}
+
+	got := diagnosis.Diagnose(run)
+	finding := findingFor(t, got, "local.sshd")
+	if finding.Rule == "SSHD_ABSENT" {
+		t.Fatalf("the native-Windows run fired SSHD_ABSENT from the not-measured binary observation: %s", finding.Conclusion)
+	}
+	if finding.Rule != "SSHD_EFFECTIVE_CONFIG_NOT_MEASURED" {
+		t.Errorf("the run fired %q, want %q: no configuration in force was measured on this node either", finding.Rule, "SSHD_EFFECTIVE_CONFIG_NOT_MEASURED")
+	}
+	for _, finding := range got.Findings {
+		if strings.Contains(finding.Conclusion, "no sshd binary is present") {
+			t.Errorf("the finding %q claims the binary is absent on a node where the check was not measured: %s", finding.Rule, finding.Conclusion)
+		}
+	}
+}
+
+// observationByLabel finds one observation of a result by its label, so a case can name the half of
+// a multi-observation probe it is about.
+func observationByLabel(result probe.Result, label string) (probe.Observation, bool) {
+	for _, observation := range result.Observations {
+		if observation.Label == label {
+			return observation, true
+		}
+	}
+	return probe.Observation{}, false
 }
 
 // TestTLSFactQuestionsReachTrustStoreConclusions is the RG-3 case for the restated `tls.truststore`
