@@ -27,12 +27,17 @@ file:
 `<tag>` is the release you downloaded, for example `v0.1.0-beta.1`. Download your binary and
 `SHA256SUMS` from the same release, and verify both the bytes and the build before you run it.
 
-**The checksum proves the bytes** are the ones the release published:
+**The checksum proves the bytes** are the ones the release published. `SHA256SUMS` lists all five
+platform binaries, so check the line for the one you actually downloaded:
 
 ```bash
-sha256sum -c SHA256SUMS          # Linux
-shasum -a 256 -c SHA256SUMS      # macOS
+grep "herdr-reach_<tag>_linux_arm64$" SHA256SUMS | sha256sum -c -        # Linux
+grep "herdr-reach_<tag>_darwin_arm64$" SHA256SUMS | shasum -a 256 -c -   # macOS
 ```
+
+Substitute the artifact name for your platform from the table above. Checking the whole file would
+report the four binaries that are not on your machine as unreadable, which says nothing about the
+one you have.
 
 On Windows, compare by eye against the matching line of `SHA256SUMS`:
 
