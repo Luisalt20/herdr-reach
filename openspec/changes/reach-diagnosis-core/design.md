@@ -562,6 +562,8 @@ No `go.sum` is expected: R1a is stdlib-only. If the toolchain leaves an empty on
 | `human_test.go` | Unresolved rendered as unresolved; incomplete named; blocked target preserved |
 | `docs_test.go` | Doc table ↔ `AllReasonCodes()` / `AllRuleIDs()` / exit-code constants |
 
+> **Dated note — 2026-09-20, PR 17 (S8).** The human projection renders the **already built payload** rather than the internal structures, so the two projections of one run read one source and cannot drift; its section order and column geometry are pinned by the suite, because a layout change should be a deliberate act. The document's two vocabularies are machine-checked by `internal/report/docs_test.go`, which parses them by their headings (`## Reason codes`, `## Rule ids`) and asserts set equality with `probe.AllReasonCodes()` and `diagnosis.AllRuleIDs()` in both directions; renaming a heading therefore fails the suite rather than silently skipping the check. The exit-code constants ↔ table assertion lives in `internal/doctor/doctor_test.go` (PR 18), because `internal/doctor` imports `internal/report` and the reverse import would invert the dependency direction. The document records the `cloudflared` pin's single home instead of restating it, which is what keeps PR 15's one-home guard green while `docs/**` remains part of its scan.
+
 **`internal/version/`**
 
 | Path | Purpose |

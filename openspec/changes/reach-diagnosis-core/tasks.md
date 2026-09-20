@@ -365,16 +365,17 @@ Second-split boundary if this group lands above 600: the DTO and the single mapp
 ### PR 17 — WU31 + WU32 · Human projection and `docs/diagnosis-report.md` with its drift test
 
 `Files`: `internal/report/human.go`, `internal/report/human_test.go`, `docs/diagnosis-report.md`, `internal/report/docs_test.go`. `Depends on`: PR 16.
+Decisions recorded 2026-09-20 (design §7's PR 17 note): the projection renders the built payload so both projections read one source; its section order and column geometry are pinned by the suite; `docs_test.go` parses the document's two tables by their headings and asserts set equality in both directions, so renaming a heading fails the check; the exit-code constants ↔ table assertion lives in `internal/doctor/doctor_test.go` (PR 18) to keep the dependency direction, and the document records the pin's single home instead of restating it.
 Second-split boundary if this group lands above 600: the human projection (WU31) first, then the contract document with its drift test (WU32).
 
-- [ ] **RED** — write `human_test.go`: the projection is written to the injected writer, renders an unresolved measurement as unresolved with its reason and never with success wording, names the unresolved probes when the run is incomplete, and shows the coverage gaps. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — implement `human.go` with probe rows, findings, the coverage section and the transports. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert the blocked target string and the verbatim failing detail survive alongside the stable reason code, and that the completeness text never implies the suite finished when it did not (R-HR-07, R-HR-NF-02). <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/report/ -run TestHumanProjection`. <!-- sdd-owner: implementation -->
-- [ ] **RED** — write `docs_test.go` parsing the doc's two tables and asserting set equality with `probe.AllReasonCodes()` and `diagnosis.AllRuleIDs()`. <!-- sdd-owner: implementation -->
-- [ ] **GREEN** — write `docs/diagnosis-report.md`: the exit-code table, the stdout/stderr split, the payload shape with `schema_version`, the table of all 28 reason codes, the rule-id scheme, and the statement that adding a code or rule id is a contract change. No schema file is written (R-HR-NF-06). <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE** — assert a code added to the constants without a doc row, or a row without a constant, fails; document that the exit-code constants ↔ doc-table assertion lives in `internal/doctor/doctor_test.go` (PR 18) to avoid an import cycle. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./...`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `human_test.go`: the projection is written to the injected writer, renders an unresolved measurement as unresolved with its reason and never with success wording, names the unresolved probes when the run is incomplete, and shows the coverage gaps. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — implement `human.go` with probe rows, findings, the coverage section and the transports. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert the blocked target string and the verbatim failing detail survive alongside the stable reason code, and that the completeness text never implies the suite finished when it did not (R-HR-07, R-HR-NF-02). <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./internal/report/ -run TestHumanProjection`. <!-- sdd-owner: implementation -->
+- [x] **RED** — write `docs_test.go` parsing the doc's two tables and asserting set equality with `probe.AllReasonCodes()` and `diagnosis.AllRuleIDs()`. <!-- sdd-owner: implementation -->
+- [x] **GREEN** — write `docs/diagnosis-report.md`: the exit-code table, the stdout/stderr split, the payload shape with `schema_version`, the table of all 28 reason codes, the rule-id scheme, and the statement that adding a code or rule id is a contract change. No schema file is written (R-HR-NF-06). <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE** — assert a code added to the constants without a doc row, or a row without a constant, fails; document that the exit-code constants ↔ doc-table assertion lives in `internal/doctor/doctor_test.go` (PR 18) to avoid an import cycle. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR + GATE** — `gofmt -l .`, `go vet ./...`, `go test ./...`. <!-- sdd-owner: implementation -->
 
 ### PR 18 — WU33 + WU34 · The `doctor` harness, exit codes and the flag surface
 
