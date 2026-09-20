@@ -1,0 +1,680 @@
+package doctor_test
+
+// This file is the doctor harness's suite of design §4 and §7: the exit matrix
+// over scripted seams, the stdout/stderr split of the two projections, the
+// harness's use of the run's effective bounds, and the assertion that the
+// exit-code constants are exactly the codes the documented table states.
+//
+// Every case drives the harness through doctor.Run and reads the run's own
+// output, never the harness's internals. The payload is inspected by parsing the
+// machine-readable document, so "the exit code and run.completeness agree" is an
+// assertion about what a script would actually read rather than about a value the
+// test recomputed from the same inputs. The seams are scripted rather than
+// mocked: the deny-all default of design §6.2 supplies a machine whose denied
+// capabilities read as not-measured attempts, and the platform seam decides only
+// which machine the run classifies. That is enough to reach every exit code
+// without a socket, a file or a process.
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"errors"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/Luisalt20/herdr-reach/internal/doctor"
+	"github.com/Luisalt20/herdr-reach/internal/probe"
+)
+
+// --- scripted machines -------------------------------------------------------
+
+// scriptedPlatform is the one seam beyond the deny-all default that a case
+// scripted as a machine needs: the classification is a pure function of it, so a
+// case states "linux/amd64" or "windows/amd64" without being on either machine.
+type scriptedPlatform struct {
+	goos string
+	arch string
+}
+
+// GOOS reports the scripted operating system.
+func (p scriptedPlatform) GOOS() string { return p.goos }
+
+// Arch reports the scripted architecture.
+func (p scriptedPlatform) Arch() string { return p.arch }
+
+// WSL2 reports no WSL2 signal: a machine a case did not describe must not claim
+// one.
+func (p scriptedPlatform) WSL2() bool { return false }
+
+// Systemd reports no service-manager signal, for the same reason.
+func (p scriptedPlatform) Systemd() bool { return false }
+
+// linuxSeams is the smallest scripted machine the exit matrix can run on. Every
+// capability of the deny-all default still refuses, and every probe reports a
+// refused capability as a not-measured observation — which never makes a run
+// incomplete. The platform seam is the one capability that cannot be denied, and
+// it answers a classified Linux, so local.env is a measured pass and local.sshd's
+// binary is a measured absence. The run is therefore complete and carries a
+// measured negative answer, which is exactly the state exit 0 describes.
+func linuxSeams() probe.Seams {
+	seams := probe.DenyAllSeams()
+	seams.Platform = scriptedPlatform{goos: "linux", arch: "amd64"}
+	return seams
+}
+
+// refusingDialer answers every dial with the far end's refusal. It is the
+// measured-negative script: the hub-directed probe dials and the far end answers
+// that nothing is listening, which is a measurement of the address rather than an
+// ambiguity.
+type refusingDialer struct{}
+
+// DialContext reports the refused connection and returns no conn.
+func (refusingDialer) DialContext(context.Context, string, string) (net.Conn, error) {
+	return nil, syscall.ECONNREFUSED
+}
+
+// hangingDialer ignores the dial context entirely and waits for the test to
+// release it. Ignoring the context is the point: a probe that honours its budget
+// reports its own measured outcome, while this one has to be abandoned by the
+// runner, which is the hanging-probe case exit 1 covers.
+type hangingDialer struct {
+	release <-chan struct{}
+}
+
+// DialContext waits for the release and then answers with an error. The value is
+// never classified: by the time it arrives the run has stopped collecting it.
+func (d hangingDialer) DialContext(context.Context, string, string) (net.Conn, error) {
+	<-d.release
+	return nil, errors.New("the hanging dial was released after the run abandoned it")
+}
+
+// unresolvedVerifier answers every handshake with a plain error: an attempt that
+// produced no answer, which is unresolved and makes the run incomplete. It is
+// deliberately not ErrSeamDenied (an attempt that was not made) and not
+// ErrTLSVerification (a measured rejection), because those are different facts.
+type unresolvedVerifier struct{}
+
+// Verify reports that the handshake produced no answer.
+func (unresolvedVerifier) Verify(context.Context, string, *tls.Config) (probe.TLSVerification, error) {
+	return probe.TLSVerification{}, errors.New("the handshake produced no answer")
+}
+
+// --- payload reading ---------------------------------------------------------
+
+// runDocument is the subset of the schema_version "1" document the exit matrix
+// reads. It is deliberately partial: the matrix asserts the harness's contract —
+// completeness, coverage, the resolved hub, the probe rows it reasons about and
+// the transport verdicts — and the payload's full key set is pinned by the report
+// suite.
+type runDocument struct {
+	Run struct {
+		Completeness string   `json:"completeness"`
+		Unresolved   []string `json:"unresolved"`
+		NotMeasured  []string `json:"not_measured"`
+		Concurrency  int      `json:"concurrency"`
+		RunBudgetMS  int64    `json:"run_budget_ms"`
+	} `json:"run"`
+	Targets struct {
+		Hub *string `json:"hub"`
+	} `json:"targets"`
+	Probes     []probeRow     `json:"probes"`
+	Transports []transportRow `json:"transports"`
+	Node       struct {
+		Platform string `json:"platform"`
+		Arch     string `json:"arch"`
+		Refused  bool   `json:"refused"`
+	} `json:"node"`
+}
+
+// probeRow is one entry of the document's probes array.
+type probeRow struct {
+	Name       string  `json:"name"`
+	Target     *string `json:"target"`
+	Verdict    string  `json:"verdict"`
+	Resolution string  `json:"resolution"`
+	Reason     string  `json:"reason"`
+}
+
+// transportRow is one entry of the document's transports array.
+type transportRow struct {
+	Name   string `json:"name"`
+	Viable bool   `json:"viable"`
+}
+
+// decodeRunDocument parses stdout as exactly one machine-readable document. The
+// second Decode must find EOF: a projection that wrote the document twice, or
+// mixed a sentence into it, is not the one-document contract R-HR-07 states, and
+// this helper fails instead of accepting the first value it can read.
+func decodeRunDocument(t *testing.T, stdout []byte) runDocument {
+	t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(stdout))
+	var document runDocument
+	if err := decoder.Decode(&document); err != nil {
+		t.Fatalf("stdout did not parse as one machine-readable document: %v\nstdout: %q", err, stdout)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		t.Fatalf("stdout carried more than one JSON value: %v\nstdout: %q", err, stdout)
+	}
+	return document
+}
+
+// rowFor returns the document's probe row for name, failing the case when the
+// row is absent: a conclusion about a probe must fail loudly rather than compare
+// a zero value against it.
+func rowFor(t *testing.T, document runDocument, name string) probeRow {
+	t.Helper()
+	for _, row := range document.Probes {
+		if row.Name == name {
+			return row
+		}
+	}
+	t.Fatalf("the document carries no probe row for %q", name)
+	return probeRow{}
+}
+
+// containsName reports whether names carries name.
+func containsName(names []string, name string) bool {
+	for _, candidate := range names {
+		if candidate == name {
+			return true
+		}
+	}
+	return false
+}
+
+// --- the exit matrix ---------------------------------------------------------
+
+// TestExitMatrixOverScriptedSeams is the exit matrix of design §3.4 and R-HR-07:
+// a completed measurement — including a negative answer, a run with no viable
+// transport and a native-Windows refusal — exits 0; a run in which at least one
+// probe was attempted and resolved unresolved exits 1, including the hanging
+// probe the runner had to abandon; and a not-measured measurement alone never
+// moves the code. Every case also asserts that the exit code and the document's
+// run.completeness agree, so the two can never drift apart.
+func TestExitMatrixOverScriptedSeams(t *testing.T) {
+	const (
+		complete   = "complete"
+		incomplete = "incomplete"
+	)
+
+	cases := []struct {
+		name string
+		// seams builds a fresh seam set per case: a case must not be able to
+		// observe another case's overrides.
+		seams func() probe.Seams
+		opts  doctor.Options
+		// wantExit is the exit code the evidence decides.
+		wantExit int
+		// wantCompleteness is the run.completeness the same evidence must state.
+		wantCompleteness string
+		// wantUnresolved and wantNotMeasured, when set, must appear in the
+		// corresponding coverage list.
+		wantUnresolved  string
+		wantNotMeasured string
+		// wantHubAbsent asserts targets.hub is JSON null.
+		wantHubAbsent bool
+		// wantNegatedProbe, when set, must be a measured failure carrying the
+		// refused-connection reason: the negative answer that is still success.
+		wantNegatedProbe string
+		// wantAbandonedReason, when set together with wantUnresolved, is the
+		// reason the abandoned probe must carry (the runner's own fact).
+		wantAbandonedReason string
+		// wantAllTransportsUnviable asserts the document reports no viable
+		// transport at all.
+		wantAllTransportsUnviable bool
+		// wantNodePlatform, wantNodeArch and wantNodeRefused assert the node
+		// classification when the case scripts a machine.
+		wantNodePlatform string
+		wantNodeArch     string
+		wantNodeRefused  bool
+	}{
+		{
+			name: "a measured negative answer is a completed run",
+			seams: func() probe.Seams {
+				seams := linuxSeams()
+				seams.Dialer = refusingDialer{}
+				return seams
+			},
+			opts:                      doctor.Options{JSON: true, Hub: "203.0.113.10"},
+			wantExit:                  doctor.ExitOK,
+			wantCompleteness:          complete,
+			wantNegatedProbe:          "egress.hub.direct",
+			wantAllTransportsUnviable: true,
+		},
+		{
+			name:             "no viable transport is still a completed run",
+			seams:            linuxSeams,
+			opts:             doctor.Options{JSON: true},
+			wantExit:         doctor.ExitOK,
+			wantCompleteness: complete,
+			wantHubAbsent:    true,
+			wantNotMeasured:  "egress.hub.direct",
+			// The hub was never attempted, so no transport may be reported viable
+			// on the strength of hub reachability; here none is viable at all.
+			wantAllTransportsUnviable: true,
+		},
+		{
+			name: "a native-Windows refusal is a completed run",
+			seams: func() probe.Seams {
+				seams := probe.DenyAllSeams()
+				seams.Platform = scriptedPlatform{goos: "windows", arch: "amd64"}
+				return seams
+			},
+			opts:             doctor.Options{JSON: true},
+			wantExit:         doctor.ExitOK,
+			wantCompleteness: complete,
+			wantNodePlatform: "windows-native",
+			wantNodeArch:     "amd64",
+			wantNodeRefused:  true,
+		},
+		{
+			name: "an attempted probe that resolved unresolved makes the run incomplete",
+			seams: func() probe.Seams {
+				seams := linuxSeams()
+				seams.TLSVerifier = unresolvedVerifier{}
+				return seams
+			},
+			opts:             doctor.Options{JSON: true},
+			wantExit:         doctor.ExitIncomplete,
+			wantCompleteness: incomplete,
+			wantUnresolved:   "tls.interception",
+		},
+		{
+			name: "a probe the runner had to abandon makes the run incomplete",
+			seams: func() probe.Seams {
+				release := make(chan struct{})
+				t.Cleanup(func() { close(release) })
+				seams := linuxSeams()
+				seams.Dialer = hangingDialer{release: release}
+				return seams
+			},
+			opts: doctor.Options{
+				JSON: true,
+				Hub:  "203.0.113.10",
+				// The probe bound is injected in milliseconds so the case does
+				// not wait out the production default; the runner's own fact —
+				// the probe ignored its bound — is what the document must state.
+				Run: probe.Options{ProbeTimeout: 20 * time.Millisecond, RunBudget: time.Second},
+			},
+			wantExit:            doctor.ExitIncomplete,
+			wantCompleteness:    incomplete,
+			wantUnresolved:      "egress.hub.direct",
+			wantAbandonedReason: string(probe.ReasonProbeTimeout),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			got := doctor.Run(context.Background(), tc.opts, doctor.Stdio{Stdout: &stdout, Stderr: &stderr}, tc.seams())
+
+			if got != tc.wantExit {
+				t.Fatalf("Run returned exit %d, want %d", got, tc.wantExit)
+			}
+			if stdout.Len() == 0 {
+				t.Fatalf("the run wrote no machine-readable document to stdout")
+			}
+			if stderr.Len() == 0 {
+				t.Fatalf("the run wrote no human projection to stderr")
+			}
+
+			document := decodeRunDocument(t, stdout.Bytes())
+			if document.Run.Completeness != tc.wantCompleteness {
+				t.Errorf("run.completeness is %q, want %q", document.Run.Completeness, tc.wantCompleteness)
+			}
+			if (got == doctor.ExitOK) != (document.Run.Completeness == complete) {
+				t.Errorf("exit code %d and run.completeness %q disagree", got, document.Run.Completeness)
+			}
+			if tc.wantUnresolved != "" && !containsName(document.Run.Unresolved, tc.wantUnresolved) {
+				t.Errorf("run.unresolved %v does not name %q", document.Run.Unresolved, tc.wantUnresolved)
+			}
+			if tc.wantNotMeasured != "" && !containsName(document.Run.NotMeasured, tc.wantNotMeasured) {
+				t.Errorf("run.not_measured %v does not name %q", document.Run.NotMeasured, tc.wantNotMeasured)
+			}
+			if tc.wantHubAbsent && document.Targets.Hub != nil {
+				t.Errorf("targets.hub is %q, want JSON null for a run with no hub", *document.Targets.Hub)
+			}
+			if tc.wantNegatedProbe != "" {
+				row := rowFor(t, document, tc.wantNegatedProbe)
+				if row.Resolution != "measured" || row.Verdict != "fail" {
+					t.Errorf("%s is %s/%s, want a measured failure", tc.wantNegatedProbe, row.Resolution, row.Verdict)
+				}
+				if row.Reason != string(probe.ReasonConnRefused) {
+					t.Errorf("%s carries reason %q, want %q", tc.wantNegatedProbe, row.Reason, probe.ReasonConnRefused)
+				}
+			}
+			if tc.wantAbandonedReason != "" {
+				row := rowFor(t, document, tc.wantUnresolved)
+				if row.Resolution != "unresolved" {
+					t.Errorf("%s is %q, want unresolved", tc.wantUnresolved, row.Resolution)
+				}
+				if row.Reason != tc.wantAbandonedReason {
+					t.Errorf("%s carries reason %q, want %q", tc.wantUnresolved, row.Reason, tc.wantAbandonedReason)
+				}
+			}
+			if tc.wantAllTransportsUnviable {
+				if len(document.Transports) == 0 {
+					t.Fatalf("the document carries no transport row to judge")
+				}
+				for _, row := range document.Transports {
+					if row.Viable {
+						t.Errorf("transport %q is reported viable in a run where none can be", row.Name)
+					}
+				}
+			}
+			if tc.wantNodePlatform != "" {
+				if document.Node.Platform != tc.wantNodePlatform {
+					t.Errorf("node.platform is %q, want %q", document.Node.Platform, tc.wantNodePlatform)
+				}
+				if document.Node.Arch != tc.wantNodeArch {
+					t.Errorf("node.arch is %q, want %q", document.Node.Arch, tc.wantNodeArch)
+				}
+				if document.Node.Refused != tc.wantNodeRefused {
+					t.Errorf("node.refused is %v, want %v", document.Node.Refused, tc.wantNodeRefused)
+				}
+			}
+		})
+	}
+}
+
+// TestExitUsageAndInternalFailures is the exit-2 half of the matrix: unusable run
+// input the parser refused, an unusable hub the harness refused before measuring,
+// and an internal failure whose projection could not reach its stream. In every
+// case no diagnosis is presented as completed and the output writer carries no
+// human text; the unknown-flag case asserts the typed error the entrypoint maps
+// to this code.
+func TestExitUsageAndInternalFailures(t *testing.T) {
+	t.Run("an unknown flag is a typed usage error", func(t *testing.T) {
+		_, err := doctor.ParseFlags([]string{"--bogus"})
+		if err == nil {
+			t.Fatalf("ParseFlags accepted an unknown flag")
+		}
+		if !errors.Is(err, doctor.ErrUnknownFlag) {
+			t.Fatalf("the error %v does not carry ErrUnknownFlag", err)
+		}
+		var usage *doctor.UsageError
+		if !errors.As(err, &usage) {
+			t.Fatalf("the error %v is not a typed UsageError", err)
+		}
+		if doctor.ExitUsage != 2 {
+			t.Fatalf("ExitUsage is %d, want 2 for an unknown flag", doctor.ExitUsage)
+		}
+	})
+
+	t.Run("an unusable hub value is refused before any measurement", func(t *testing.T) {
+		trip := newTripwire()
+		var stdout, stderr bytes.Buffer
+		got := doctor.Run(context.Background(), doctor.Options{JSON: true, Hub: ":22"},
+			doctor.Stdio{Stdout: &stdout, Stderr: &stderr}, trip.seams())
+
+		if got != doctor.ExitUsage {
+			t.Fatalf("Run returned exit %d, want %d", got, doctor.ExitUsage)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("the output writer received %q; no diagnosis may be presented as completed", stdout.String())
+		}
+		if stderr.Len() == 0 {
+			t.Errorf("the refusal was not reported on the error writer")
+		}
+		if trip.calls.Load() != 0 {
+			t.Errorf("the run touched the seams %d times; unusable input must start no measurement", trip.calls.Load())
+		}
+	})
+
+	t.Run("a document write failure exits two with only the document offered to output", func(t *testing.T) {
+		refused := &recordingFailingWriter{}
+		var stderr bytes.Buffer
+		got := doctor.Run(context.Background(), doctor.Options{JSON: true},
+			doctor.Stdio{Stdout: refused, Stderr: &stderr}, linuxSeams())
+
+		if got != doctor.ExitUsage {
+			t.Fatalf("Run returned exit %d, want %d for a failed document write", got, doctor.ExitUsage)
+		}
+		if len(refused.attempts) != 1 {
+			t.Fatalf("the output writer saw %d writes, want exactly the one document", len(refused.attempts))
+		}
+		// The writer was offered the document and nothing else: no human text,
+		// no banner and no partial sentence about the run.
+		if !bytes.HasPrefix(refused.attempts[0], []byte("{")) {
+			t.Errorf("the output writer was offered %q, which is not the document", refused.attempts[0])
+		}
+		if bytes.Contains(refused.attempts[0], []byte("PROBES")) {
+			t.Errorf("the output writer was offered human text: %q", refused.attempts[0])
+		}
+	})
+
+	t.Run("a human projection write failure exits two with output untouched", func(t *testing.T) {
+		refused := &recordingFailingWriter{}
+		var stdout bytes.Buffer
+		got := doctor.Run(context.Background(), doctor.Options{JSON: true},
+			doctor.Stdio{Stdout: &stdout, Stderr: refused}, linuxSeams())
+
+		if got != doctor.ExitUsage {
+			t.Fatalf("Run returned exit %d, want %d for a failed human write", got, doctor.ExitUsage)
+		}
+		// The document is written after the human projection, so a failed human
+		// write must leave the output writer untouched: there is no half-run
+		// document to mistake for a completed diagnosis.
+		if stdout.Len() != 0 {
+			t.Errorf("the output writer received %q after a failed human write", stdout.String())
+		}
+	})
+}
+
+// recordingFailingWriter is an io.Writer that refuses every write and records
+// what it was offered, so a case can assert both the failure and that nothing
+// else was ever sent to that stream.
+type recordingFailingWriter struct {
+	attempts [][]byte
+}
+
+// Write records the offered bytes and refuses them.
+func (w *recordingFailingWriter) Write(p []byte) (int, error) {
+	w.attempts = append(w.attempts, append([]byte(nil), p...))
+	return 0, errors.New("the stream refused the write")
+}
+
+// --- the stream split --------------------------------------------------------
+
+// TestDoctorSplitsTheMachineDocumentFromTheHumanReport is R-HR-07's split: with
+// the machine-readable flag stdout carries exactly one parseable document and no
+// human text while the human report lands on stderr; without the flag stdout
+// stays empty and the human report still lands on stderr.
+func TestDoctorSplitsTheMachineDocumentFromTheHumanReport(t *testing.T) {
+	t.Run("with the machine-readable flag", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		got := doctor.Run(context.Background(), doctor.Options{JSON: true},
+			doctor.Stdio{Stdout: &stdout, Stderr: &stderr}, linuxSeams())
+
+		if got != doctor.ExitOK {
+			t.Fatalf("Run returned exit %d, want %d", got, doctor.ExitOK)
+		}
+		if stdout.Len() == 0 {
+			t.Fatalf("stdout is empty; the document was not written")
+		}
+		// decodeRunDocument also proves the "exactly one document" half: a
+		// second value after the document fails there.
+		decodeRunDocument(t, stdout.Bytes())
+		if bytes.Contains(stdout.Bytes(), []byte("PROBES")) || bytes.Contains(stdout.Bytes(), []byte("completeness: ")) {
+			t.Errorf("stdout carries human text beside the document: %q", stdout.String())
+		}
+		if !strings.Contains(stderr.String(), "PROBES") {
+			t.Errorf("the human report did not land on stderr: %q", stderr.String())
+		}
+	})
+
+	t.Run("without the machine-readable flag", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		got := doctor.Run(context.Background(), doctor.Options{},
+			doctor.Stdio{Stdout: &stdout, Stderr: &stderr}, linuxSeams())
+
+		if got != doctor.ExitOK {
+			t.Fatalf("Run returned exit %d, want %d", got, doctor.ExitOK)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("stdout carries %q; without the flag it must stay empty", stdout.String())
+		}
+		if !strings.Contains(stderr.String(), "PROBES") {
+			t.Errorf("the human report did not land on stderr: %q", stderr.String())
+		}
+	})
+}
+
+// TestDoctorReportEchoesTheEffectiveRunOptions asserts the report is built from
+// the run's effective probe.Options, not from the caller's struct: an injected
+// bound is what run.concurrency and run.run_budget_ms report, and a zero-value
+// bound reports the documented defaults rather than zero.
+func TestDoctorReportEchoesTheEffectiveRunOptions(t *testing.T) {
+	t.Run("an injected bound is reported", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		opts := doctor.Options{JSON: true, Run: probe.Options{
+			Concurrency: 2,
+			RunBudget:   1500 * time.Millisecond,
+		}}
+		if got := doctor.Run(context.Background(), opts, doctor.Stdio{Stdout: &stdout, Stderr: &stderr}, linuxSeams()); got != doctor.ExitOK {
+			t.Fatalf("Run returned exit %d, want %d", got, doctor.ExitOK)
+		}
+		document := decodeRunDocument(t, stdout.Bytes())
+		if document.Run.Concurrency != 2 {
+			t.Errorf("run.concurrency is %d, want the injected 2", document.Run.Concurrency)
+		}
+		if document.Run.RunBudgetMS != 1500 {
+			t.Errorf("run.run_budget_ms is %d, want the injected 1500", document.Run.RunBudgetMS)
+		}
+	})
+
+	t.Run("an unset bound reports the documented default", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		if got := doctor.Run(context.Background(), doctor.Options{JSON: true},
+			doctor.Stdio{Stdout: &stdout, Stderr: &stderr}, linuxSeams()); got != doctor.ExitOK {
+			t.Fatalf("Run returned exit %d, want %d", got, doctor.ExitOK)
+		}
+		document := decodeRunDocument(t, stdout.Bytes())
+		if document.Run.Concurrency != probe.DefaultConcurrency {
+			t.Errorf("run.concurrency is %d, want the documented default %d", document.Run.Concurrency, probe.DefaultConcurrency)
+		}
+		if want := probe.DefaultRunBudget.Milliseconds(); document.Run.RunBudgetMS != want {
+			t.Errorf("run.run_budget_ms is %d, want the documented default %d", document.Run.RunBudgetMS, want)
+		}
+	})
+}
+
+// --- the documented table ----------------------------------------------------
+
+// diagnosisDocRelativePath is the contract document as the repository root names
+// it. This package's test binary runs in internal/doctor, so the document is two
+// levels up.
+const diagnosisDocRelativePath = "docs/diagnosis-report.md"
+
+// TestExitDocumentedCodesMatchTheConstants asserts the exit-code constants are
+// exactly the codes the document's "Exit codes" table states, in both
+// directions. The assertion lives here rather than in the report package because
+// internal/doctor imports internal/report and the reverse import would invert
+// the dependency direction (design §7's PR 17 note).
+func TestExitDocumentedCodesMatchTheConstants(t *testing.T) {
+	document := readDiagnosisDoc(t)
+	documented := exitCodeTableRows(t, document)
+	// The positive control: a parse that found no table row must fail loudly
+	// instead of passing as a comparison with nothing.
+	if len(documented) == 0 {
+		t.Fatalf("the exit-code table under %q yielded no rows: a parse that found nothing must not pass silently", "## Exit codes")
+	}
+
+	want := []string{
+		strconv.Itoa(doctor.ExitOK),
+		strconv.Itoa(doctor.ExitIncomplete),
+		strconv.Itoa(doctor.ExitUsage),
+	}
+	missing, extra := setDifference(want, documented), setDifference(documented, want)
+	if len(missing) > 0 || len(extra) > 0 {
+		t.Errorf("the documented exit codes are not the constants' values:\nmissing from the document: %v\nextra in the document:     %v", missing, extra)
+	}
+}
+
+// readDiagnosisDoc reads the contract document from the repository root, failing
+// the case when it is absent or empty.
+func readDiagnosisDoc(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(diagnosisDocRelativePath)))
+	if err != nil {
+		t.Fatalf("%s could not be read from the repository root: %v", diagnosisDocRelativePath, err)
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		t.Fatalf("%s is empty", diagnosisDocRelativePath)
+	}
+	return string(data)
+}
+
+// exitCodeTableRows returns the first column of the first markdown table after
+// the exact "## Exit codes" heading line, with the inline-code backticks stripped.
+// The header and separator rows are skipped and the table ends at the first
+// non-table line after it started; a missing heading fails the case, so the table
+// cannot silently stop being found.
+func exitCodeTableRows(t *testing.T, document string) []string {
+	t.Helper()
+	lines := strings.Split(document, "\n")
+
+	headingAt := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "## Exit codes" {
+			headingAt = i
+			break
+		}
+	}
+	if headingAt < 0 {
+		t.Fatalf("%s has no heading %q", diagnosisDocRelativePath, "## Exit codes")
+	}
+
+	var (
+		rows      []string
+		tableRows int
+	)
+	for _, line := range lines[headingAt+1:] {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "|") {
+			if tableRows > 0 {
+				break
+			}
+			continue
+		}
+		cells := strings.Split(trimmed, "|")
+		if len(cells) < 3 {
+			continue
+		}
+		cell := strings.Trim(strings.TrimSpace(cells[1]), "`")
+		tableRows++
+		if tableRows == 1 || strings.Trim(cell, "-: ") == "" {
+			// The header row, then the separator row.
+			continue
+		}
+		if cell == "" {
+			t.Fatalf("a row of the exit-code table has an empty first column")
+		}
+		rows = append(rows, cell)
+	}
+	return rows
+}
+
+// setDifference returns the entries of a that are not in b, in a's order.
+func setDifference(a, b []string) []string {
+	present := make(map[string]bool, len(b))
+	for _, entry := range b {
+		present[entry] = true
+	}
+	var difference []string
+	for _, entry := range a {
+		if !present[entry] {
+			difference = append(difference, entry)
+		}
+	}
+	return difference
+}
