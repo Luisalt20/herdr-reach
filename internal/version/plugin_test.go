@@ -19,6 +19,12 @@ package version_test
 // the guard. The counter-cases at the bottom prove each parser refuses a
 // commented line, an absent declaration, an ambiguous pair and an empty file,
 // so a broken scan fails rather than passing vacuously.
+//
+// The content is normalized from CRLF to LF before either parse runs: git
+// checks the files out with \r\n on Windows, where the line anchors would
+// otherwise match nothing and the guard would fail on every Windows checkout.
+// The verdict must not depend on the machine's core.autocrlf setting, and the
+// CRLF counter-cases below hold the parsers to the same answer for those bytes.
 
 import (
 	"fmt"
@@ -87,7 +93,10 @@ func TestPluginDeliversTheVersionItDeclares(t *testing.T) {
 // own line: a commented-out declaration, a different key, a second ambiguous
 // declaration and an empty file all fail. This is what keeps the guard in the
 // test above honest — it cannot be satisfied by the prose beside a declaration
-// or by a line that was commented out instead of updated.
+// or by a line that was commented out instead of updated. The CRLF cases are
+// the acceptance side of the same control: the declaration with the line
+// endings a Windows checkout produces must still extract the value, so the
+// parse cannot stop matching on one platform and keep passing on another.
 func TestPluginVersionParsersRejectCommentsAndAbsence(t *testing.T) {
 	manifestCases := []struct {
 		name    string
@@ -96,6 +105,7 @@ func TestPluginVersionParsersRejectCommentsAndAbsence(t *testing.T) {
 		wantErr bool
 	}{
 		{"a declaration on its own line", "version = \"1.2.3\"\n", "1.2.3", false},
+		{"a declaration on a CRLF checkout parses the same value", toCRLF("version = \"1.2.3\"\n"), "1.2.3", false},
 		{"a pre-release declaration", "version = \"1.2.3-beta.1\"\n", "1.2.3-beta.1", false},
 		{"a commented-out declaration is not a declaration", "# version = \"1.2.3\"\n", "", true},
 		{"another key is not the version", "min_herdr_version = \"0.7.0\"\n", "", true},
@@ -127,6 +137,7 @@ func TestPluginVersionParsersRejectCommentsAndAbsence(t *testing.T) {
 		wantErr bool
 	}{
 		{"an assignment on its own line", "TOOL_TAG=\"v1.2.3\"\n", "v1.2.3", false},
+		{"an assignment on a CRLF checkout parses the same value", toCRLF("TOOL_TAG=\"v1.2.3\"\n"), "v1.2.3", false},
 		{"a commented-out assignment is not an assignment", "# TOOL_TAG=\"v1.2.3\"\n", "", true},
 		{"prose that names TOOL_TAG is not the assignment", "# TOOL_TAG is the one home of the release tag.\n", "", true},
 		{"two assignments are ambiguous", "TOOL_TAG=\"v1.2.3\"\nTOOL_TAG=\"v1.2.4\"\n", "", true},
@@ -165,9 +176,11 @@ func toolTag(content string) (string, error) {
 
 // oneDeclaration requires exactly one match: zero means the scan found nothing
 // and must fail rather than pass, and more than one means the reader cannot
-// tell which declaration the plugin delivers.
+// tell which declaration the plugin delivers. The content is normalized from
+// CRLF to LF first, so both declarations are matched the same way whatever
+// line endings the checkout uses.
 func oneDeclaration(what string, decl *regexp.Regexp, content string) (string, error) {
-	matches := decl.FindAllStringSubmatch(content, -1)
+	matches := decl.FindAllStringSubmatch(normalizeLineEndings(content), -1)
 	switch {
 	case len(matches) == 0:
 		return "", fmt.Errorf("%s has no declaration on its own line: found 0, want exactly 1", what)
@@ -180,6 +193,20 @@ func oneDeclaration(what string, decl *regexp.Regexp, content string) (string, e
 	default:
 		return matches[0][1], nil
 	}
+}
+
+// normalizeLineEndings converts the \r\n a Windows checkout hands the guard to
+// the \n the line-anchored parses expect. It is the one normalization point:
+// both declarations are parsed through oneDeclaration above.
+func normalizeLineEndings(content string) string {
+	return strings.ReplaceAll(content, "\r\n", "\n")
+}
+
+// toCRLF re-spells a known-good declaration the way a Windows checkout does,
+// so the counter-cases can ask each parser for the same value it gives the LF
+// bytes. It shapes test input; the parsers themselves own the normalization.
+func toCRLF(content string) string {
+	return strings.ReplaceAll(content, "\n", "\r\n")
 }
 
 // moduleRoot walks up from the test's working directory — the package
