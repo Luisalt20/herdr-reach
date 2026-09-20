@@ -1,8 +1,10 @@
 package transport_test
 
 // This file is the transport layer's contract suite: the type-level shape of the registration and
-// feasibility contracts, the loud failure of the members this slice does not implement, and the
-// behaviour of the two SSH adapters against real `probe.Result` fixtures.
+// feasibility contracts, and the behaviour of the adapters against real `probe.Result` fixtures.
+// The registry-wide loud-failure proof of RG-9 lives in `notimplemented_test.go`, and the
+// registry's closure proof in `registry_test.go`; this file keeps the cases that are not a loop
+// over the shipped registry.
 //
 // Every transport is driven through `Feasible`, never through its internals: a test-only
 // transport proves that the registration contract needs nothing but `Candidate`, and the loop over
@@ -11,8 +13,6 @@ package transport_test
 // what a probe reported rather than a second opinion about verdicts.
 
 import (
-	"context"
-	"errors"
 	"reflect"
 	"slices"
 	"strings"
@@ -110,79 +110,6 @@ func TestContractViabilityIsAStrictBooleanWithNoThirdValue(t *testing.T) {
 	}
 }
 
-// TestNotImplementedMembersFailLoudlyWithoutAValue is RG-9's case for every registered adapter:
-// each plan- and verification-producing member fails with the typed not-implemented error, the
-// error names both the member and the owning slice, `errors.Is` matches the sentinel, and no value
-// is returned beside it.
-func TestNotImplementedMembersFailLoudlyWithoutAValue(t *testing.T) {
-	registry := transport.Registry()
-	if len(registry) == 0 {
-		t.Fatal("the registry is empty, so the case proves nothing")
-	}
-	for _, candidate := range registry {
-		// Candidate is the registration contract, and every R1a entry is a full Transport: the type
-		// assertion below is the honesty property this loop now carries, so a future detect-only
-		// entry cannot silently join the shipped set without a deliberate decision. PR 14 owns the
-		// per-member proof for the adapters it appends; here every shipped entry's plan and
-		// verification members fail loudly.
-		tr, ok := candidate.(transport.Transport)
-		if !ok {
-			t.Fatalf("the registered candidate %q does not implement Transport: the registration contract is Candidate and every R1a entry is a full Transport, so a detect-only entry joining the shipped set must be a deliberate decision rather than a silent registry append", candidate.Name())
-		}
-		t.Run(tr.Name()+"/PlanHub", func(t *testing.T) {
-			steps, err := tr.PlanHub(transport.PairingBundle{})
-			assertNotImplemented(t, err, "PlanHub", "R3")
-			if steps != nil {
-				t.Errorf("PlanHub returned %v beside the error; no plan may be returned alongside the not-implemented error", steps)
-			}
-		})
-		t.Run(tr.Name()+"/PlanNode", func(t *testing.T) {
-			steps, err := tr.PlanNode(transport.PairingBundle{})
-			assertNotImplemented(t, err, "PlanNode", "R3")
-			if steps != nil {
-				t.Errorf("PlanNode returned %v beside the error; no plan may be returned alongside the not-implemented error", steps)
-			}
-		})
-		t.Run(tr.Name()+"/Verify", func(t *testing.T) {
-			results, err := tr.Verify(context.Background(), transport.Handle{})
-			assertNotImplemented(t, err, "Verify", "R5/R6")
-			if results != nil {
-				t.Errorf("Verify returned %v beside the error; no evidence may be returned alongside the not-implemented error", results)
-			}
-		})
-	}
-}
-
-// assertNotImplemented asserts the loud-failure contract of one member: a non-nil typed error that
-// names the member and its owner slice, unwraps to the sentinel, and matches it under errors.Is.
-func assertNotImplemented(t *testing.T, err error, member, owner string) {
-	t.Helper()
-	if err == nil {
-		t.Fatalf("%s returned a nil error: a caller could mistake that for a successful result", member)
-	}
-	if !errors.Is(err, transport.ErrNotImplementedInThisPhase) {
-		t.Errorf("errors.Is(err, ErrNotImplementedInThisPhase) = false for %v", err)
-	}
-	if got := errors.Unwrap(err); got != transport.ErrNotImplementedInThisPhase {
-		t.Errorf("errors.Unwrap(%v) = %v, want the sentinel", err, got)
-	}
-	var typed *transport.NotImplementedError
-	if !errors.As(err, &typed) {
-		t.Fatalf("the error %v is not the typed NotImplementedError", err)
-	}
-	if typed.Member != member {
-		t.Errorf("the error names member %q, want %q", typed.Member, member)
-	}
-	if typed.Owner != owner {
-		t.Errorf("the error names owner %q, want %q", typed.Owner, owner)
-	}
-	for _, want := range []string{member, owner} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the error text %q does not name %q", err.Error(), want)
-		}
-	}
-}
-
 // candidateOnly implements only the registration contract. It is the proof that a detect-only
 // transport — or a test-only one — can be evaluated without carrying the plan and verification
 // stubs a full Transport needs, which is why Candidate is the registration contract.
@@ -268,29 +195,6 @@ func TestFixtureCandidateOnlyTransportIsEvaluatedWithoutTouchingTheDiagnosis(t *
 	}
 	if !reflect.DeepEqual(*fixture.handed, before) {
 		t.Errorf("the fixture was handed %+v, want the run's own diagnosis %+v", *fixture.handed, before)
-	}
-}
-
-// TestRegistryIsDeterministicInDeclarationOrder pins the registration order and the copy: PR 13
-// registers exactly the two SSH adapters, direct-ssh before reverse-ssh, PR 14 appends the other
-// two, and a caller who mutates the returned slice cannot reorder the registry.
-func TestRegistryIsDeterministicInDeclarationOrder(t *testing.T) {
-	first := transport.Registry()
-	var names []string
-	for _, tr := range first {
-		names = append(names, tr.Name())
-	}
-	want := []string{"direct-ssh", "reverse-ssh"}
-	if !slices.Equal(names, want) {
-		t.Fatalf("Registry() enumerates %v, want PRD §5.2's declaration order for this slice %v", names, want)
-	}
-	if again := transport.Registry(); !slices.Equal(transportNames(again), want) {
-		t.Errorf("a second Registry() enumerates %v, want the same stable order %v", transportNames(again), want)
-	}
-
-	first[0] = nil
-	if third := transport.Registry(); third[0] == nil || third[0].Name() != "direct-ssh" {
-		t.Errorf("mutating the slice Registry() returned changed a later call: index 0 is %v, want direct-ssh", third[0])
 	}
 }
 

@@ -4,19 +4,19 @@ package transport
 // design §4's data flow (`transport.Evaluate(transport.Registry(), diagnosis)`).
 //
 // The order is declaration order and it is deterministic: PRD §5.2 lists direct-ssh, reverse-ssh,
-// cloudflare-tunnel then tailscale, this slice registers the two SSH adapters in that order, and
-// PR 14 appends the other two in the same list, closing the set at exactly four (R-HR-06). The
-// order never depends on map iteration or on anything a run measured, so two runs over the same
-// registry produce the same rows in the same positions.
+// cloudflare-tunnel then tailscale, and the registry carries exactly those four in that order
+// (R-HR-06), so no adapter outside the set — including any adapter researched for a later slice —
+// is registered here. The order never depends on map iteration or on anything a run measured, so
+// two runs over the same registry produce the same rows in the same positions.
 //
-// The set is typed as the registration contract, not as the full one (design D7). Every entry this
-// slice registers is a full Transport, but the registry is stored as []Candidate because Candidate
+// The set is typed as the registration contract, not as the full one (design D7). Every entry the
+// registry holds is a full Transport, but the registry is stored as []Candidate because Candidate
 // is the contract a transport registers under: a detect-only adapter — or the spec's test-only
 // transport in design §6.4 — needs nothing but Name, Requires and Feasible, with no plan or
 // verification stub to carry for members the product has not defined. A caller that needs the plan
-// members of a registered adapter asserts it to Transport, and the contract suite asserts every
-// shipped R1a entry satisfies that assertion, so a detect-only entry joining the shipped set is a
-// deliberate decision rather than a silent append.
+// members of a registered adapter asserts it to Transport, and the not-implemented proof asserts
+// every shipped R1a entry satisfies that assertion, so a detect-only entry joining the shipped set
+// is a deliberate decision rather than a silent append.
 //
 // Evaluate measures nothing. It calls Feasible once per registered candidate and preserves the
 // registry order; every decision, reason, requirement and note belongs to the adapters.
@@ -30,6 +30,8 @@ import "github.com/Luisalt20/herdr-reach/internal/diagnosis"
 var registry = []Candidate{
 	directSSH{},
 	reverseSSH{},
+	cloudflareTunnel{},
+	tailscale{},
 }
 
 // Registry returns the registered candidates in deterministic order. The returned slice is a copy,
@@ -37,8 +39,8 @@ var registry = []Candidate{
 //
 // The element type is the registration contract on purpose (design D7): a detect-only or test-only
 // adapter is a Candidate and nothing more, while every R1a entry is a full Transport whose plan and
-// verification members are part of the shipped adapters. PR 14 appends cloudflare-tunnel and
-// tailscale to the same list, in that order.
+// verification members are part of the shipped adapters. The registry is closed at exactly the
+// four V1 transports above; adding a row outside the set is a contract change (R-HR-06).
 func Registry() []Candidate {
 	registered := make([]Candidate, len(registry))
 	copy(registered, registry)
