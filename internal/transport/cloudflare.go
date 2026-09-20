@@ -2,16 +2,17 @@ package transport
 
 // This file is the cloudflare-tunnel adapter — PRD §5.2's primary implementation, which works when
 // a hostname exists in a Cloudflare account and the edge is reachable — and the reading of the
-// `cloudflare.edge` question group it decides on.
+// `cloudflare.edge` and `cloudflare.http2` question groups it decides on.
 //
 // Feasible performs no measurement. Every endpoint, label and reason code it names comes from the
-// edge finding's evidence, and a question the run never answered is reported as an absence — never
-// folded into one of the edge group's states, because a measurement that was not made supports no
-// claim in either direction.
+// findings' evidence, and a question the run never answered is reported as an absence — never
+// folded into one of the groups' states, because a measurement that was not made supports no claim
+// in either direction.
 //
 // Reason precedence follows design §3.2: a measured edge block first, then an unresolved edge, then
-// the unmet account prerequisite. The HTTP/2 advice and the cloudflared pin note belong to a later
-// slice; this file decides feasibility and states nothing about a fallback.
+// the unmet account prerequisite. The HTTP/2 advice is informational: it recommends and never
+// enforces, it changes no verdict, and the cloudflared pin note from pin_note.go joins the notes as
+// report-only research knowledge.
 
 import (
 	"context"
@@ -36,6 +37,38 @@ const (
 	cloudflareRuleEdgePartial     = "CF_EDGE_PARTIAL"
 	cloudflareRuleEdgeUnreachable = "CF_EDGE_UNREACHABLE"
 	cloudflareRuleEdgeUnresolved  = "CF_EDGE_UNRESOLVED"
+)
+
+// The hand-named rule ids of the `cloudflare.http2` group (design §5.2), declared and guarded the
+// same way: the feasibility suite asserts these literals stay declared ids.
+const (
+	cloudflareRuleHTTP2AdvisedQUICFailed      = "CF_HTTP2_ADVISED_QUIC_FAILED"
+	cloudflareRuleHTTP2AdvisedQUICUnconfirmed = "CF_HTTP2_ADVISED_QUIC_UNCONFIRMED"
+	cloudflareRuleHTTP2NoAdviceQUICUsable     = "CF_NO_HTTP2_ADVICE_QUIC_USABLE"
+	cloudflareRuleHTTP2AdvisoryNotAssessed    = "CF_HTTP2_ADVISORY_NOT_ASSESSED"
+)
+
+// questionCloudflareHTTP2 is the reasoning layer's question for the HTTP/2 advice group. Like the
+// edge question, the adapter locates the finding by question and switches on its rule id; the
+// prose conclusion is never parsed. The advice is informational and never changes Viable: R1a's
+// account prerequisite decides this transport, and the recommendation concerns the client's tunnel
+// transport protocol rather than whether a tunnel can work.
+const questionCloudflareHTTP2 = "cloudflare.http2"
+
+// probeEgressQUIC is the probe whose observation the unconfirmed-advice note names. The note filters
+// the finding's evidence by this key, so the note quotes the measurement the recommendation rests
+// on instead of restating one.
+const probeEgressQUIC = "egress.quic"
+
+// The two shared sentences of the advising paths. They are separate notes so a reader sees the
+// advice, its cost and its boundary as distinct statements, and so a case can assert each without
+// matching a larger sentence.
+const (
+	// cloudflareHTTP2TradeOff is the documented cost of forcing HTTP/2 on the tunnel transport.
+	cloudflareHTTP2TradeOff = "the HTTP/2 path does not support post-quantum key agreement on the tunnel transport, so choosing it forfeits that there"
+	// cloudflareHTTP2RecommendOnly is the enforcement boundary R-HR-05 requires on every advising
+	// path: this slice recommends, and nothing was applied or written.
+	cloudflareHTTP2RecommendOnly = "this slice recommends and does not enforce: no fallback was applied and no configuration was written"
 )
 
 // cloudflareTunnel is the cloudflare-tunnel adapter. It carries no state, so it is registered as a
@@ -69,10 +102,14 @@ func (cloudflareTunnel) Requires() []Requirement { return cloudflareRequires() }
 // prerequisites. It is viable only when the edge half is satisfied — the edge is reachable, or
 // partly reachable with at least one declared endpoint answering — and both account rows are
 // satisfied; every other combination is explained by the highest-precedence fact design §3.2
-// allows, and both evaluated requirement rows travel with the verdict.
+// allows, and both evaluated requirement rows travel with the verdict. The HTTP/2 advice and the
+// pin note are informational: they join the notes whatever the verdict, because the transport is
+// never viable in R1a and the advice is about the client's tunnel transport protocol, not about
+// whether the tunnel can work.
 func (cloudflareTunnel) Feasible(d diagnosis.Diagnosis) Feasibility {
 	finding, found := findingByQuestion(d, questionCloudflareEdge)
 	edge := assessCloudflareEdge(finding, found)
+	http2Finding, http2Found := findingByQuestion(d, questionCloudflareHTTP2)
 	requires := evaluateCloudflareRequires()
 
 	// The viability gate reads the evaluated rows and the measured edge state, not a hardcoded
@@ -91,6 +128,14 @@ func (cloudflareTunnel) Feasible(d diagnosis.Diagnosis) Feasibility {
 	viable := cloudflareEdgeHalfSatisfied(edge.outcome) && requires[0].Satisfied && requires[1].Satisfied
 
 	notes := append([]string(nil), edge.notes...)
+	// The notes order is fixed and deterministic by construction: the measured edge observations
+	// first, because the verdict is traced to them; then the HTTP/2 advice the measurements support,
+	// because it is what a reader does with them; then the pin note, which is report-only research
+	// knowledge about the client rather than a measurement of this run, and therefore travels with
+	// every verdict; and last the prerequisite notes — the D6 account note when the edge half is
+	// satisfied, then the unmet rows — because they are what remains to act on.
+	notes = append(notes, cloudflareHTTP2AdviceNotes(http2Finding, http2Found)...)
+	notes = append(notes, PinNote())
 	if cloudflareEdgeHalfSatisfied(edge.outcome) {
 		// Design D6's account note: with the edge half measured satisfied — reachable, or partly
 		// reachable with at least one endpoint answering — the unmet hostname must read as
@@ -274,4 +319,67 @@ func cloudflareReason(edge cloudflareEdgeAssessment, requires []Requirement) str
 	default:
 		return clause + "; " + prerequisite
 	}
+}
+
+// cloudflareHTTP2AdviceNotes reads the `cloudflare.http2` finding and returns the notes the advice
+// contributes, or nil when the run produced no advice.
+//
+// The advice is informational and never changes Viable. In R1a the account prerequisite is
+// unsatisfied by construction, so the transport is never viable, and the recommendation concerns
+// the tunnel transport protocol the client would use rather than whether a tunnel can work.
+//
+//   - A failed datagram measurement beside a measured TCP path advises HTTP/2, states the
+//     post-quantum trade-off, and states the recommendation-only boundary.
+//   - An unconfirmed datagram measurement advises the same way and names the measurement it rests
+//     on, from this finding's own evidence, because the recommendation is made from an absence of
+//     confirmation rather than from a measured block (design D8, RG-5).
+//   - A datagram reply produces no downgrade advice: the probe claims only that the datagram was
+//     not silently dropped, which justifies no protocol change.
+//   - The not-assessed rule, a missing finding and a rule this adapter does not recognise produce
+//     no advice and no invented measurement: an HTTP/2 recommendation needs a measured TCP path,
+//     and a state this adapter cannot read is not a measurement.
+func cloudflareHTTP2AdviceNotes(finding diagnosis.Finding, found bool) []string {
+	if !found {
+		return nil
+	}
+	switch finding.Rule {
+	case cloudflareRuleHTTP2AdvisedQUICFailed:
+		return []string{
+			"HTTP/2 recommendation: use HTTP/2 for the cloudflared tunnel transport on this path, because the UDP datagram measurement failed",
+			cloudflareHTTP2TradeOff,
+			cloudflareHTTP2RecommendOnly,
+		}
+	case cloudflareRuleHTTP2AdvisedQUICUnconfirmed:
+		return []string{
+			"HTTP/2 recommendation: use HTTP/2 for the cloudflared tunnel transport on this path, because the datagram path was never confirmed",
+			cloudflareHTTP2UnconfirmedMeasurement(finding),
+			cloudflareHTTP2TradeOff,
+			cloudflareHTTP2RecommendOnly,
+		}
+	case cloudflareRuleHTTP2NoAdviceQUICUsable:
+		return []string{
+			"no HTTP/2 downgrade is recommended: the UDP datagram measurement to the edge drew a reply, so the datagram path is usable",
+		}
+	default:
+		// The not-assessed rule and every unrecognised rule: no advice, no measurement.
+		return nil
+	}
+}
+
+// cloudflareHTTP2UnconfirmedMeasurement names the unconfirmed measurement the conservative advice
+// rests on, from the finding's evidence only. When the finding carries no datagram observation the
+// note says so instead of quoting one: the recommendation's wording is the tool's own, but the
+// measurement is not, and no target is invented for it.
+func cloudflareHTTP2UnconfirmedMeasurement(finding diagnosis.Finding) string {
+	var quic []diagnosis.Fact
+	for _, fact := range finding.Evidence {
+		if fact.Probe == probeEgressQUIC {
+			quic = append(quic, fact)
+		}
+	}
+	if len(quic) == 0 {
+		return "the recommendation rests on an unconfirmed measurement, but the finding carries no datagram observation to name, so no measurement is quoted"
+	}
+	return "the recommendation rests on an unconfirmed measurement: " +
+		strings.Join(evidenceNotes(diagnosis.Finding{Evidence: quic}), "; ")
 }
