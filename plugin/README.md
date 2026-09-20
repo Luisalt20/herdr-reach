@@ -82,6 +82,26 @@ With no address configured the run still happens, without `--hub`: the report na
 measurement as `not measured` instead of guessing, and the run does not fail because of the
 missing configuration.
 
+## Exit codes
+
+`doctor` reports through its exit code, and the plugin passes that code through unchanged:
+
+| Code | Meaning |
+|:---|:---|
+| `0` | Measurement completed — including "no transport viable" and a native-Windows refusal; those are results, not failures of the run. |
+| `1` | Run incomplete — at least one probe was attempted and produced no answer. |
+| `2` | Usage or internal error — no diagnosis is presented as completed, and standard output stays empty. |
+
+Herdr derives a plugin action's status from the process exit code, so an action lands in the
+plugin log as `failed` when `doctor` exits `1`. **That means "incomplete measurement", not "the
+plugin broke".** The report is complete for every question it answered; the `unresolved` line
+names the question that was attempted and could not be settled, and this is a result, not a
+failure of the run. A verified TLS chain whose publisher is outside the declared expected set is
+one of the causes of an incomplete run. Both entrypoints print this explanation on standard error
+after the report and still exit `1`; the plugin never rewrites the tool's status. A status outside
+`0`, `1`, and `2` is outside the documented set, and the plugin names it as such before passing it
+through.
+
 ## Known limit
 
 The doctor does not measure the node's Herdr version. A node running Herdr older than 0.9.1 is

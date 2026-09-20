@@ -1,6 +1,9 @@
 #!/bin/sh
 # run.sh is the action entrypoint: it points `herdr-reach doctor` at the other
-# side of the link, then execs the binary.
+# side of the link, captures the doctor's status, and explains a non-zero
+# status on stderr without changing it. Herdr derives an action's log status
+# from the process exit code, and exit 1 means an incomplete measurement -- a
+# result, not a broken run.
 #
 # The role ($1) does not change what doctor does. The tool is role-agnostic and
 # --hub always names the other side of the link; the role only decides which
@@ -13,6 +16,26 @@
 # reports the missing measurement as `not measured` instead of guessing. That
 # is a valid run, so a missing configuration must not fail the action.
 set -eu
+
+# explain_status prints the meaning of a non-zero doctor status to stderr. The
+# status itself is left to the caller: exiting 0 for an incomplete run would
+# break doctor's contract and hide real errors from anything scripting this
+# action. Keep the case in sync with report.sh, where the pane must tell the
+# same story.
+explain_status() {
+  case "$1" in
+    1)
+      echo "herdr-reach: exit 1: the measurement completed and is incomplete: at least one probe was attempted and produced no answer." >&2
+      echo "herdr-reach: the unresolved line in the report above names the question that could not be settled; this is a result, not a failure of the run." >&2
+      ;;
+    2)
+      echo "herdr-reach: exit 2: usage or internal error: no diagnosis is presented as completed and standard output is empty." >&2
+      ;;
+    *)
+      echo "herdr-reach: exit $1: outside doctor's documented exit codes (0 = measurement completed, 1 = incomplete run, 2 = usage or internal error)." >&2
+      ;;
+  esac
+}
 
 role="${1:-}"
 case "$role" in
@@ -36,9 +59,18 @@ fi
 # plugin directory or a developer runs `sh plugin/run.sh` from the repository.
 binary="$(dirname "$0")/bin/herdr-reach"
 
+# Capture the status instead of exec'ing so a non-zero one can be explained;
+# the status itself is still the process's own. The failing command sits in an
+# if condition so `set -e` does not fire before it is captured.
 if [ -n "$address" ]; then
-  exec "$binary" doctor --hub "$address"
+  if "$binary" doctor --hub "$address"; then status=0; else status=$?; fi
+else
+  echo "herdr-reach: no ${key} configured; running without --hub, so the other side's address is reported as 'not measured'." >&2
+  if "$binary" doctor; then status=0; else status=$?; fi
 fi
 
-echo "herdr-reach: no ${key} configured; running without --hub, so the other side's address is reported as 'not measured'." >&2
-exec "$binary" doctor
+if [ "$status" -ne 0 ]; then
+  explain_status "$status"
+fi
+
+exit "$status"
