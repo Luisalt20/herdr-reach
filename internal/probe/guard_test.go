@@ -16,11 +16,14 @@ package probe_test
 // its own sentinel tests, and this test runs under the unit suite, so dropping
 // the CI job does not drop this guard.
 //
-// Test sources are out of scope by decision: the suite's scripted seams are
-// asserted by the deny-all sentinel tests, and a guard that read test files would
-// have to special-case every fixture that names a primitive. The counter-case
-// below proves the scanner can fail on a forbidden construction, so a permissive
-// parser cannot pass vacuously.
+// Test sources are out of scope for the primitive-construction scan by decision:
+// the suite's scripted seams are asserted by the deny-all sentinel tests, and a
+// guard that read test files there would have to special-case every fixture that
+// names a primitive. They are not out of scope for the constructor invariant: a
+// separate scan reads the module's _test.go files and fails if any of them calls
+// ProductionSeams, because such a test would dial the real network. The
+// counter-cases below prove both scanners can fail — a forbidden construction, a
+// test-file constructor call — so a permissive parser cannot pass vacuously.
 
 import (
 	"fmt"
@@ -57,6 +60,11 @@ const entrypointFile = "cmd/herdr-reach/main.go"
 // far below the real count — it guards against a broken walk, not against the
 // module shrinking.
 const minSourceFiles = 25
+
+// minTestFiles is the constructor-invariant scan's positive control: the module
+// ships test files in every package, so a walk that read fewer than this opened
+// no tests and cannot vouch for their contents.
+const minTestFiles = 10
 
 // sourceFile is one parsed non-test source, with the file set its positions are
 // resolved against.
@@ -103,10 +111,22 @@ func moduleRoot(t *testing.T) string {
 	}
 }
 
-// parseNonTestSources parses every non-test .go file under root. A source the
-// parser cannot read fails the guard: a file the scanner silently skipped is a
-// file it cannot vouch for.
+// parseNonTestSources parses every non-test .go file under root, for the
+// primitive-construction scan.
 func parseNonTestSources(t *testing.T, root string) []sourceFile {
+	return parseSources(t, root, false)
+}
+
+// parseTestSources parses every _test.go file under root, for the scan that
+// asserts tests never construct the production seam set.
+func parseTestSources(t *testing.T, root string) []sourceFile {
+	return parseSources(t, root, true)
+}
+
+// parseSources parses the .go files under root whose test-ness matches tests,
+// sorted by path. A source the parser cannot read fails the guard: a file the
+// scanner silently skipped is a file it cannot vouch for.
+func parseSources(t *testing.T, root string, tests bool) []sourceFile {
 	t.Helper()
 	var sources []sourceFile
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -122,7 +142,10 @@ func parseNonTestSources(t *testing.T, root string) []sourceFile {
 			return nil
 		}
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+		if !strings.HasSuffix(name, ".go") {
+			return nil
+		}
+		if strings.HasSuffix(name, "_test.go") != tests {
 			return nil
 		}
 		relative, err := filepath.Rel(root, path)
@@ -215,11 +238,7 @@ func forbiddenIn(source sourceFile) []finding {
 		if !ok {
 			return true
 		}
-		identifier, ok := selector.X.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		path, ok := restricted[identifier.Name]
+		name, path, ok := restrictedRoot(selector.X, restricted)
 		if !ok {
 			return true
 		}
@@ -227,7 +246,7 @@ func forbiddenIn(source sourceFile) []finding {
 			findings = append(findings, finding{
 				path: source.path,
 				line: source.fset.Position(selector.Sel.Pos()).Line,
-				what: identifier.Name + "." + selector.Sel.Name,
+				what: name + "." + selector.Sel.Name,
 			})
 		}
 		return true
@@ -235,27 +254,63 @@ func forbiddenIn(source sourceFile) []finding {
 	return findings
 }
 
+// restrictedRoot resolves the restricted import a selector chain is rooted at,
+// walking through the parentheses, address-of expressions, composite literals
+// and intermediate selectors that can stand between a package name and the
+// construction inside it: net.DefaultResolver.LookupHost and
+// (&net.Resolver{}).LookupHost both root at net. A chain rooted anywhere else —
+// a local variable, a function result — yields no restricted import and is not
+// the guard's business. Walking the chain is what reports a nested entry point
+// rather than only the outermost selector.
+func restrictedRoot(expr ast.Expr, restricted map[string]string) (string, string, bool) {
+	switch node := expr.(type) {
+	case *ast.Ident:
+		path, ok := restricted[node.Name]
+		return node.Name, path, ok
+	case *ast.SelectorExpr:
+		return restrictedRoot(node.X, restricted)
+	case *ast.ParenExpr:
+		return restrictedRoot(node.X, restricted)
+	case *ast.UnaryExpr:
+		return restrictedRoot(node.X, restricted)
+	case *ast.CompositeLit:
+		if node.Type == nil {
+			return "", "", false
+		}
+		return restrictedRoot(node.Type, restricted)
+	case *ast.IndexExpr:
+		return restrictedRoot(node.X, restricted)
+	}
+	return "", "", false
+}
+
 // forbiddenSelector reports whether naming selector through importPath is one of
 // the constructions the guard confines. The prefixes are the design's own:
 // net.Dial* covers Dial, DialTimeout, DialUDP and the Dialer value; net.Lookup*
-// covers every resolver entry point; net.ListenPacket is the datagram listener;
-// tls.Dial* covers both TLS dialing entry points.
+// covers every resolver entry point, and net.DefaultResolver and net.Resolver
+// name the process-wide resolver and the resolver type a literal is built from,
+// so a lookup rooted at either is caught; net.ListenPacket is the datagram
+// listener; tls.Dial* covers both TLS dialing entry points.
 func forbiddenSelector(importPath, selector string) bool {
 	switch importPath {
 	case "net":
 		return strings.HasPrefix(selector, "Dial") ||
 			strings.HasPrefix(selector, "Lookup") ||
-			selector == "ListenPacket"
+			selector == "ListenPacket" ||
+			selector == "DefaultResolver" ||
+			selector == "Resolver"
 	case "crypto/tls":
 		return strings.HasPrefix(selector, "Dial")
 	}
 	return false
 }
 
-// productionSeamsCalls returns every call to the production seam constructor, so
-// the guard can assert the design's sentence "production seams are constructed in
-// exactly one place (internal/probe/real.go, called from main.go); tests never
-// call it" as a property of the tree rather than as prose.
+// productionSeamsCalls returns every call to the production seam constructor,
+// in both the qualified form (probe.ProductionSeams()) and the bare form
+// (ProductionSeams(), as an internal-package test would write it), so the guard
+// can assert the design's sentence "production seams are constructed in exactly
+// one place (internal/probe/real.go, called from main.go); tests never call it"
+// as a property of the tree rather than as prose.
 func productionSeamsCalls(sources []sourceFile) []finding {
 	var calls []finding
 	for _, source := range sources {
@@ -264,15 +319,26 @@ func productionSeamsCalls(sources []sourceFile) []finding {
 			if !ok {
 				return true
 			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || selector.Sel.Name != "ProductionSeams" {
-				return true
+			switch fun := call.Fun.(type) {
+			case *ast.SelectorExpr:
+				if fun.Sel.Name != "ProductionSeams" {
+					return true
+				}
+				calls = append(calls, finding{
+					path: source.path,
+					line: source.fset.Position(fun.Sel.Pos()).Line,
+					what: "ProductionSeams",
+				})
+			case *ast.Ident:
+				if fun.Name != "ProductionSeams" {
+					return true
+				}
+				calls = append(calls, finding{
+					path: source.path,
+					line: source.fset.Position(fun.Pos()).Line,
+					what: "ProductionSeams",
+				})
 			}
-			calls = append(calls, finding{
-				path: source.path,
-				line: source.fset.Position(selector.Sel.Pos()).Line,
-				what: "ProductionSeams",
-			})
 			return true
 		})
 	}
@@ -320,6 +386,7 @@ func TestNoRealNetworkConstructionGuard(t *testing.T) {
 		const source = `package scratch
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"os/exec"
@@ -331,7 +398,13 @@ var (
 	_ = net.ListenPacket
 	_ = tls.Dial
 	_ = exec.Command
+	_ = net.DefaultResolver
 )
+
+func offender() {
+	_, _ = net.DefaultResolver.LookupHost(context.Background(), "example.com")
+	_, _ = (&net.Resolver{}).LookupHost(context.Background(), "example.com")
+}
 `
 		if err := os.WriteFile(fixture, []byte(source), 0o600); err != nil {
 			t.Fatalf("writing the scratch fixture: %v", err)
@@ -345,7 +418,7 @@ var (
 			}
 			reported[found.what] = true
 		}
-		for _, want := range []string{`import "os/exec"`, "net.Dial", "net.LookupHost", "net.ListenPacket", "tls.Dial"} {
+		for _, want := range []string{`import "os/exec"`, "net.Dial", "net.LookupHost", "net.ListenPacket", "tls.Dial", "net.DefaultResolver", "net.Resolver"} {
 			if !reported[want] {
 				t.Errorf("the scanner did not report %s in the scratch fixture; a permissive parser must fail this case", want)
 			}
@@ -360,6 +433,39 @@ var (
 		for _, call := range calls {
 			if call.path != entrypointFile {
 				t.Errorf("%s calls ProductionSeams; the production seam set is constructed only in %s, and tests never call it", call.String(), entrypointFile)
+			}
+		}
+	})
+
+	t.Run("the production constructor is never called from a test source", func(t *testing.T) {
+		testSources := parseTestSources(t, root)
+		if len(testSources) < minTestFiles {
+			t.Fatalf("read %d test sources under %s, want at least %d: a scan that opened no tests cannot vouch that tests never construct the production seam set", len(testSources), root, minTestFiles)
+		}
+		for _, call := range productionSeamsCalls(testSources) {
+			t.Errorf("%s calls ProductionSeams from a test source: a test that constructs the production seam set would dial the real network, and tests never call it", call.String())
+		}
+
+		// Counter-case: scratch test files that do call it are reported, in both
+		// the qualified and the bare form, so neither a scan that read nothing nor
+		// a detector that knows only one form can pass vacuously.
+		scratch := t.TempDir()
+		fixtures := map[string]string{
+			"qualified_test.go": "package scratch\n\nimport \"github.com/Luisalt20/herdr-reach/internal/probe\"\n\nvar _ = probe.ProductionSeams()\n",
+			"bare_test.go":      "package probe\n\nvar _ = ProductionSeams()\n",
+		}
+		for name, content := range fixtures {
+			if err := os.WriteFile(filepath.Join(scratch, name), []byte(content), 0o600); err != nil {
+				t.Fatalf("writing the scratch test fixture %s: %v", name, err)
+			}
+		}
+		reported := make(map[string]bool)
+		for _, call := range productionSeamsCalls(parseTestSources(t, scratch)) {
+			reported[call.path+" "+call.what] = true
+		}
+		for _, want := range []string{"qualified_test.go ProductionSeams", "bare_test.go ProductionSeams"} {
+			if !reported[want] {
+				t.Errorf("the scan did not report %s in a scratch test fixture; a detector that knows only one call form must fail this case", want)
 			}
 		}
 	})
