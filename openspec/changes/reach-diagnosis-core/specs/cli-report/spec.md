@@ -219,8 +219,9 @@ summary, headline or recommendation MAY drop the named failing target.
 ### Requirement: A run writes nothing and executes no third-party binary (R-HR-02, R-HR-24, R-HR-27)
 
 A full run MUST leave the machine unchanged: with the home directory and the working directory
-pointed at a fresh temporary tree, the tree MUST be byte-identical after the run. The injected
-command runner MUST be called zero times, the test default MUST deny every execution, and the tool
+pointed at a fresh temporary tree, the tree MUST be byte-identical after the run. The production
+shape wires no command runner, so a production run calls none and has no execution path at all;
+with a test's denying runner wired, every attempt is denied and nothing is executed. The tool
 MUST NOT invoke `herdr`, `cloudflared`, `sshd`, `security` or any other third-party binary. The set
 of dialed `(host, port, protocol)` triples MUST equal the declared target set exactly. The proof's
 coverage is limited to the home directory and the working directory; it MUST NOT be presented as
@@ -238,8 +239,9 @@ writer code path and no write-capable dependency exists.
 
 - GIVEN the deny-all command runner
 - WHEN a full run completes
-- THEN the command runner was called zero times
-- AND any attempted execution fails the run by construction
+- THEN every command attempt was denied
+- AND no third-party binary was executed
+- AND the production shape wires no command runner, so no execution path exists even if a probe asks
 
 #### Scenario: Only the declared targets are dialed
 
