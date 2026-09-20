@@ -150,7 +150,7 @@ func probeRow(result probe.Result) ProbeRow {
 		Kind:         result.Kind,
 		Target:       nullableTarget(result.Target),
 		Verdict:      result.Verdict,
-		Resolution:   aggregateResolution(result.Observations),
+		Resolution:   aggregateResolution(result),
 		Reason:       result.Reason,
 		Detail:       result.Detail,
 		ElapsedMS:    result.Elapsed.Milliseconds(),
@@ -175,6 +175,16 @@ func observationRows(observations []probe.Observation) []ObservationRow {
 	return rows
 }
 
+// resultCarriesNoObservation reports whether a reported result measured nothing:
+// the probe returned but carries no observation for the mapping to read. It is
+// one predicate on purpose. aggregateResolution maps this case to the unresolved
+// resolution probeRow publishes, and coverage classifies the same case as making
+// the run incomplete, so the row and the coverage list cannot disagree about one
+// result (R-HR-NF-02, R-HR-NF-03).
+func resultCarriesNoObservation(result probe.Result) bool {
+	return len(result.Observations) == 0
+}
+
 // aggregateResolution reports how far the probe's answer got: the resolution of
 // the observation probe.Aggregate reduces the probe to. The ranking — fail above
 // indeterminate above pass, the earlier observation winning a tie — lives in
@@ -182,11 +192,14 @@ func observationRows(observations []probe.Observation) []ObservationRow {
 // finds exactly the observation it selected, so this mapping holds no second
 // copy of the documented order. A result that reported no observation measured
 // nothing, so its resolution is the absence of an answer, matching the
-// indeterminate internal-error verdict Aggregate gives that same result.
-func aggregateResolution(observations []probe.Observation) probe.Resolution {
-	if len(observations) == 0 {
+// indeterminate internal-error verdict Aggregate gives that same result — and
+// that empty case is resultCarriesNoObservation, the same predicate coverage
+// reads.
+func aggregateResolution(result probe.Result) probe.Resolution {
+	if resultCarriesNoObservation(result) {
 		return probe.Unresolved
 	}
+	observations := result.Observations
 	worst := observations[0]
 	for _, candidate := range observations[1:] {
 		if verdict, _ := probe.Aggregate([]probe.Observation{worst, candidate}); verdict != worst.Verdict {
@@ -315,6 +328,13 @@ func requirementRows(requirements []transport.Requirement) []RequirementRow {
 // run.not_measured. The lists follow probe.Registry() order and name each probe
 // once, so the order cannot depend on the results' arrival order or on how many
 // observations a probe reported.
+//
+// A reported result that carries no observation at all belongs with the
+// unresolved, not with the not-measured: the probe returned and measured
+// nothing, which is already the unresolved resolution aggregateResolution gives
+// its row. The row and this list read that empty case through the same
+// predicate, so a run cannot publish an unresolved probe row beside a complete
+// run (R-HR-NF-02, R-HR-NF-03).
 func coverage(results []probe.Result) (unresolved, notMeasured []string) {
 	unresolved = make([]string, 0)
 	notMeasured = make([]string, 0)
@@ -323,7 +343,7 @@ func coverage(results []probe.Result) (unresolved, notMeasured []string) {
 		if !reported {
 			continue
 		}
-		if hasResolution(result.Observations, probe.Unresolved) {
+		if resultCarriesNoObservation(result) || hasResolution(result.Observations, probe.Unresolved) {
 			unresolved = append(unresolved, registration.Name)
 		}
 		if hasResolution(result.Observations, probe.NotMeasured) {
