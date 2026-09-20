@@ -13,7 +13,6 @@ package doctor
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 
@@ -125,16 +124,9 @@ func Run(ctx context.Context, opts Options, stdio Stdio, seams probe.Seams) int 
 	}
 
 	if opts.JSON {
-		document, err := json.Marshal(payload)
-		if err != nil {
-			return ExitUsage
-		}
-		// One write of one document plus its terminator: a writer failure
-		// cannot leave a second value or human text beside it, and the newline
-		// keeps the document line-oriented without becoming a second write of
-		// its own.
-		document = append(document, '\n')
-		if _, err := stdio.Stdout.Write(document); err != nil {
+		// The machine-readable half of the projection is the report package's,
+		// exactly as the human half is: the harness only chooses the stream.
+		if err := report.WriteJSON(stdio.Stdout, payload); err != nil {
 			return ExitUsage
 		}
 	}
