@@ -1060,6 +1060,45 @@ func TestCoverageNotMeasuredProbeIsNamedAndLeavesTheRunComplete(t *testing.T) {
 	}
 }
 
+// TestCoverageResultWithNoObservationIsUnresolvedAndIncomplete is the agreement case between a
+// probe row and the coverage lists: a reported result that carries no observation measured nothing,
+// so its row is unresolved and the run cannot claim completeness — one empty case, never two
+// opinions about the same run (R-HR-NF-02, R-HR-NF-03).
+func TestCoverageResultWithNoObservationIsUnresolvedAndIncomplete(t *testing.T) {
+	t.Run("a reported result with no observation leaves the run incomplete", func(t *testing.T) {
+		input := fullInput()
+		input.Results = append(input.Results, resultOf("egress.quic", probe.ProbeProto, "region1.v2.argotunnel.com:7844",
+			time.Millisecond, "the result carries no observation"))
+
+		payload := report.Build(input)
+		document := decodePayload(t, payload)
+
+		row := rowFor(t, document, "egress.quic")
+		if got := stringAt(t, "egress.quic.resolution", row["resolution"]); got != string(probe.Unresolved) {
+			t.Errorf("egress.quic.resolution = %q, want %q: a result with no observation measured nothing", got, probe.Unresolved)
+		}
+		if !slices.Contains(payload.Run.Unresolved, "egress.quic") {
+			t.Errorf("run.unresolved = %v, want egress.quic named: the row is unresolved, so the run cannot be complete", payload.Run.Unresolved)
+		}
+		if payload.Run.Completeness != report.CompletenessIncomplete {
+			t.Errorf("run.completeness = %q, want %q: an unresolved probe row beside a complete run contradicts the row", payload.Run.Completeness, report.CompletenessIncomplete)
+		}
+		if slices.Contains(payload.Run.NotMeasured, "egress.quic") {
+			t.Errorf("run.not_measured = %v, must not name a probe that returned: not measured is a measurement that was never attempted", payload.Run.NotMeasured)
+		}
+	})
+
+	t.Run("a run whose probes all reported observations stays complete", func(t *testing.T) {
+		payload := report.Build(fullInput())
+		if payload.Run.Completeness != report.CompletenessComplete {
+			t.Errorf("run.completeness = %q, want %q: every reported result carries at least one observation", payload.Run.Completeness, report.CompletenessComplete)
+		}
+		if len(payload.Run.Unresolved) != 0 {
+			t.Errorf("run.unresolved = %v, want none: no result measured nothing", payload.Run.Unresolved)
+		}
+	})
+}
+
 // TestCoverageUnresolvedProbeIsNamedAndMakesTheRunIncomplete asserts an
 // attempted observation that produced no answer is listed in run.unresolved and
 // makes the run incomplete (R-HR-NF-02).
