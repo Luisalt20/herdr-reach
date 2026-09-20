@@ -1,0 +1,213 @@
+# Release for herdr-reach.
+#
+# A `v*` tag publishes one GitHub Release: the five binaries the CI `Cross-Build`
+# job already proves, their `SHA256SUMS`, and a body that points a tester at
+# `docs/beta-testing.md`. A tag whose name carries a hyphen (`v0.1.0-beta.1`) is
+# published as a pre-release; a clean `vX.Y.Z` is a normal release.
+#
+# A tag is not evidence: `preflight` runs the gates on the tagged commit and
+# refuses a tag that is not an ancestor of `main`, so a tag cut from another
+# branch cannot publish. The release then builds exactly the commit preflight
+# verified, and the injected identity is proven by running the linux binary
+# rather than assumed from the `-ldflags` values.
+#
+# Nothing here needs a secret: the repository is public, the assets are public,
+# and the release uses the workflow's own `github.token`. Signing and installers
+# deliberately do not exist in this pipeline.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# The preflight needs read access only; the publishing job asks for write on
+# itself, so no other step can write to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  # One group per tag, and a release in progress is never cancelled: a rerun
+  # waits rather than killing a publish halfway through.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    # The gates before anything is built: a tag that does not pass them publishes
+    # nothing.
+    name: Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      commit: ${{ steps.ancestry.outputs.commit }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # Full history and tags: the tag-name and ancestry checks read both,
+          # and a shallow checkout could answer neither.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.mod
+
+      - name: Require a well-formed version tag
+        id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$'; then
+            echo "::error::tag \"$TAG\" is not v<major>.<minor>.<patch>, optionally with a hyphenated suffix (for example v0.1.0-beta.1)"
+            exit 1
+          fi
+          echo "version tag ok: $TAG"
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Require the tagged commit to be an ancestor of main
+        id: ancestry
+        run: |
+          set -euo pipefail
+          # GITHUB_REF is refs/tags/<tag>; peeling it resolves an annotated and a
+          # lightweight tag to the same tagged commit.
+          commit="$(git rev-parse "${GITHUB_REF}^{commit}")"
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "::error::$GITHUB_REF_NAME points at $commit, which is not an ancestor of main: a tag cut from another branch does not publish"
+            exit 1
+          fi
+          echo "tagged commit $commit is an ancestor of main"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Require gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt-formatted:"
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test -count=1 ./...
+
+      - name: Test under the race detector
+        run: go test -race -count=1 ./...
+
+  release:
+    name: Publish Release
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The one job that writes anything: it creates the release and uploads the
+    # assets, and nothing else.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # The commit preflight gated, not the tag: if the tag moved while this
+          # run was in flight, the release still publishes the verified tree or
+          # fails, never a different one.
+          ref: ${{ needs.preflight.outputs.commit }}
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.mod
+
+      - name: Build the five targets
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          COMMIT: ${{ needs.preflight.outputs.commit }}
+        run: |
+          set -euo pipefail
+          # One commit, one build instant: the same Date reaches all five
+          # binaries, so the release carries one timestamp.
+          built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          identity="github.com/Luisalt20/herdr-reach/internal/version"
+          mkdir -p dist
+          # The artifact scheme, and the only one:
+          #   herdr-reach_<tag>_<goos>_<goarch>[.exe]
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            artifact="herdr-reach_${VERSION}_${goos}_${goarch}"
+            if [ "$goos" = "windows" ]; then
+              artifact="${artifact}.exe"
+            fi
+            echo "building dist/${artifact}"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build \
+                -ldflags "-X ${identity}.Version=${VERSION} -X ${identity}.Commit=${COMMIT} -X ${identity}.Date=${built_at}" \
+                -o "dist/${artifact}" ./cmd/herdr-reach
+          done
+          ls -l dist
+
+      - name: Write SHA256SUMS
+        run: |
+          set -euo pipefail
+          # The glob is exactly the five artifacts; SHA256SUMS itself does not
+          # exist yet when the redirection opens.
+          cd dist
+          sha256sum herdr-reach_* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Verify the injected identity
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The run is the proof: the linux binary is asked what it is, and
+          # anything but the tag fails the release.
+          got="$(./dist/herdr-reach_${VERSION}_linux_amd64 --version)"
+          want="herdr-reach ${VERSION}"
+          if [ "$got" != "$want" ]; then
+            echo "::error::the linux binary reports \"$got\", want \"$want\": the identity injection did not reach internal/version"
+            exit 1
+          fi
+          echo "identity ok: $got"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          COMMIT: ${{ needs.preflight.outputs.commit }}
+        run: |
+          set -euo pipefail
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          # A hyphenated tag is a pre-release because of its shape, not because
+          # someone remembered a flag.
+          args=(--title "$VERSION" --notes-file release-notes.md)
+          if printf '%s' "$VERSION" | grep -q -- '-'; then
+            args+=(--prerelease)
+          fi
+          cat > release-notes.md <<EOF
+          herdr-reach ${VERSION}
+
+          - commit: ${COMMIT}
+          - platforms: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64
+
+          Verify the download before running it:
+
+              sha256sum -c SHA256SUMS        # Linux
+              shasum -a 256 -c SHA256SUMS    # macOS
+
+          Then run the downloaded binary once and confirm it reports the tag:
+
+              <your binary> --version   # must print: herdr-reach ${VERSION}
+
+          Tester guide for this tag:
+          ${repo_url}/blob/${VERSION}/docs/beta-testing.md
+          EOF
+          gh release create "$VERSION" "${args[@]}" dist/herdr-reach_* dist/SHA256SUMS
