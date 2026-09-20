@@ -98,7 +98,7 @@ const (
 	ReasonPlatformUnknown ReasonCode = "platform_unknown"
 	// ReasonNodePlatformUnsupported is a node classified as native Windows.
 	// The refusal is this tool's measured negative answer, not a usage error,
-	// and the detail names WSL2 as the supported path.
+	// and the detail names WSL2 as the Windows path this tool handles today.
 	ReasonNodePlatformUnsupported ReasonCode = "node_platform_unsupported"
 	// ReasonInternalError is an unexpected internal failure, including a fact
 	// the classification table does not recognise and a probe that reported no

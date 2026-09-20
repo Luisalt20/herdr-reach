@@ -26,8 +26,9 @@ package diagnosis
 // under that label, while an empty one keeps the semantics every earlier row has.
 //
 // No transport viability is derived anywhere in this package. The `node.platform` refusal names
-// WSL2 as the supported path because the classification does, and every conclusion that borders on
-// transport states that the transport decision belongs to the transport layer.
+// WSL2 as the Windows path this tool handles today because the classification does, and every
+// conclusion that borders on transport states that the transport decision belongs to the transport
+// layer.
 //
 // A hand-named id may be carried by more than one row, and that is the one thing this file adds to
 // the mechanism PR 10 landed. §5.2's `Requires` column contains disjunctions — a hub failure beside
@@ -509,9 +510,10 @@ func sshdRules() []Rule {
 // so it can never be reported as supported, and an unclassifiable machine is the absence it is
 // rather than a default.
 //
-// The refusal conclusion names WSL2 as the supported path because the classification's own wording
-// does (R-HR-30), and it decides no transport: whether any transport can reach the hub is the
-// transport layer's decision, and this package derives no viability anywhere.
+// The refusal conclusion names WSL2 as the Windows path this tool handles today because the
+// classification's own wording does (R-HR-30), and it decides no transport: whether any transport
+// can reach the hub is the transport layer's decision, and this package derives no viability
+// anywhere.
 func nodePlatformRules() []Rule {
 	return []Rule{
 		// Native Windows: a measured refusal, declared before any weaker reading.

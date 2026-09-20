@@ -320,10 +320,11 @@ func TestLocalEnvUnknownPlatformIsNotGuessed(t *testing.T) {
 
 // TestLocalEnvRefusesNativeWindows is R-HR-30: a node classified as native
 // Windows is refused, and the refusal explains itself by naming WSL2 as the
-// supported path. The refusal is the measurement's own negative answer — the
-// operating system answered, and the answer is that this tool will not operate on
-// it — so it is a measured fail with the platform refusal's reason code, never a
-// usage error and never an internal one.
+// Windows path this tool handles today and by stating that upstream Herdr
+// supports a Windows server as of 0.9.1. The refusal is the measurement's own
+// negative answer — the operating system answered, and the answer is that this
+// tool does not provision this node — so it is a measured fail with the platform
+// refusal's reason code, never a usage error and never an internal one.
 //
 // The case also asserts the two things the refusal must not do: present a
 // transport as viable, and claim any change. A refused node has no viable
@@ -377,11 +378,19 @@ func TestLocalEnvRefusesNativeWindows(t *testing.T) {
 				t.Fatalf("refused identity = (%q, %q), want (%q, %q)", platform, arch, probe.NodePlatformWindowsNative, tc.wantArch)
 			}
 
-			if !strings.Contains(observation.Detail, "WSL2") {
-				t.Errorf("the refusal does not name WSL2 as the supported path: %q", observation.Detail)
+			if !strings.Contains(observation.Detail, "WSL2") || !strings.Contains(observation.Detail, "this tool handles today") {
+				t.Errorf("the refusal does not name WSL2 as the Windows path this tool handles today: %q", observation.Detail)
 			}
-			if !strings.Contains(observation.Detail, "supported path") {
-				t.Errorf("the refusal does not say that WSL2 is the supported path: %q", observation.Detail)
+			if !strings.Contains(observation.Detail, "0.9.1") {
+				t.Errorf("the refusal does not state that upstream Herdr supports a Windows server as of 0.9.1: %q", observation.Detail)
+			}
+			if !strings.Contains(observation.Detail, "does not provision a native Windows node yet") {
+				t.Errorf("the refusal does not state that this tool does not provision a native Windows node yet: %q", observation.Detail)
+			}
+			for _, stale := range []string{"WSL2 is the supported path", "cannot host a supported"} {
+				if strings.Contains(observation.Detail, stale) {
+					t.Errorf("the refusal still carries the stale premise %q: %q", stale, observation.Detail)
+				}
 			}
 			if strings.Contains(observation.Detail, "viable") {
 				t.Errorf("the refusal presents a transport as viable: %q", observation.Detail)
