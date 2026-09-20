@@ -244,6 +244,8 @@ type Transport interface {
 
 `Reason` precedence, documented and tested: (1) a measured blocking observation, (2) an unresolved dependency of the decision, (3) an unmet requirement. `!Viable ⟹ Reason != ""` holds by construction and by a loop assertion over the four adapters. A `Viable` transport carries at least one named measured observation in `Notes`.
 
+> **Dated note — 2026-09-20, PR 13 (S4) adjudication.** `diagnosis.Finding` gains `Evidence []Fact` — the observations the fired rule matched, filled by `Diagnose` from the facts it already holds — because `Feasible(d diagnosis.Diagnosis)` is fixed here and R-HR-06's scenario requires a rejection to name the measured target and its port, which the prose `Conclusion` cannot supply structurally. The payload shape of §3.3 is unchanged. Three calls taken from this design rather than from prose: `Verify` returns `([]probe.Result, error)` (the unqualified `Result` above is `probe.Result`, since D7's placeholder list names only `PairingBundle`, `Step` and `Handle`); the R1a `Requires()` mapping is one requirement set per adapter — `direct-ssh` declares `hub_address`, `reverse-ssh` declares `hub_address` and `sshd_effective_config`, and PR 14 adds `cloudflare-tunnel` (`hostname`, `zone_membership`) and `tailscale` (`third_party_permission`), which is the whole closed kind set of D6; and a prerequisite is `Satisfied` when the run supplied or measured it, so a measured block leaves `Satisfied` true while `Viable` is false, because the block is a network fact rather than a missing input.
+
 ### 3.3 JSON payload (`internal/report`, `schema_version: "1"`)
 
 One document on stdout, ordered, no maps. Shape (field names as emitted):
