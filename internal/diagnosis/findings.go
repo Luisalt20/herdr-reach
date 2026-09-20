@@ -30,6 +30,15 @@ type Finding struct {
 	// reader tells what a conclusion was established from and what it would lose if one of those
 	// measurements had been unresolved.
 	DependsOn []string
+	// Evidence carries the observations the fired rule matched, in Match order: the probe, the
+	// matchable state, and the observation's own label, target, reason code and verbatim detail.
+	//
+	// It exists so a consumer that must name the measurement a conclusion was established from — a
+	// rejection that has to quote the measured target and its port, for instance — reads structured
+	// observation data instead of parsing the prose Conclusion, which no consumer may parse. A
+	// finding that fired always carries at least one observation, because a rule with no satisfied
+	// need cannot have matched.
+	Evidence []Fact
 }
 
 // OpenQuestion is one question the table could not answer: no rule of the question matched the
