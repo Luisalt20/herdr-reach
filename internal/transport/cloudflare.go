@@ -250,7 +250,7 @@ func cloudflareReason(edge cloudflareEdgeAssessment, requires []Requirement) str
 	case cloudflareEdgeBlocked:
 		clause = "the Cloudflare edge is unreachable: every measured edge endpoint failed (" + edge.evidence + "), so the measured edge state rejects this transport"
 	case cloudflareEdgeUnresolved:
-		clause = "whether the Cloudflare edge is reachable is not established: no measured endpoint answered, and the attempt named (" + edge.evidence + ") produced no answer"
+		clause = "whether the Cloudflare edge is reachable is not established: there was no measured success and at least one edge attempt was unresolved (" + edge.evidence + ")"
 	case cloudflareEdgeUnmeasured:
 		clause = "the Cloudflare edge measurement was not made: the diagnosis carries no " + questionCloudflareEdge + " finding, so nothing is claimed about the edge in either direction"
 	case cloudflareEdgeNoEvidence:

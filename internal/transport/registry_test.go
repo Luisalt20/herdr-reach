@@ -340,10 +340,10 @@ func TestCloudflareTunnelFeasibilityDecisionTable(t *testing.T) {
 		{
 			name:       "an unresolved edge claims neither reachability nor a block",
 			run:        []probe.Result{cfEdgeUnresolved()},
-			wantReason: []string{"not established", cfEdgeRegionOne, "no answer", "hostname"},
+			wantReason: []string{"not established", "no measured success", "at least one edge attempt was unresolved", cfEdgeRegionOne, "hostname"},
 			wantNotes:  []string{cfEdgeRegionOne, "prerequisite hostname"},
 			wantNotSaid: []string{
-				"unreachable", "blocked",
+				"unreachable", "blocked", "produced no answer",
 			},
 		},
 		{
