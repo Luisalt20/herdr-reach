@@ -231,7 +231,7 @@ func udpObserve(label, address string, raw RawObservation) Observation {
 // error does not establish. Silence is not in this function at all, because silence is
 // what a read reports when nothing arrived, not what an error reports.
 func packetErrorFact(address string, err error) RawObservation {
-	wording := fmt.Sprintf("udp %s: %v", address, err)
+	wording := fmt.Sprintf("%s%v", addressPrefix("udp", address, err), err)
 	switch {
 	case errors.Is(err, ErrSeamDenied):
 		return RawObservation{
@@ -269,7 +269,7 @@ func udpReplyFact(address string, n int, err error) RawObservation {
 	case errors.Is(err, syscall.ECONNREFUSED):
 		return RawObservation{
 			Kind:    ObsUDPUnreachable,
-			Wording: fmt.Sprintf("udp %s: %v, which the socket surfaced as an ICMP port-unreachable: the far end answered that nothing is listening on this UDP port, a definite negative for this datagram", address, err),
+			Wording: fmt.Sprintf("%s%v, which the socket surfaced as an ICMP port-unreachable: the far end answered that nothing is listening on this UDP port, a definite negative for this datagram", addressPrefix("udp", address, err), err),
 		}
 	case dialTimedOut(err):
 		return RawObservation{
@@ -279,7 +279,7 @@ func udpReplyFact(address string, n int, err error) RawObservation {
 	default:
 		return RawObservation{
 			Kind:    ObsUDPOtherError,
-			Wording: fmt.Sprintf("udp %s: %v, a socket error that is neither a reply nor an ICMP port-unreachable, carried here verbatim and not dressed up as an answer", address, err),
+			Wording: fmt.Sprintf("%s%v, a socket error that is neither a reply nor an ICMP port-unreachable, carried here verbatim and not dressed up as an answer", addressPrefix("udp", address, err), err),
 		}
 	}
 }
