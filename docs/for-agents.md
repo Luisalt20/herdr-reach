@@ -9,7 +9,7 @@ the network in front of you permits. That is what `herdr-reach doctor` produces.
 the machine-specific measurement, this document carries the general playbook, and only the
 combination acts.** Read this file, run the tool on the machine in question, and work from its
 output. Human-facing installation and prerequisites live in the [README](../README.md); what the
-pre-release binary does and does not do is in [Beta testing](beta-testing.md); the payload contract
+shipped binary does and does not do is in [Testing herdr-reach](beta-testing.md); the payload contract
 and its closed vocabularies are in [Diagnosis report contract](diagnosis-report.md).
 
 ## How to run it
@@ -18,7 +18,7 @@ and its closed vocabularies are in [Diagnosis report contract](diagnosis-report.
 herdr-reach doctor --hub <hub address> --json > report.json
 ```
 
-- `doctor` is the only command in this pre-release, and it measures the machine it runs on. It
+- `doctor` is the only command in this slice, and it measures the machine it runs on. It
   changes nothing (see "What the tool will not do").
 - `--hub <host[:port]>` always names **the other side** of the link: run it on the node with the
   hub's address, on the hub with the node's address. Port 22 is the default. There is no role flag;
@@ -34,9 +34,13 @@ herdr-reach doctor --hub <hub address> --json > report.json
 | `1` | The run is incomplete: at least one probe was attempted and produced no answer. **This is a result, not a failure.** Use the document; do not discard it. |
 | `2` | Usage or internal error. No diagnosis is presented and standard output is empty; fix the invocation and run again. |
 
-Two platform expectations before you interpret a `1`: a default macOS run exits `1` because the
-trust-store probe is attempted and unresolved there by decision, and a Linux run with no `--hub`
-exits `0` with the hub measurement named as a coverage gap. Read `run.unresolved`, not the code
+An exit `1` is common and is a result, not a failed run: on a real network `tls.interception` and
+`egress.quic` are attempted and left unresolved (measured on 2026-09-21 on a Linux/arm64 VPS and
+on the macOS CI runner), and a default macOS run adds `tls.truststore`, attempted and unresolved
+there by decision. The enumeration half of that macOS limitation was measured on a real macOS
+runner, not assumed; the keychain half rests on `crypto/x509`'s source because the measurement
+performs no handshake (issue #81). A Linux run with no `--hub` names the hub measurement as a
+coverage gap and answers the rest. Read `run.completeness` and `run.unresolved`, not the code
 alone.
 
 ## How to read the payload
@@ -114,8 +118,9 @@ Each row carries `name`, `kind` (`local`, `egress`, `tls`, `proto`), `target`, `
     `command_denied` (the attempt was not made by this slice's design). These are never blocks.
   - Ambiguities, all `unresolved`: `dns_unresolved`, `udp_silence` (a UDP socket that produced
     neither a reply nor an error), `udp_error_unclassified`, `tls_issuer_unexpected` (a verified
-    chain whose publisher is outside the declared set; a publisher change and an interception look
-    identical here), `tls_handshake_unresolved`, `truststore_platform_unavailable`,
+    chain whose leaf's issuing-CA organization is outside the declared expected set; the chain's
+    anchor is reported beside it as evidence and never compared, so a publisher change and an
+    interception look identical here), `tls_handshake_unresolved`, `truststore_platform_unavailable`,
     `truststore_override_platform_bypass`, `platform_unknown`, `probe_timeout`, `run_cancelled`,
     `run_budget_exceeded`, `internal_error`.
   - `udp_response_received` claims only that a datagram was not silently dropped; it is not a claim
@@ -242,21 +247,24 @@ where the tool ran, not configured.
 - **How to read a non-viable row.** Precedence in the reason: a measured hub rejection first, then a
   measured sshd rejection (`SSHD_PRESENT_CONFIG_DIVERGENT` or `SSHD_ABSENT`), then an unanswered hub
   attempt, then an unmet requirement. `SSHD_EFFECTIVE_CONFIG_NOT_MEASURED` is the default live case:
-  this pre-release is given no command runner, so it reports the capability as excluded rather than
+  this slice is given no command runner, so it reports the capability as excluded rather than
   reading silence as "configured". That is an absence, not a claim that the sshd is broken — but it
   leaves the row unsatisfied and the transport not viable.
 - **What to supply.** An sshd whose configuration in force is the written one. The tool will not run
   `sshd -T`; if you can execute, establish that evidence by hand and treat the payload's excluded
   row as what it is: the tool's boundary, not a verdict. A binary that is present is not a
-  configuration, and a stopped service is reported as its own measurement — the positive conclusion
-  requires the binary present *and* the configuration in force agreeing with the written one, so
-  neither half stands in for the other.
+  configuration, and a stopped service is reported as its own measurement on the POSIX platforms —
+  the platform question there is the systemd `is-active` query. On native Windows this slice
+  declares the platform's own `sshd` service question and does not put it to the machine, so it
+  claims no service state there (issue #79). The positive conclusion requires the binary present
+  *and* the configuration in force agreeing with the written one, so neither half stands in for the
+  other.
 
 ### `cloudflare-tunnel`
 
 - **What the row means.** The node dials out to the Cloudflare edge and the edge carries the tunnel
   to a hostname; no inbound port on either side. This is the transport that motivated the project.
-- **Requires.** `hostname` and `zone_membership`. This pre-release has no input for either and no
+- **Requires.** `hostname` and `zone_membership`. This slice has no input for either and no
   probe observes them, so both rows are unsatisfied by construction and **the transport is never
   viable in this build**. That is the honest answer for a slice with no account input, not a
   measured rejection of the tunnel; read the edge half and the notes for what is actually
@@ -286,7 +294,7 @@ where the tool ran, not configured.
   reason says the measurement is missing, and **no rejection of the transport is claimed**. This is
   a coverage gap the detection slices will close, not a statement that Tailscale cannot work here.
 - **What to supply.** The policy check the row's detail names. A permitted adapter is a prerequisite
-  for a later slice; this pre-release cannot measure or provision it.
+  for a later slice; this slice cannot measure or provision it.
 
 ## The traps
 
@@ -347,8 +355,9 @@ consequence.
 - **installs nothing** — no package manager, no `cloudflared`, no `sshd`;
 - **writes nothing** — no file, service, configuration, receipt or backup: its only output is the
   two projections;
-- **executes no third-party binary** — the one command-backed capability, the sshd configuration in
-  force, is reported as an excluded coverage gap rather than run;
+- **executes no third-party binary** — the command-backed questions, the sshd configuration in
+  force and the POSIX service state, are reported as excluded coverage gaps rather than run, and
+  the native-Windows service question is declared and not put to the machine (issue #79);
 - **connects no machines** — the two sides cannot reach each other, which is the problem; it
   measures only from where it runs;
 - **dials only what it declares** — `targets.declared` is the exact dialed set;
@@ -357,7 +366,7 @@ consequence.
 That division is what makes it safe to run anywhere, including on a machine you are not yet allowed
 to change: a measurement that cannot change state can be taken before any authorization to change
 anything. The output is the evidence a plan would rest on; the plan, the provisioning and the
-verification of a working link belong to slices that do not exist in this pre-release.
+verification of a working link belong to slices that do not exist yet.
 
 ## The discipline you must not break
 
