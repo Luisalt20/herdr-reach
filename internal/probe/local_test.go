@@ -1012,24 +1012,35 @@ func windowsSSHDFiles(binaryPresent bool) *scriptedFS {
 // seam answers any POSIX path with a non-absence failure, and the exact call log is
 // asserted, which together catch the working-directory dependence the platform path
 // exists to remove.
+//
+// The result's aggregate carries the service question issue #79 settled: on a
+// native-Windows node that observation is not measured, so a present binary leaves
+// the result indeterminate with the capability excluded, and an absent binary's
+// measured negative still outranks it.
 func TestLocalSshdChecksTheWindowsPathsOnNativeWindows(t *testing.T) {
 	cases := []struct {
-		name          string
-		binaryPresent bool
-		wantVerdict   probe.Verdict
-		wantReason    probe.ReasonCode
+		name              string
+		binaryPresent     bool
+		wantBinaryVerdict probe.Verdict
+		wantBinaryReason  probe.ReasonCode
+		wantResultVerdict probe.Verdict
+		wantResultReason  probe.ReasonCode
 	}{
 		{
-			name:          "the sshd binary is present at the Windows path",
-			binaryPresent: true,
-			wantVerdict:   probe.Pass,
-			wantReason:    probe.ReasonOK,
+			name:              "the sshd binary is present at the Windows path",
+			binaryPresent:     true,
+			wantBinaryVerdict: probe.Pass,
+			wantBinaryReason:  probe.ReasonOK,
+			wantResultVerdict: probe.Indeterminate,
+			wantResultReason:  probe.ReasonCapabilityExcluded,
 		},
 		{
-			name:          "the sshd binary is absent from the Windows path",
-			binaryPresent: false,
-			wantVerdict:   probe.Fail,
-			wantReason:    probe.ReasonSSHDAbsent,
+			name:              "the sshd binary is absent from the Windows path",
+			binaryPresent:     false,
+			wantBinaryVerdict: probe.Fail,
+			wantBinaryReason:  probe.ReasonSSHDAbsent,
+			wantResultVerdict: probe.Fail,
+			wantResultReason:  probe.ReasonSSHDAbsent,
 		},
 	}
 
@@ -1049,8 +1060,8 @@ func TestLocalSshdChecksTheWindowsPathsOnNativeWindows(t *testing.T) {
 				t.Errorf("the Windows binary observation resolution = %q, want %q: the Windows path applies on this node, so the check is an attempt that produced an answer",
 					binary.Resolution, probe.Measured)
 			}
-			if binary.Verdict != tc.wantVerdict || binary.Reason != tc.wantReason {
-				t.Errorf("the Windows binary observation = (%q, %q), want (%q, %q)", binary.Verdict, binary.Reason, tc.wantVerdict, tc.wantReason)
+			if binary.Verdict != tc.wantBinaryVerdict || binary.Reason != tc.wantBinaryReason {
+				t.Errorf("the Windows binary observation = (%q, %q), want (%q, %q)", binary.Verdict, binary.Reason, tc.wantBinaryVerdict, tc.wantBinaryReason)
 			}
 			if binary.Target != testSSHDBinaryPathWindows {
 				t.Errorf("the Windows binary observation target = %q, want the path that was checked, %q", binary.Target, testSSHDBinaryPathWindows)
@@ -1061,9 +1072,9 @@ func TestLocalSshdChecksTheWindowsPathsOnNativeWindows(t *testing.T) {
 			if result.Target != testSSHDBinaryPathWindows {
 				t.Errorf("result target = %q, want the path that was checked, %q", result.Target, testSSHDBinaryPathWindows)
 			}
-			if result.Verdict != tc.wantVerdict || result.Reason != tc.wantReason {
-				t.Errorf("result = (%q, %q), want (%q, %q): the service and effective-configuration observations measured the same as on any platform",
-					result.Verdict, result.Reason, tc.wantVerdict, tc.wantReason)
+			if result.Verdict != tc.wantResultVerdict || result.Reason != tc.wantResultReason {
+				t.Errorf("result = (%q, %q), want (%q, %q): the effective configuration was measured and the service question was disclosed as excluded (issue #79)",
+					result.Verdict, result.Reason, tc.wantResultVerdict, tc.wantResultReason)
 			}
 
 			config, ok := observationByLabel(result, "effective config")
@@ -1087,6 +1098,98 @@ func TestLocalSshdChecksTheWindowsPathsOnNativeWindows(t *testing.T) {
 			}
 			if !reflect.DeepEqual(files.calls, wantFilesystem) {
 				t.Errorf("the probe's filesystem calls = %v, want exactly %v: on a native-Windows node only the Windows pair may be touched, and every POSIX path is tripwired", files.calls, wantFilesystem)
+			}
+		})
+	}
+}
+
+// TestLocalSshdWindowsServiceQuestionIsDeclaredNotAsked is issue #79's case on
+// the Windows seam: the service-state observation names the platform's own
+// question — the state of the sshd service the OpenSSH Server capability
+// installs, which a Get-Service-style query would report — and does not put it to
+// the machine. No systemd invocation and no systemd unit name may appear anywhere
+// in the run's detail or targets, and no runner is asked the question even when
+// one is injected.
+//
+// The observation is `capability_excluded`: the vocabulary's own "the attempt was
+// not made by design" fact, already used by this probe for a run with no command
+// runner, and reused here so no observable, reason code or table row is added.
+// No Windows interpretation of any answer is declared: a reading this slice
+// cannot execute or test would manufacture a "not running" negative out of an
+// answer it never read, and the slice that wires the platform's query declares
+// the question and its interpretation together.
+func TestLocalSshdWindowsServiceQuestionIsDeclaredNotAsked(t *testing.T) {
+	const windowsServiceName = "sshd"
+
+	cases := []struct {
+		name   string
+		runner probe.CommandRunner
+	}{
+		{
+			name:   "a command runner is injected",
+			runner: sshdRunner("permitrootlogin no\npasswordauthentication no\n"),
+		},
+		{
+			name:   "no command runner is injected",
+			runner: nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			seams := localSSHDSeams(windowsSSHDFiles(true), tc.runner)
+			seams.Platform = scriptedPlatform{goos: "windows", arch: "amd64"}
+
+			result := runLocalSSHD(t, seams)
+
+			observation, ok := observationByLabel(result, "service state")
+			if !ok {
+				t.Fatalf("local.sshd reported no service-state observation: %+v", result.Observations)
+			}
+			if observation.Resolution != probe.NotMeasured || observation.Verdict != probe.Indeterminate {
+				t.Errorf("the Windows service observation = (%q, %q), want (%q, %q): this slice does not put the question to the machine",
+					observation.Resolution, observation.Verdict, probe.NotMeasured, probe.Indeterminate)
+			}
+			if observation.Reason != probe.ReasonCapabilityExcluded {
+				t.Errorf("the Windows service observation reason = %q, want %q: the fact is an attempt that was not made by design",
+					observation.Reason, probe.ReasonCapabilityExcluded)
+			}
+			if observation.Target != windowsServiceName {
+				t.Errorf("the Windows service observation target = %q, want the service name %q: a systemd unit name is not a question this machine has",
+					observation.Target, windowsServiceName)
+			}
+			for _, want := range []string{"Get-Service", windowsServiceName, "does not put that question to the machine"} {
+				if !strings.Contains(observation.Detail, want) {
+					t.Errorf("the Windows service detail does not name %q: %q", want, observation.Detail)
+				}
+			}
+
+			// The systemd vocabulary must not survive anywhere in a native-Windows
+			// run: not in an observation's target or detail, not in the probe's own
+			// target and not in the joined detail.
+			texts := []string{result.Target, result.Detail}
+			for _, reported := range result.Observations {
+				texts = append(texts, reported.Target, reported.Detail)
+			}
+			for _, text := range texts {
+				if strings.Contains(text, "systemctl") {
+					t.Errorf("a native-Windows run names the systemd invocation: %q", text)
+				}
+				if strings.Contains(text, ".service") {
+					t.Errorf("a native-Windows run names a systemd unit: %q", text)
+				}
+			}
+
+			if result.Verdict != probe.Indeterminate || result.Reason != probe.ReasonCapabilityExcluded {
+				t.Errorf("the Windows result = (%q, %q), want (%q, %q): the service question was declared, not measured, beside a present binary",
+					result.Verdict, result.Reason, probe.Indeterminate, probe.ReasonCapabilityExcluded)
+			}
+
+			if runner, ok := tc.runner.(*scriptedRunner); ok {
+				wantCommands := []string{testSSHDConfigCommand}
+				if !reflect.DeepEqual(runner.calls, wantCommands) {
+					t.Errorf("the probe's commands = %v, want exactly %v: the Windows service question is declared, not asked", runner.calls, wantCommands)
+				}
 			}
 		})
 	}
@@ -1380,6 +1483,61 @@ func TestLocalSshdServiceStateIsSeparatelyReportable(t *testing.T) {
 				}
 			}
 			assertNoSSHDProvisioningAction(t, observation.Detail)
+		})
+	}
+}
+
+// TestLocalSshdAsksThePosixServiceQuestionUnchanged pins the POSIX half of issue
+// #79's platform choice byte for byte: the same `systemctl is-active` invocation
+// for the same two unit names, the same joined target and the same wording, on
+// every platform the POSIX question describes — Linux, macOS, WSL2 and a run with
+// no platform seam. The service question is platform-chosen now, so this case is
+// the control that the choice did not touch the platforms it already described.
+func TestLocalSshdAsksThePosixServiceQuestionUnchanged(t *testing.T) {
+	const wantDetail = `the sshd service is running: systemctl is-active sshd.service ssh.service reported "active" for sshd.service,ssh.service`
+
+	cases := []struct {
+		name     string
+		platform probe.Platform
+	}{
+		{"linux", scriptedPlatform{goos: "linux", arch: "x86_64", systemd: true}},
+		{"macos", scriptedPlatform{goos: "darwin", arch: "arm64"}},
+		{"wsl2", scriptedPlatform{goos: "linux", arch: "x86_64", wsl2: true}},
+		{"no platform seam", nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &scriptedRunner{answers: map[string]scriptedAnswer{
+				testSSHDServiceCommand: {stdout: "active\n"},
+				testSSHDConfigCommand:  {stdout: "permitrootlogin no\npasswordauthentication no\n"},
+			}}
+			seams := localSSHDSeams(sshdFiles(writtenConfigAgreeingWithEffect), runner)
+			seams.Platform = tc.platform
+
+			result := runLocalSSHD(t, seams)
+
+			observation, ok := observationByLabel(result, "service state")
+			if !ok {
+				t.Fatalf("local.sshd reported no service-state observation: %+v", result.Observations)
+			}
+			if observation.Target != "sshd.service,ssh.service" {
+				t.Errorf("the POSIX service observation target = %q, want %q", observation.Target, "sshd.service,ssh.service")
+			}
+			if observation.Detail != wantDetail {
+				t.Errorf("the POSIX service wording changed:\n got %q\nwant %q", observation.Detail, wantDetail)
+			}
+			if observation.Resolution != probe.Measured || observation.Verdict != probe.Pass || observation.Reason != probe.ReasonOK {
+				t.Errorf("the POSIX service observation = (%q, %q, %q), want (%q, %q, %q)",
+					observation.Resolution, observation.Verdict, observation.Reason, probe.Measured, probe.Pass, probe.ReasonOK)
+			}
+			if result.Verdict != probe.Pass || result.Reason != probe.ReasonOK {
+				t.Errorf("the POSIX result = (%q, %q), want (%q, %q)", result.Verdict, result.Reason, probe.Pass, probe.ReasonOK)
+			}
+			wantCommands := []string{testSSHDServiceCommand, testSSHDConfigCommand}
+			if !reflect.DeepEqual(runner.calls, wantCommands) {
+				t.Errorf("the probe's commands = %v, want exactly %v in that order", runner.calls, wantCommands)
+			}
 		})
 	}
 }
