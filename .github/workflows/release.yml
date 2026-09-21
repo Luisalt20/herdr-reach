@@ -241,6 +241,40 @@ jobs:
 
               <your binary> --version   # must print: herdr-reach ${VERSION}
 
+          This is the measurement slice. The one command is doctor, and it measures the
+          machine it runs on: what the network allows and why a transport cannot work. It
+          does not provision, connect, pair or persist anything.
+
+          What each platform's run establishes. Linux/ARM64: the published binary, its
+          checksum and injected version verified, run on a real network with no --hub
+          (2026-09-21); all ten probes ran. macOS: the release's own CGO_ENABLED=0 build
+          shape, run on a CI runner with no --hub. A CI runner's network is not a corporate
+          network, so that run says nothing about the locked-down machines this tool
+          targets. Windows: published beta binaries, including
+          herdr-reach_v0.1.0-beta.4_windows_amd64.exe, run on real Windows machines during
+          the beta series, again with no --hub.
+
+          The one input no run has measured is a hub. --hub was never supplied anywhere, so
+          every hub-dependent transport row is undecided rather than rejected: direct-ssh
+          and reverse-ssh report viable: false for lack of that input, not because a
+          measurement rejected them.
+
+          Exit 1 is a result, not a failure: an attempted question was left unresolved, and
+          run.completeness is the field to read. macOS reports tls.truststore unresolved by
+          decision, measured on a real macOS runner, so a default macOS run exits 1. UDP
+          silence is not a block either: when the edge's datagram path draws no answer the
+          question is unresolved, never a failure, and the tool advises HTTP/2 for that
+          path. A publisher outside the declared expected set is unresolved as well, never
+          an interception claim and never a failure.
+
+          Native Windows is measurement-only: no provisioning slice covers it, and the
+          Herdr plugin declares linux and macos. The node's installed Herdr version is not
+          measured, so a node running Herdr older than 0.9.1 is classified as supported
+          while it cannot host a saved-machine connection.
+
+          The run is read-only by construction: no writes, no third-party executables, no
+          services touched.
+
           Tester guide for this tag:
           ${repo_url}/blob/${VERSION}/docs/beta-testing.md
           EOF
