@@ -5,21 +5,22 @@ package probe_test
 //
 //	which chain does this target present, and is its issuer the declared expected publisher?
 //
-// — and reports four outcomes: a chain that verifies with an issuer in the declared
-// expected set (a measured pass), a chain that fails verification (a measured failure
-// carrying the verification code in its detail), a chain whose issuer is outside the
-// declared expected set (unresolved: the wording records the observed publisher and the
+// — and reports four outcomes: a chain that verifies with its issuing-CA organization in the
+// declared expected set (a measured pass), a chain that fails verification (a measured failure
+// carrying the verification code in its detail), a chain whose issuing organization is outside
+// the declared expected set (unresolved: the wording records the observed publisher and the
 // declared set, and states that the run cannot distinguish a publisher change from an
 // interception, so it accuses no one and dismisses nothing), and a handshake that produced
 // no answer (unresolved). No verifier injected, or a verifier seam that refused, are two
-// distinguishable not-measured facts.
+// distinguishable not-measured facts. The chain's anchor is reported beside the issuer as
+// evidence in every definite outcome and never decides the classification (issue #78).
 //
 // The cases script the verifier seam rather than a real handshake, and the verifier
 // records the verifying configuration it was handed, so the two properties the spec's
 // scenario asserts are checkable from outside: the configuration the probe passed is
 // unchanged after the run, and the probe never retries without verification. The injected
-// verifier also lets the observed issuer and the verification code be scripted, which is
-// how the assertions that both appear in the result are made.
+// verifier also lets the observed issuer, the chain's anchor and the verification code be
+// scripted, which is how the assertions that all three appear in the result are made.
 
 import (
 	"context"
@@ -41,11 +42,18 @@ const (
 	// breaks this suite instead of silently moving what is measured.
 	testTLSTargetHost = "www.cloudflare.com"
 	testTLSTargetPort = 443
-	// testTLSExpectedIssuer is the publisher the declared expected set holds for that
-	// target (PRD §1.1: issuer `Let's Encrypt/ISRG`, verification code 0), transcribed
-	// here rather than read from the probe, so a change to the declared set breaks this
-	// suite instead of silently reclassifying a real chain.
-	testTLSExpectedIssuer = "Let's Encrypt/ISRG"
+	// testTLSExpectedIssuer is the issuing-CA organization the declared expected set holds
+	// for that target (PRD §1.1 recorded the chain's publisher as `Let's Encrypt/ISRG`, a
+	// fold of the issuing organization and the anchor that recording machine's store
+	// selected; the declaration is the issuing half), transcribed here rather than read
+	// from the probe, so a change to the declared set breaks this suite instead of
+	// silently reclassifying a real chain.
+	testTLSExpectedIssuer = "Let's Encrypt"
+	// testTLSExpectedAnchor is the anchor that recording machine selected (the chain's
+	// topmost certificate `ISRG Root X1` shortens to `ISRG`). It is evidence the detail
+	// quotes, and the control case below scripts a second anchor to prove it never
+	// decides the classification.
+	testTLSExpectedAnchor = "ISRG"
 )
 
 // tlsConfigSnapshot is the verifying configuration as it was when the verifier saw it.
@@ -139,30 +147,30 @@ func TestTLSInterceptionReportsEveryChainOutcome(t *testing.T) {
 	}{
 		{
 			name:           "a verified chain with the declared issuer",
-			verifier:       &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: testTLSExpectedIssuer, VerificationCode: "0"}},
+			verifier:       &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: testTLSExpectedIssuer, Anchor: testTLSExpectedAnchor, VerificationCode: "0"}},
 			wantResolution: probe.Measured,
 			wantVerdict:    probe.Pass,
 			wantReason:     probe.ReasonOK,
-			wantDetail:     []string{testTLSExpectedIssuer, "declared expected set", "0"},
+			wantDetail:     []string{testTLSExpectedIssuer, testTLSExpectedAnchor, "chain anchored at", "declared expected set", "0"},
 		},
 		{
 			name: "a verification failure carries the verification code",
 			verifier: &scriptedTLSVerifier{
-				verification: probe.TLSVerification{Issuer: "Acme Local Root", VerificationCode: "1"},
+				verification: probe.TLSVerification{Issuer: "Acme Local Root", Anchor: "Acme Root CA", VerificationCode: "1"},
 				err:          verifyFailure,
 			},
 			wantResolution: probe.Measured,
 			wantVerdict:    probe.Fail,
 			wantReason:     probe.ReasonTLSVerifyFailed,
-			wantDetail:     []string{"1", "x509: certificate signed by unknown authority"},
+			wantDetail:     []string{"Acme Root CA", "chain anchored at", "1", "x509: certificate signed by unknown authority"},
 		},
 		{
 			name:           "an issuer outside the declared expected set is unresolved, never a failure and never an accusation",
-			verifier:       &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: "Acme Inspection CA", VerificationCode: "0"}},
+			verifier:       &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: "Google Trust Services", Anchor: "GlobalSign", VerificationCode: "0"}},
 			wantResolution: probe.Unresolved,
 			wantVerdict:    probe.Indeterminate,
 			wantReason:     probe.ReasonTLSIssuerUnexpected,
-			wantDetail:     []string{"Acme Inspection CA", "not in the declared expected set", "0", "cannot distinguish a publisher change from an interception", "unresolved"},
+			wantDetail:     []string{"Google Trust Services", "GlobalSign", "chain anchored at", "not in the declared expected set", "0", "cannot distinguish a publisher change from an interception", "unresolved"},
 			forbidDetail:   []string{"attacker", "malicious", "hijack", "middlebox", "man in the middle", "intercepting"},
 		},
 		{
@@ -219,6 +227,78 @@ func TestTLSInterceptionReportsEveryChainOutcome(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestTLSInterceptionPublisherClassificationDoesNotDependOnTheAnchor is issue #78's
+// portability control at the point of classification: the publisher the probe compares is
+// the leaf's issuing-CA organization, so the four cells of the 2x2 matrix — issuer
+// declared or not, chain anchored at the recorded root or somewhere else — must classify
+// by the issuer alone.
+//
+// Each direction catches a different regression. The same declared issuer beside two
+// anchors must classify identically, which splits if the anchor is folded into the
+// compared value. An undeclared issuer beside the recorded anchor must not pass, which is
+// the shipped defect #78 describes: the anchor must not rescue a chain whose publisher is
+// outside the declared set. And a declared and an undeclared issuer beside the same
+// anchor must classify differently, so the control cannot pass by returning one constant.
+// Every cell also asserts the detail quotes its anchor, which fails if the anchor stops
+// being reported as evidence.
+func TestTLSInterceptionPublisherClassificationDoesNotDependOnTheAnchor(t *testing.T) {
+	type cell struct {
+		name           string
+		issuer         string
+		anchor         string
+		wantResolution probe.Resolution
+		wantVerdict    probe.Verdict
+		wantReason     probe.ReasonCode
+	}
+
+	const otherAnchor = "GlobalSign"
+	const undeclaredIssuer = "Google Trust Services"
+	cells := []cell{
+		{"declared issuer, recorded anchor", testTLSExpectedIssuer, testTLSExpectedAnchor, probe.Measured, probe.Pass, probe.ReasonOK},
+		{"declared issuer, other anchor", testTLSExpectedIssuer, otherAnchor, probe.Measured, probe.Pass, probe.ReasonOK},
+		{"undeclared issuer, recorded anchor", undeclaredIssuer, testTLSExpectedAnchor, probe.Unresolved, probe.Indeterminate, probe.ReasonTLSIssuerUnexpected},
+		{"undeclared issuer, other anchor", undeclaredIssuer, otherAnchor, probe.Unresolved, probe.Indeterminate, probe.ReasonTLSIssuerUnexpected},
+	}
+
+	details := make(map[string]string, len(cells))
+	for _, tc := range cells {
+		t.Run(tc.name, func(t *testing.T) {
+			verifier := &scriptedTLSVerifier{verification: probe.TLSVerification{
+				Issuer:           tc.issuer,
+				Anchor:           tc.anchor,
+				VerificationCode: "0",
+			}}
+			result := runTLSInterception(t, tlsSeams(verifier), probe.TargetInput{})
+			if len(result.Observations) != 1 {
+				t.Fatalf("the chain probe reported %d observations, want 1", len(result.Observations))
+			}
+			observation := result.Observations[0]
+			if observation.Resolution != tc.wantResolution || observation.Verdict != tc.wantVerdict || observation.Reason != tc.wantReason {
+				t.Errorf("observation = (%q, %q, %q), want (%q, %q, %q)", observation.Resolution, observation.Verdict, observation.Reason,
+					tc.wantResolution, tc.wantVerdict, tc.wantReason)
+			}
+			if result.Verdict != tc.wantVerdict || result.Reason != tc.wantReason {
+				t.Errorf("result = (%q, %q), want (%q, %q)", result.Verdict, result.Reason, tc.wantVerdict, tc.wantReason)
+			}
+			// The anchor is quoted as evidence in every outcome, including the ones it
+			// does not decide.
+			for _, want := range []string{tc.issuer, tc.anchor, "chain anchored at"} {
+				if !strings.Contains(observation.Detail, want) {
+					t.Errorf("the detail does not carry %q: %q", want, observation.Detail)
+				}
+			}
+			details[tc.name] = observation.Detail
+		})
+	}
+
+	// The anchor is evidence, not a comparison key: the same issuer with two anchors
+	// reports different evidence (the anchor is quoted) while the per-cell table above
+	// asserts it classifies identically.
+	if a, b := details["declared issuer, recorded anchor"], details["declared issuer, other anchor"]; a == b {
+		t.Errorf("two anchors at the same issuer produced one identical detail, so the anchor is not reported as evidence: %q", a)
 	}
 }
 
@@ -287,20 +367,20 @@ func TestTLSInterceptionLeavesTheVerifyingConfigurationUnchanged(t *testing.T) {
 	}{
 		{
 			name:       "a verified chain",
-			verifier:   &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: testTLSExpectedIssuer, VerificationCode: "0"}},
+			verifier:   &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: testTLSExpectedIssuer, Anchor: testTLSExpectedAnchor, VerificationCode: "0"}},
 			wantStatus: "pass",
 		},
 		{
 			name: "a chain that failed verification",
 			verifier: &scriptedTLSVerifier{
-				verification: probe.TLSVerification{Issuer: "Acme Local Root", VerificationCode: "1"},
+				verification: probe.TLSVerification{Issuer: "Acme Local Root", Anchor: "Acme Root CA", VerificationCode: "1"},
 				err:          fmt.Errorf("%w: x509: certificate signed by unknown authority", probe.ErrTLSVerification),
 			},
 			wantStatus: "fail",
 		},
 		{
 			name:       "a chain whose issuer is outside the declared set",
-			verifier:   &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: "Acme Inspection CA", VerificationCode: "0"}},
+			verifier:   &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: "Google Trust Services", Anchor: "GlobalSign", VerificationCode: "0"}},
 			wantStatus: "unresolved",
 		},
 	}
@@ -343,10 +423,11 @@ func TestTLSInterceptionLeavesTheVerifyingConfigurationUnchanged(t *testing.T) {
 	}
 }
 
-// TestTLSInterceptionNamesTheObservedIssuerAndVerificationCode is R-HR-04's own
-// requirement: whichever chain was seen, the result carries the observed issuer and the
-// verification code, so the detail is quotable beside the stable reason code.
-func TestTLSInterceptionNamesTheObservedIssuerAndVerificationCode(t *testing.T) {
+// TestTLSInterceptionNamesTheObservedIssuerAnchorAndVerificationCode is R-HR-04's own
+// requirement: whichever chain was seen, the result carries the observed issuing
+// organization, the chain's anchor and the verification code, so the detail is quotable
+// beside the stable reason code.
+func TestTLSInterceptionNamesTheObservedIssuerAnchorAndVerificationCode(t *testing.T) {
 	cases := []struct {
 		name         string
 		verification probe.TLSVerification
@@ -355,19 +436,19 @@ func TestTLSInterceptionNamesTheObservedIssuerAndVerificationCode(t *testing.T) 
 	}{
 		{
 			"a verified chain",
-			probe.TLSVerification{Issuer: testTLSExpectedIssuer, VerificationCode: "0"},
+			probe.TLSVerification{Issuer: testTLSExpectedIssuer, Anchor: testTLSExpectedAnchor, VerificationCode: "0"},
 			nil,
 			probe.ReasonOK,
 		},
 		{
 			"a rejected chain",
-			probe.TLSVerification{Issuer: "Acme Local Root", VerificationCode: "12"},
+			probe.TLSVerification{Issuer: "Acme Local Root", Anchor: "Acme Root CA", VerificationCode: "12"},
 			fmt.Errorf("%w: x509: certificate has expired", probe.ErrTLSVerification),
 			probe.ReasonTLSVerifyFailed,
 		},
 		{
 			"an unexpected issuer",
-			probe.TLSVerification{Issuer: "Acme Inspection CA", VerificationCode: "3"},
+			probe.TLSVerification{Issuer: "Google Trust Services", Anchor: "GlobalSign", VerificationCode: "3"},
 			nil,
 			probe.ReasonTLSIssuerUnexpected,
 		},
@@ -384,6 +465,9 @@ func TestTLSInterceptionNamesTheObservedIssuerAndVerificationCode(t *testing.T) 
 			text := resultText(result)
 			if !strings.Contains(text, tc.verification.Issuer) {
 				t.Errorf("the result does not carry the observed issuer %q: %q", tc.verification.Issuer, text)
+			}
+			if !strings.Contains(text, tc.verification.Anchor) {
+				t.Errorf("the result does not carry the chain's anchor %q: %q", tc.verification.Anchor, text)
 			}
 			if !strings.Contains(text, tc.verification.VerificationCode) {
 				t.Errorf("the result does not carry the verification code %q: %q", tc.verification.VerificationCode, text)
@@ -501,22 +585,22 @@ func TestTLSTruststoreReportsTheLinuxControls(t *testing.T) {
 	}{
 		{
 			name:           "a trust pool that accepts the chain",
-			verifier:       &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: testTLSExpectedIssuer, VerificationCode: "0"}},
+			verifier:       &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: testTLSExpectedIssuer, Anchor: testTLSExpectedAnchor, VerificationCode: "0"}},
 			wantResolution: probe.Measured,
 			wantVerdict:    probe.Pass,
 			wantReason:     probe.ReasonOK,
-			wantDetail:     []string{testTLSExpectedIssuer, "0", "accepted"},
+			wantDetail:     []string{testTLSExpectedIssuer, testTLSExpectedAnchor, "chain anchored at", "0", "accepted"},
 		},
 		{
 			name: "a trust pool that rejects the chain",
 			verifier: &scriptedTLSVerifier{
-				verification: probe.TLSVerification{Issuer: "Acme Local Root", VerificationCode: "1"},
+				verification: probe.TLSVerification{Issuer: "Acme Local Root", Anchor: "Acme Root CA", VerificationCode: "1"},
 				err:          rejection,
 			},
 			wantResolution: probe.Measured,
 			wantVerdict:    probe.Fail,
 			wantReason:     probe.ReasonTrustStoreRejectsChain,
-			wantDetail:     []string{"x509: certificate signed by unknown authority", "1", "rejected"},
+			wantDetail:     []string{"Acme Root CA", "chain anchored at", "x509: certificate signed by unknown authority", "1", "rejected"},
 		},
 	}
 
@@ -659,7 +743,7 @@ func TestTLSTruststoreNeverClaimsWhenThePoolInForceIsNotTheLocalStore(t *testing
 		t.Run(tc.name, func(t *testing.T) {
 			// The verifier answers "verified, expected issuer": if the probe
 			// consulted it, the case below would be a pass.
-			verifier := &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: testTLSExpectedIssuer, VerificationCode: "0"}}
+			verifier := &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: testTLSExpectedIssuer, Anchor: testTLSExpectedAnchor, VerificationCode: "0"}}
 			result := runTLSTruststore(t, trustStoreSeams(verifier, tc.platform, tc.environment), probe.TargetInput{})
 
 			if len(result.Observations) != 1 {
@@ -710,7 +794,7 @@ func TestTLSTruststoreNeverClaimsWhenThePoolInForceIsNotTheLocalStore(t *testing
 // a pass and none is a rejection of the chain.
 func TestTLSTruststoreReportsTheIndeterminateControlCase(t *testing.T) {
 	linux := scriptedPlatform{goos: testTLSTrustStoreLinux, arch: "amd64"}
-	verified := &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: testTLSExpectedIssuer, VerificationCode: "0"}}
+	verified := &scriptedTLSVerifier{verification: probe.TLSVerification{Issuer: testTLSExpectedIssuer, Anchor: testTLSExpectedAnchor, VerificationCode: "0"}}
 
 	cases := []struct {
 		name           string

@@ -140,7 +140,8 @@ type productionTLSVerifier struct{ dialer *net.Dialer }
 // A chain the verifier rejects returns a *tlsChainRejected, which wraps
 // ErrTLSVerification while keeping crypto/tls's own error reachable; any other
 // error is an attempt that produced no answer. On success the verification
-// carries the observed publisher digest and the conventional ok code.
+// carries the observed issuing organization, the chain's anchor and the
+// conventional ok code.
 func (v productionTLSVerifier) Verify(ctx context.Context, target string, cfg *tls.Config) (TLSVerification, error) {
 	if cfg == nil {
 		// The seam's contract is a handshake with the caller's configuration; a
@@ -169,6 +170,7 @@ func (v productionTLSVerifier) Verify(ctx context.Context, target string, cfg *t
 			// can see which chain was rejected.
 			return TLSVerification{
 				Issuer:           chainIssuer(rejected.UnverifiedCertificates),
+				Anchor:           chainAnchor(rejected.UnverifiedCertificates),
 				VerificationCode: verificationFailureCode(rejected.Err),
 			}, &tlsChainRejected{err: err}
 		}
@@ -190,6 +192,7 @@ func (v productionTLSVerifier) Verify(ctx context.Context, target string, cfg *t
 	}
 	return TLSVerification{
 		Issuer:           chainIssuer(chain),
+		Anchor:           chainAnchor(chain),
 		VerificationCode: verificationOKCode,
 	}, nil
 }
@@ -212,37 +215,43 @@ func (e *tlsChainRejected) Unwrap() []error {
 	return []error{ErrTLSVerification, e.err}
 }
 
-// chainIssuer renders the observed publisher of a chain as "<issuing CA
-// organization>/<topmost certificate short name>", for example
-// "Let's Encrypt/ISRG" for the chain PRD §1.1 recorded.
+// chainIssuer renders the compared publisher of a chain: the organization that
+// issued the leaf, falling back to that issuer's common name when no
+// organization was presented, for example "Let's Encrypt" for the chain PRD
+// §1.1 recorded.
 //
-// The digest names two facts, never a judgement: the organization that issued the
-// leaf, and the name the chain's topmost certificate is commonly known by. The
-// seam carries one string while a real chain has one issuer per certificate, so
-// the digest is a deliberate fold that keeps the two ends a reader needs to
-// recognize a publisher; the classification table is the only place a judgement
-// is attached to it, and this file never compares it to anything.
-//
-// The topmost certificate is the trust anchor on a verified chain and the
-// topmost certificate the peer presented on a rejected one. Its short name is
-// the first word of its common name — the convention publishers themselves use
-// ("ISRG Root X1" is ISRG, "DigiCert Global Root G2" is DigiCert) — and a
-// certificate whose organization and common name are both absent contributes
-// nothing rather than a fabricated token.
+// This is the value the declared expected set is compared against (tls.go), and
+// it is deliberately the leaf's issuer alone: the chain's topmost certificate is
+// the trust anchor the local trust store selected, so folding it into the
+// compared value would make the same server certificate compare differently on
+// machines whose stores anchor it elsewhere (issue #78). The anchor is reported
+// beside it as evidence (chainAnchor) and is never compared.
 func chainIssuer(chain []*x509.Certificate) string {
 	if len(chain) == 0 {
 		return ""
 	}
-	ca := organizationOrCommonName(chain[0].Issuer)
-	top := commonNameOrOrganization(chain[len(chain)-1].Subject)
-	switch {
-	case ca == "":
-		return top
-	case top == "":
-		return ca
-	default:
-		return ca + "/" + top
+	return organizationOrCommonName(chain[0].Issuer)
+}
+
+// chainAnchor renders the chain's anchor: the short name of the chain's topmost
+// certificate, for example "ISRG" for "ISRG Root X1".
+//
+// The topmost certificate is the trust anchor on a verified chain and the
+// topmost certificate the peer presented on a rejected one. The short name is
+// the first word of its common name — the convention publishers themselves use
+// ("ISRG Root X1" is ISRG, "DigiCert Global Root G2" is DigiCert) — falling back
+// to the organization when no common name was presented. A certificate whose
+// organization and common name are both absent contributes nothing rather than a
+// fabricated token.
+//
+// The anchor is evidence, never a comparison key: it is chosen by the local
+// trust store, so comparing against it would make the result depend on the
+// machine rather than on the server (issue #78).
+func chainAnchor(chain []*x509.Certificate) string {
+	if len(chain) == 0 {
+		return ""
 	}
+	return commonNameOrOrganization(chain[len(chain)-1].Subject)
 }
 
 // organizationOrCommonName reports a distinguished name's organization, or its

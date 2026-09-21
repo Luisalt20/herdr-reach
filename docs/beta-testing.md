@@ -176,14 +176,21 @@ cannot establish something it says so and names why, instead of guessing.
 ### One `unresolved` to read carefully: an unexpected TLS publisher
 
 `tls.interception` compares the publisher of the chain it observed against a **declared expected
-publisher set** for that host. That set was recorded from a single hand-run (`Let's Encrypt/ISRG`),
-while a large CDN legitimately serves its fronts from several certificate authorities: a live run on
-2026-09-20 observed `Google Trust Services/GlobalSign` for `www.cloudflare.com` on a healthy path.
+publisher set** for that host. The compared value is the leaf's **issuing-CA organization** — the
+only half of a chain's publisher that is a fact about the server — and the detail reports it
+beside the chain's anchor, the certificate the local trust store stopped at (for example
+`observed issuer "Google Trust Services", chain anchored at "GlobalSign", verification code "0"`). The
+anchor is evidence and never part of the comparison, because the local store selects it and the
+same server certificate can be anchored differently on different machines (issue #78). That set
+was recorded from a single hand-run (`Let's Encrypt`, the issuing organization; that run's chain
+was anchored at `ISRG`), while a large CDN legitimately serves its fronts from several certificate
+authorities: a live run on 2026-09-20 observed the issuing organization `Google Trust Services`
+(its chain anchored at `GlobalSign`) for `www.cloudflare.com` on a healthy path.
 
-When the chain verifies but its publisher is outside that declared set, the probe reports
-**`unresolved`** — not a `fail`. The run establishes two things (the chain verified, and the
-publisher is not the one declared) and **cannot establish a third**: whether the difference is a
-publisher change or an interception. Reporting it as a failure would accuse a network this
+When the chain verifies but its issuing organization is outside that declared set, the probe
+reports **`unresolved`** — not a `fail`. The run establishes two things (the chain verified, and
+the publisher is not the one declared) and **cannot establish a third**: whether the difference is
+a publisher change or an interception. Reporting it as a failure would accuse a network this
 measurement cannot convict, so the divergence is left open and named as open.
 
 Two consequences to expect from that:

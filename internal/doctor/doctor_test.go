@@ -991,15 +991,17 @@ func (c *scriptedConn) SetReadDeadline(time.Time) error { return nil }
 // SetWriteDeadline accepts the bound without a socket to enforce it on.
 func (c *scriptedConn) SetWriteDeadline(time.Time) error { return nil }
 
-// verifyingTLSVerifier answers every handshake with the chain PRD §1.1 recorded.
-// It refuses a configuration that disables verification, so the scripted seam
-// cannot become the place where R-HR-04 is weakened.
+// verifyingTLSVerifier answers every handshake with the publisher and anchor PRD
+// §1.1 recorded: the leaf's issuing organization, the anchor that recording
+// machine's store selected, and the ok code. It refuses a configuration that
+// disables verification, so the scripted seam cannot become the place where
+// R-HR-04 is weakened.
 type verifyingTLSVerifier struct{}
 
-// Verify reports the recorded issuer and code.
+// Verify reports the recorded issuing organization, anchor and code.
 func (verifyingTLSVerifier) Verify(_ context.Context, _ string, cfg *tls.Config) (probe.TLSVerification, error) {
 	if cfg == nil || cfg.InsecureSkipVerify {
 		return probe.TLSVerification{}, errors.New("the scripted verifier refuses a configuration that disables verification")
 	}
-	return probe.TLSVerification{Issuer: "Let's Encrypt/ISRG", VerificationCode: "0"}, nil
+	return probe.TLSVerification{Issuer: "Let's Encrypt", Anchor: "ISRG", VerificationCode: "0"}, nil
 }

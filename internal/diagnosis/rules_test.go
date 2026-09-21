@@ -2323,8 +2323,10 @@ func TestTLSFactQuestionsReachTrustStoreConclusions(t *testing.T) {
 // TestTLSInterceptionPublisherDivergenceReachesTheUnresolvedID is the diagnosis-level half of the
 // 2026-09-20 revision (design.md's dated note): an issuer outside the declared expected set is an
 // absence the run could not settle, not a failure, so it fires the probe's unresolved derived id
-// and carries the probe's own wording — which records the observed publisher and the declared set
-// and states that the run cannot distinguish a publisher change from an interception.
+// and carries the probe's own wording — which records the observed issuing organization, the
+// chain's anchor as evidence beside it, and the declared set, and states that the run cannot
+// distinguish a publisher change from an interception. The anchor is quoted and never decides
+// the classification (issue #78).
 //
 // The case also asserts the negative the revision exists for: the divergence does not fire
 // `TLS_INTERCEPTION_FAIL`, because that id names an established failure and this run established
@@ -2334,7 +2336,7 @@ func TestTLSInterceptionPublisherDivergenceReachesTheUnresolvedID(t *testing.T) 
 	run := []probe.Result{
 		result("tls.interception", probe.ProbeTLS,
 			observation("tls 443 chain", "www.cloudflare.com:443", probe.Unresolved, probe.Indeterminate, probe.ReasonTLSIssuerUnexpected,
-				"tls www.cloudflare.com:443: the chain verified and its observed issuer \"Google Trust Services/GlobalSign\" is not in the declared expected set for www.cloudflare.com (verification code \"0\"); the result records the observed publisher and the declared set it was compared against, and this run cannot distinguish a publisher change from an interception, so the divergence is reported as unresolved rather than as a failure"),
+				"tls www.cloudflare.com:443: the chain verified and its observed issuer \"Google Trust Services\" is not in the declared expected set for www.cloudflare.com (chain anchored at \"GlobalSign\", verification code \"0\"); the result records the observed publisher and the declared set it was compared against, and this run cannot distinguish a publisher change from an interception, so the divergence is reported as unresolved rather than as a failure"),
 		),
 	}
 	got := diagnosis.Diagnose(run)

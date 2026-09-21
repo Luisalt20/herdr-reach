@@ -11,16 +11,17 @@ package probe
 //
 // Four outcomes are reported, and the vocabulary keeps them distinct (design §5.1):
 //
-//   - the chain verified and its issuer is in the declared expected set — a measured pass;
+//   - the chain verified and its issuing-CA organization is in the declared expected set — a
+//     measured pass;
 //   - the chain failed verification — a measured failure whose detail carries the
 //     verifier's own code;
-//   - the chain verified but its issuer is outside the declared expected set — unresolved.
-//     Publishers rotate, and the single declared entry means the first rotation lands here,
-//     where the run cannot tell a rotation from an interception (the dated note of
-//     2026-09-20 in the change's design.md records the measurement that settled this). The
-//     wording reports the observed issuer and the declared set it was compared against and
-//     states exactly what the run cannot establish: it never accuses, and it does not call
-//     the divergence harmless either;
+//   - the chain verified but its issuing-CA organization is outside the declared expected
+//     set — unresolved. Publishers rotate, and the single declared entry means the first
+//     rotation lands here, where the run cannot tell a rotation from an interception (the
+//     dated note of 2026-09-20 in the change's design.md records the measurement that
+//     settled this). The wording reports the observed issuer and the chain's anchor beside
+//     the declared set it was compared against and states exactly what the run cannot
+//     establish: it never accuses, and it does not call the divergence harmless either;
 //   - the handshake produced no answer — unresolved. A handshake that produced nothing is
 //     not a rejected chain, and collapsing the two would report an interception-free
 //     network whenever a handshake failed for an unrelated reason.
@@ -34,8 +35,9 @@ package probe
 // The declared expected issuer set lives here, beside the probe that consumes it, because
 // it is part of this measurement's contract rather than a property of the declared target
 // set: targets.go declares where the probe measures, and this declaration says what
-// publisher that target is expected to present. It is compared as a declared value, never
-// parsed out of an error, so wording cannot move the classification (R-HR-07).
+// publisher that target is expected to present — the leaf's issuing organization, the only
+// half of a chain's publisher that is a server fact. It is compared as a declared value,
+// never parsed out of an error, so wording cannot move the classification (R-HR-07).
 
 import (
 	"context"
@@ -56,17 +58,25 @@ const (
 )
 
 // declaredExpectedIssuers is the declared expected publisher set, per declared TLS host:
-// the target's chain must verify, and its issuer must be one of these values, for the
-// measurement to be a pass. The set for the host of PRD §1.1 is the one that measurement
-// recorded (`www.cloudflare.com`, issuer `Let's Encrypt/ISRG`, verification code 0); the
-// comment on the entry is deliberately the reason it is there rather than a copy of an
-// observed value that could drift.
+// the target's chain must verify, and its issuing-CA organization must be one of these
+// values, for the measurement to be a pass. The compared value is the leaf's issuer only
+// (chainIssuer in real.go), never a fold with the chain's anchor: the anchor is chosen by
+// the local trust store, so a fold would compare a server fact and a machine fact as one
+// value and no declaration could be portable (issue #78). The anchor is still reported in
+// the detail, as evidence rather than as a comparison key.
+//
+// The set for the host of PRD §1.1 is taken from that measurement (`www.cloudflare.com`,
+// recorded as `Let's Encrypt/ISRG`, verification code 0). That recorded value was itself a
+// fold: `Let's Encrypt` is the organization that issued the leaf, and `ISRG` was the anchor
+// the recording machine's store happened to select. The declaration is the issuing half,
+// and the comment on the entry is deliberately the reason it is there rather than a copy
+// of an observed value that could drift (issue #59).
 var declaredExpectedIssuers = map[string][]string{
-	tlsProbeHost: {"Let's Encrypt/ISRG"},
+	tlsProbeHost: {"Let's Encrypt"},
 }
 
-// expectedIssuerFor reports whether an observed issuer is in the declared expected set for
-// a host.
+// expectedIssuerFor reports whether an observed issuing organization is in the declared
+// expected set for a host.
 //
 // The comparison is on the declared value, case-insensitively and with surrounding space
 // ignored: certificate publishers vary in case between chains, and a case-only difference
@@ -184,18 +194,22 @@ func tlsObserve(label, address string, raw RawObservation) Observation {
 // attempt that was not made, and it is checked first so a denied seam can never be misread
 // as a rejected chain. A verification failure is a measurement of the target and carries
 // the verifier's own code into the detail. Any other error produced no answer at all and
-// is unresolved. Only when the handshake verified does the issuer decide between the pass
-// and the recorded divergence, and that wording reports the observed issuer beside the
-// declared set it was compared against and states that the run cannot distinguish a
-// publisher change from an interception: it never accuses the network, and it does not
-// call the divergence harmless either.
+// is unresolved. Only when the handshake verified does the issuing organization decide
+// between the pass and the recorded divergence, and that wording reports the observed
+// issuer beside the declared set it was compared against and states that the run cannot
+// distinguish a publisher change from an interception: it never accuses the network, and it
+// does not call the divergence harmless either.
 //
-// The observed issuer and the verification code are quoted into every outcome the handshake
-// produced, because R-HR-04 requires the result itself to carry both. An empty value is
-// reported as such rather than omitted, so a reader can tell "the verifier reported no
+// The observed issuer, the chain's anchor and the verification code are quoted into every
+// outcome the handshake produced, because R-HR-04 requires the result itself to carry the
+// publisher and the code. The anchor is evidence the same sentence quotes and nothing
+// else: the comparison is on the issuer alone, so the same server certificate anchored at
+// different roots on different machines classifies identically (issue #78). An empty value
+// is reported as such rather than omitted, so a reader can tell "the verifier reported no
 // code" from "the code was dropped".
 func tlsChainFact(host, address string, verification TLSVerification, err error) RawObservation {
 	issuer := verification.Issuer
+	anchor := verification.Anchor
 	code := verification.VerificationCode
 	if code == "" {
 		code = "the verifier reported no code"
@@ -209,26 +223,26 @@ func tlsChainFact(host, address string, verification TLSVerification, err error)
 	case errors.Is(err, ErrTLSVerification):
 		return RawObservation{
 			Kind: ObsTLSVerifyFailed,
-			Wording: fmt.Sprintf("tls %s: the chain failed verification (observed issuer %q, verification code %q): %v; the failure is reported as the measurement it is, and verification was not disabled or retried to obtain a different result",
-				address, issuer, code, err),
+			Wording: fmt.Sprintf("tls %s: the chain failed verification (observed issuer %q, chain anchored at %q, verification code %q): %v; the failure is reported as the measurement it is, and verification was not disabled or retried to obtain a different result",
+				address, issuer, anchor, code, err),
 		}
 	case err != nil:
 		return RawObservation{
 			Kind: ObsTLSHandshakeError,
-			Wording: fmt.Sprintf("%sthe handshake produced no answer (observed issuer %q, verification code %q): %v; the failure is neither a verification failure nor a concluded issuer mismatch, so nothing is claimed about the chain",
-				addressPrefix("tls", address, err), issuer, code, err),
+			Wording: fmt.Sprintf("%sthe handshake produced no answer (observed issuer %q, chain anchored at %q, verification code %q): %v; the failure is neither a verification failure nor a concluded issuer mismatch, so nothing is claimed about the chain",
+				addressPrefix("tls", address, err), issuer, anchor, code, err),
 		}
 	case expectedIssuerFor(host, issuer):
 		return RawObservation{
 			Kind: ObsTLSVerified,
-			Wording: fmt.Sprintf("tls %s: the chain verified and its observed issuer %q is in the declared expected set for %s (verification code %q)",
-				address, issuer, host, code),
+			Wording: fmt.Sprintf("tls %s: the chain verified and its observed issuer %q is in the declared expected set for %s (chain anchored at %q, verification code %q)",
+				address, issuer, host, anchor, code),
 		}
 	default:
 		return RawObservation{
 			Kind: ObsTLSIssuerUnexpected,
-			Wording: fmt.Sprintf("tls %s: the chain verified and its observed issuer %q is not in the declared expected set for %s (verification code %q); the result records the observed publisher and the declared set it was compared against, and this run cannot distinguish a publisher change from an interception, so the divergence is reported as unresolved rather than as a failure",
-				address, issuer, host, code),
+			Wording: fmt.Sprintf("tls %s: the chain verified and its observed issuer %q is not in the declared expected set for %s (chain anchored at %q, verification code %q); the result records the observed publisher and the declared set it was compared against, and this run cannot distinguish a publisher change from an interception, so the divergence is reported as unresolved rather than as a failure",
+				address, issuer, host, anchor, code),
 		}
 	}
 }
@@ -454,13 +468,16 @@ func tlsTrustStoreObserve(label, address string, raw RawObservation) Observation
 // carries the verifier's own code, and any other error produced no answer at all. Only a
 // handshake that verified is an acceptance of the chain.
 //
-// The observed issuer and the verification code are quoted into every definite outcome's
-// detail, because the chain the pool judged is part of that measurement: without them a
-// reader could not tell which chain was accepted. An empty value is reported as such
-// rather than omitted, so a reader can tell "the verifier reported no code" from "the code
-// was dropped".
+// The observed issuer, the chain's anchor and the verification code are quoted into every
+// definite outcome's detail, because the chain the pool judged is part of that
+// measurement: without them a reader could not tell which chain was accepted. The anchor
+// is evidence beside the issuer and never decides this answer either; it says which root
+// the local pool's chain stopped at (issue #78). An empty value is reported as such rather
+// than omitted, so a reader can tell "the verifier reported no code" from "the code was
+// dropped".
 func tlsTrustStoreFact(address string, verification TLSVerification, err error) RawObservation {
 	issuer := verification.Issuer
+	anchor := verification.Anchor
 	code := verification.VerificationCode
 	if code == "" {
 		code = "the verifier reported no code"
@@ -474,20 +491,20 @@ func tlsTrustStoreFact(address string, verification TLSVerification, err error) 
 	case errors.Is(err, ErrTLSVerification):
 		return RawObservation{
 			Kind: ObsTrustStoreRejectsChain,
-			Wording: fmt.Sprintf("tls %s: the local trust store rejected the chain (observed issuer %q, verification code %q): %v; the pool in force on this machine is what answered, and verification was not disabled or retried to obtain a different answer",
-				address, issuer, code, err),
+			Wording: fmt.Sprintf("tls %s: the local trust store rejected the chain (observed issuer %q, chain anchored at %q, verification code %q): %v; the pool in force on this machine is what answered, and verification was not disabled or retried to obtain a different answer",
+				address, issuer, anchor, code, err),
 		}
 	case err != nil:
 		return RawObservation{
 			Kind: ObsTLSHandshakeError,
-			Wording: fmt.Sprintf("%sthe handshake produced no answer (observed issuer %q, verification code %q): %v; neither an acceptance nor a rejection of the chain was measured, so nothing is claimed about the local trust store",
-				addressPrefix("tls", address, err), issuer, code, err),
+			Wording: fmt.Sprintf("%sthe handshake produced no answer (observed issuer %q, chain anchored at %q, verification code %q): %v; neither an acceptance nor a rejection of the chain was measured, so nothing is claimed about the local trust store",
+				addressPrefix("tls", address, err), issuer, anchor, code, err),
 		}
 	default:
 		return RawObservation{
 			Kind: ObsTLSVerified,
-			Wording: fmt.Sprintf("tls %s: the local trust store accepted the chain (observed issuer %q, verification code %q)",
-				address, issuer, code),
+			Wording: fmt.Sprintf("tls %s: the local trust store accepted the chain (observed issuer %q, chain anchored at %q, verification code %q)",
+				address, issuer, anchor, code),
 		}
 	}
 }
