@@ -115,6 +115,9 @@ var prdSection11Rows = []prdSection11Row{
 	},
 	{
 		// "www.cloudflare.com | 443 | OK | No TLS interception (issuer Let's Encrypt/ISRG, verify code 0)."
+		// The PRD's recorded issuer is a fold: the declared set now carries the leaf's issuing
+		// organization, and the anchor the recording store selected travels beside it as evidence
+		// (issue #78).
 		probe:      "tls.interception",
 		kind:       probe.ProbeTLS,
 		label:      "tls verify www.cloudflare.com",
@@ -122,7 +125,7 @@ var prdSection11Rows = []prdSection11Row{
 		resolution: probe.Measured,
 		verdict:    probe.Pass,
 		reason:     probe.ReasonOK,
-		detail:     `verified www.cloudflare.com:443: issuer "Let's Encrypt/ISRG", verify code 0`,
+		detail:     `verified www.cloudflare.com:443: issuer "Let's Encrypt", chain anchored at "ISRG", verify code 0`,
 	},
 }
 

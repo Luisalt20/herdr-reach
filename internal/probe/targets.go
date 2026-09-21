@@ -128,7 +128,10 @@ const (
 	// omits one (design D3).
 	hubDefaultPort = 22
 	// tlsProbeHost is PRD §1.1's measured TLS target: the host whose chain
-	// verified with issuer Let's Encrypt/ISRG and verification code 0.
+	// verified with issuing organization Let's Encrypt (that run's chain was
+	// anchored at ISRG) and verification code 0. The compared value is the
+	// issuing organization alone: the anchor is chosen by the local trust store
+	// and is reported as evidence, never compared (issue #78).
 	tlsProbeHost = "www.cloudflare.com"
 	// region1Host and region2Host are the two Cloudflare edge regions. Both are
 	// probed (design D10), because "one region reachable" is materially different

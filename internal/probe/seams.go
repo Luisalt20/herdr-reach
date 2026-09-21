@@ -57,10 +57,25 @@ type Resolver interface {
 // is the only place that chooses a code, so the verifier reports facts and the
 // probe classifies them (design §5.1, R-HR-07).
 type TLSVerification struct {
-	// Issuer is the chain's issuer as the peer presented it, for example
-	// "Let's Encrypt/ISRG". It is verbatim and stays verbatim in the output; it
-	// is empty when no chain was fetched at all.
+	// Issuer is the leaf's issuing-CA organization as the chain presented it, for
+	// example "Let's Encrypt". It is the compared publisher: the probe compares
+	// it against the declared expected set, and it carries no "/" fold. It is
+	// verbatim and stays verbatim in the output; it is empty when no chain was
+	// fetched at all.
+	//
+	// The chain's anchor is deliberately not folded into this value. The anchor
+	// is chosen by the local trust store, so a fold would compare a server fact
+	// and a machine fact as one value, and no declared set could be portable
+	// (issue #78).
 	Issuer string
+	// Anchor is the short name of the chain's topmost certificate, for example
+	// "ISRG" for "ISRG Root X1". On a verified chain it is the trust anchor the
+	// local machine's store selected; on a rejected chain it is the topmost
+	// certificate the peer presented. It is reported beside the issuer as
+	// evidence and is never compared: the same server certificate can be
+	// anchored at different roots on different machines without changing the
+	// publisher (issue #78). It is empty when no chain was fetched at all.
+	Anchor string
 	// VerificationCode is the verifier's own code for the verification attempt,
 	// for example "0". It is carried verbatim into the observation's detail and
 	// is never parsed to choose a reason code.
@@ -83,9 +98,10 @@ type TLSVerifier interface {
 	//
 	// A chain the verifier rejects returns an error wrapping ErrTLSVerification.
 	// Any other error means the attempt produced no answer. A nil error means the
-	// chain verified and verification.Issuer is the issuer to compare against the
-	// declared expected set. Verify must never disable verification, retry
-	// unverified, or modify cfg (R-HR-04).
+	// chain verified, verification.Issuer is the leaf's issuing organization to
+	// compare against the declared expected set, and verification.Anchor is the
+	// evidence the probe reports beside it and never compares. Verify must never
+	// disable verification, retry unverified, or modify cfg (R-HR-04).
 	Verify(ctx context.Context, target string, cfg *tls.Config) (TLSVerification, error)
 }
 

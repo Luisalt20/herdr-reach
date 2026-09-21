@@ -1,18 +1,19 @@
 package probe
 
 // This file pins the production verifier's safety refusals from inside the
-// package, the issuer fold's agreement with the declared expected set, and the
-// connected-socket adapter's WriteTo: R-HR-04's "verification is never weakened"
-// property, the two halves of the issuer contract, and the datagram write path
-// the kernel refuses on a connected socket. None of them is reachable from the
-// external suite because productionTLSVerifier, chainIssuer,
+// package, the issuer/anchor split's agreement with the declared expected set,
+// and the connected-socket adapter's WriteTo: R-HR-04's "verification is never
+// weakened" property, the compared publisher and the anchor that must never
+// decide the comparison (issue #78), and the datagram write path the kernel
+// refuses on a connected socket. None of them is reachable from the external
+// suite because productionTLSVerifier, chainIssuer, chainAnchor,
 // declaredExpectedIssuers and connectedPacketConn are unexported.
 //
 // It touches no socket and never calls ProductionSeams: both refusal paths
 // return before any dial, so the zero-value verifier is enough to exercise them,
 // and the packet adapter is driven through a scripted fake. The chain's
-// certificates are scripted for the same reason — the fold's format is a
-// decision this file pins, not a claim about a live chain.
+// publishes one — the string's format is a decision this file pins, not a claim
+// about a live chain.
 
 import (
 	"context"
@@ -83,42 +84,90 @@ func TestProductionTLSVerifierRefusesInsecureSkipVerify(t *testing.T) {
 	}
 }
 
-// TestChainIssuerFormatAgreesWithDeclaredIssuers pins the fold's format against
-// the value the declared expected set carries for the TLS probe's host: the
-// recorded chain's leaf is issued by "Let's Encrypt" and its topmost certificate
-// is "ISRG Root X1", so the fold must render "Let's Encrypt/ISRG" — the same
-// string tls.go declares for that host. The certificates are scripted; the case
-// checks the format and the agreement, never a live chain.
-func TestChainIssuerFormatAgreesWithDeclaredIssuers(t *testing.T) {
-	chain := []*x509.Certificate{
+// TestChainIssuerAndAnchorAreSeparate pins the two halves of the chain contract
+// at the point where they are produced: chainIssuer is the leaf's issuing
+// organization only ("Let's Encrypt"), chainAnchor is the topmost certificate's
+// short name ("ISRG" for "ISRG Root X1"), the declared expected set carries the
+// former, and the anchor is not a comparison key. The certificates are scripted;
+// no live chain is claimed.
+//
+// The portability control is the reason the split exists (issue #78): the same
+// leaf issuer beside a differently anchored chain must produce the same compared
+// value — the declaration has to hold on any machine's trust store — while the
+// anchor still renders as evidence. A regression that folds the anchor back into
+// chainIssuer fails the second chain's first assertion.
+func TestChainIssuerAndAnchorAreSeparate(t *testing.T) {
+	recorded := []*x509.Certificate{
 		{Issuer: pkix.Name{Organization: []string{"Let's Encrypt"}}},
 		{Subject: pkix.Name{CommonName: "ISRG Root X1"}},
 	}
-	const want = "Let's Encrypt/ISRG"
-	if got := chainIssuer(chain); got != want {
-		t.Fatalf("chainIssuer(recorded-shaped chain) = %q, want the documented form %q", got, want)
+	if got, want := chainIssuer(recorded), "Let's Encrypt"; got != want {
+		t.Fatalf("chainIssuer(recorded-shaped chain) = %q, want the issuing organization %q", got, want)
 	}
-	if !slices.Contains(declaredExpectedIssuers[tlsProbeHost], want) {
-		t.Errorf("the declared expected issuers for %q are %v, which do not carry the fold's %q: the two halves of the issuer contract have drifted", tlsProbeHost, declaredExpectedIssuers[tlsProbeHost], want)
+	if got, want := chainAnchor(recorded), "ISRG"; got != want {
+		t.Fatalf("chainAnchor(recorded-shaped chain) = %q, want the topmost short name %q", got, want)
 	}
-	if !expectedIssuerFor(tlsProbeHost, want) {
-		t.Errorf("expectedIssuerFor(%q, %q) = false, want the folded issuer to be one of the declared values", tlsProbeHost, want)
+	if !slices.Contains(declaredExpectedIssuers[tlsProbeHost], chainIssuer(recorded)) {
+		t.Errorf("the declared expected issuers for %q are %v, which do not carry the compared value %q: the two halves of the issuer contract have drifted", tlsProbeHost, declaredExpectedIssuers[tlsProbeHost], chainIssuer(recorded))
+	}
+	if !expectedIssuerFor(tlsProbeHost, chainIssuer(recorded)) {
+		t.Errorf("expectedIssuerFor(%q, %q) = false, want the issuing organization to be one of the declared values", tlsProbeHost, chainIssuer(recorded))
+	}
+	if slices.Contains(declaredExpectedIssuers[tlsProbeHost], chainAnchor(recorded)) {
+		t.Errorf("the declared expected issuers for %q carry the anchor %q, which is chosen by the local trust store and must never decide the comparison", tlsProbeHost, chainAnchor(recorded))
+	}
+
+	otherAnchor := []*x509.Certificate{
+		{Issuer: pkix.Name{Organization: []string{"Let's Encrypt"}}},
+		{Subject: pkix.Name{CommonName: "GlobalSign Root CA"}},
+	}
+	if got, want := chainIssuer(otherAnchor), "Let's Encrypt"; got != want {
+		t.Errorf("chainIssuer(chain anchored elsewhere) = %q, want the unchanged issuing organization %q: the anchor is chosen by the local store and must not move the compared value", got, want)
+	}
+	if got, want := chainAnchor(otherAnchor), "GlobalSign"; got != want {
+		t.Errorf("chainAnchor(chain anchored elsewhere) = %q, want %q", got, want)
 	}
 }
 
-// TestChainIssuerEmptyAndNamelessRendersNothing pins the documented empty-input
-// behaviour of the fold: no certificates at all renders the empty string, and a
-// certificate whose organization and common name are both absent contributes
-// nothing rather than a fabricated token.
-func TestChainIssuerEmptyAndNamelessRendersNothing(t *testing.T) {
-	if got := chainIssuer(nil); got != "" {
-		t.Errorf("chainIssuer(nil) = %q, want the empty string: no certificates, no digest", got)
+// TestChainIssuerAndAnchorFallBackToTheOtherName pins the documented fallbacks:
+// an issuer with no organization is named by its common name, and an anchor
+// certificate with no common name is named by its organization. Both keep a
+// presented name rather than dropping it.
+func TestChainIssuerAndAnchorFallBackToTheOtherName(t *testing.T) {
+	commonNameOnly := []*x509.Certificate{{Issuer: pkix.Name{CommonName: "Acme Intermediate"}}}
+	if got, want := chainIssuer(commonNameOnly), "Acme Intermediate"; got != want {
+		t.Errorf("chainIssuer(issuer with no organization) = %q, want its common name %q", got, want)
 	}
-	if got := chainIssuer([]*x509.Certificate{}); got != "" {
-		t.Errorf("chainIssuer(empty) = %q, want the empty string", got)
+	organizationOnly := []*x509.Certificate{{}, {Subject: pkix.Name{Organization: []string{"ISRG"}}}}
+	if got, want := chainAnchor(organizationOnly), "ISRG"; got != want {
+		t.Errorf("chainAnchor(anchor with no common name) = %q, want its organization %q", got, want)
 	}
-	if got := chainIssuer([]*x509.Certificate{{}}); got != "" {
-		t.Errorf("chainIssuer(one certificate with no organization and no common name) = %q, want the empty string: an absent name contributes nothing rather than a fabricated token", got)
+
+	// The compared value never borrows the anchor. A leaf whose issuer presents no
+	// name compares as nothing even when the chain is anchored at a named root: a
+	// fallback to the anchor here would make the compared value depend on the local
+	// trust store again, which is the defect issue #78 fixed.
+	namelessIssuerNamedAnchor := []*x509.Certificate{{}, {Subject: pkix.Name{CommonName: "ISRG Root X1"}}}
+	if got := chainIssuer(namelessIssuerNamedAnchor); got != "" {
+		t.Errorf("chainIssuer(leaf issuer with no name, anchored at a named root) = %q, want the empty string: the compared value must not borrow the anchor", got)
+	}
+	if got, want := chainAnchor(namelessIssuerNamedAnchor), "ISRG"; got != want {
+		t.Errorf("chainAnchor(leaf issuer with no name, anchored at a named root) = %q, want %q", got, want)
+	}
+}
+
+// TestChainIssuerAndAnchorEmptyAndNamelessRendersNothing pins the documented
+// empty-input behaviour of both halves: no certificates at all renders the empty
+// string, and a certificate whose organization and common name are both absent
+// contributes nothing rather than a fabricated token.
+func TestChainIssuerAndAnchorEmptyAndNamelessRendersNothing(t *testing.T) {
+	for _, chain := range [][]*x509.Certificate{nil, {}, {{}}} {
+		if got := chainIssuer(chain); got != "" {
+			t.Errorf("chainIssuer(%v) = %q, want the empty string: no issuer name, no compared value", chain, got)
+		}
+		if got := chainAnchor(chain); got != "" {
+			t.Errorf("chainAnchor(%v) = %q, want the empty string: an absent name contributes nothing rather than a fabricated token", chain, got)
+		}
 	}
 }
 
