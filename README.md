@@ -47,8 +47,8 @@ transport that will work, proves it works, and makes it survive reboots.</strong
 </div>
 
 > [!IMPORTANT]
-> **Status: beta, diagnosis only.** `herdr-reach doctor` ships in the
-> [v0.1.0-beta.1 pre-release](https://github.com/Luisalt20/herdr-reach/releases): one read-only
+> **Status: beta, diagnosis only.** `herdr-reach doctor` ships in the latest
+> [pre-release](https://github.com/Luisalt20/herdr-reach/releases): one read-only
 > measurement run per invocation, which reports what your network allows and why a transport cannot
 > work. **Everything else in this document is still planned** &mdash; pairing, provisioning,
 > persistence, and the interface described below do not exist yet. [Beta testing](docs/beta-testing.md)
@@ -365,8 +365,10 @@ undone. Nothing in this tool changes a system as a side effect of thinking about
 ## Install
 
 **The diagnosis slice is available as a pre-release.**
-[`v0.1.0-beta.1`](https://github.com/Luisalt20/herdr-reach/releases) attaches one binary per platform
-plus a `SHA256SUMS` file. Verify the bytes and the build before you run it &mdash;
+The [releases page](https://github.com/Luisalt20/herdr-reach/releases) attaches one binary per
+platform plus a `SHA256SUMS` file, and this section names no version on purpose: the version to
+install is the one on that page, and a tag written here goes stale at the next release. Verify the
+bytes and the build before you run it &mdash;
 [Beta testing](docs/beta-testing.md) walks through both, and through the two profiles the run is
 meant for.
 
@@ -379,8 +381,9 @@ brew install Luisalt20/tap/herdr-reach
 # macOS / Linux (curl)                                                  (planned)
 curl -fsSL https://raw.githubusercontent.com/Luisalt20/herdr-reach/main/scripts/install.sh | bash
 
-# Any platform with Go 1.25.10+ — name the tag: a pre-release is never @latest
-go install github.com/Luisalt20/herdr-reach/cmd/herdr-reach@v0.1.0-beta.1
+# Any platform with Go 1.25.10+ — `<tag>` is the release you want, written as the
+# releases page writes it: a pre-release is never @latest
+go install github.com/Luisalt20/herdr-reach/cmd/herdr-reach@<tag>
 ```
 
 Building from source will need only Go &mdash; the runtime dependencies are `ssh`, `sshd`,
