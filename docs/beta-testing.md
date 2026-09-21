@@ -94,7 +94,8 @@ herdr-reach doctor --hub <hub address>
   than on SSH itself;
 - is the public internet reachable, and is the Cloudflare edge reachable on its tunnel and HTTPS
   ports, including whether the UDP path answers;
-- is an `sshd` present on this machine at the documented path — the daemon a transport would
+- is an `sshd` present on this machine at the path the platform documents — `/usr/sbin/sshd` on Linux,
+  macOS and WSL2, `C:\Windows\System32\OpenSSH\sshd.exe` on native Windows — the daemon a transport would
   eventually reach. The configuration *in force* is not measured in this beta: the run is given
   no command runner, so it reports that question as `not measured` instead of reading silence as
   "configured";

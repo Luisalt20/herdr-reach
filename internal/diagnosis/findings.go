@@ -667,6 +667,10 @@ func sshdPresentConfigDivergentText(matched []Fact) string {
 }
 
 // sshdAbsentText is the wording of `SSHD_ABSENT`: no sshd binary is present at the documented path.
+// That path is the platform's own — `/usr/sbin/sshd` on Linux, macOS and WSL2, and
+// `C:\Windows\System32\OpenSSH\sshd.exe` on native Windows. The sentence itself stays generic —
+// "the documented path" — because the concrete target is quoted beside it, so the wording cannot
+// drift from a path that moves with the platform.
 //
 // The absence is the probe's own measured negative, quoted with its label, target and verbatim
 // detail, and the sentence states the slice boundary the probe's detail already carries: installing
