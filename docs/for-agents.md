@@ -30,7 +30,7 @@ herdr-reach doctor --hub <hub address> --json > report.json
 
 | Code | Meaning |
 |:---|:---|
-| `0` | The measurement completed — including "no transport is viable" and the native Windows refusal. |
+| `0` | The measurement completed — including "no transport is viable". A measured negative is still a result. |
 | `1` | The run is incomplete: at least one probe was attempted and produced no answer. **This is a result, not a failure.** Use the document; do not discard it. |
 | `2` | Usage or internal error. No diagnosis is presented and standard output is empty; fix the invocation and run again. |
 
@@ -120,8 +120,9 @@ Each row carries `name`, `kind` (`local`, `egress`, `tls`, `proto`), `target`, `
     `run_budget_exceeded`, `internal_error`.
   - `udp_response_received` claims only that a datagram was not silently dropped; it is not a claim
     that QUIC works.
-  - `node_platform_unsupported` is this tool's measured refusal of a native Windows node — a
-    result, not an error.
+  - Native Windows is a supported classification as of Herdr 0.9.1: `local.env` reports `ok`, and
+    the classification's own detail — which the `node.platform` conclusion quotes — carries the
+    caveat that the run does not measure which Herdr version is installed.
 - `observations[]`: the per-fact rows (`label`, `target`, `verdict`, `resolution`, `reason`,
   `detail`) in the order the probe reported them. Read these when declared endpoints can disagree:
   one edge region answering beside another failing is a split the aggregate verdict hides.
@@ -146,15 +147,17 @@ Each row is `question`, `rule`, `conclusion`, `depends_on[]`.
 ### `node` — what this machine is
 
 - `platform` and `arch`: the classification and architecture measured for the node. A run that never
-  classified the machine reports the unknown identity rather than inventing one.
-- `refused`: `true` means the node is native Windows, which this tool does not provision. It is
-  **this tool's scope limit, not a limit of Herdr**: upstream Herdr supports a Windows server as of
-  0.9.1, and WSL2 is the Windows path this tool handles today. A refused node decides no transport;
-  stop the provisioning path and report the refusal. The tool does not measure the node's Herdr
-  version, so an older node is refused here even though it also cannot host a saved-machine
-  connection.
+  classified the machine reports the unknown identity rather than inventing one. `windows-native`
+  means the platform can host a supported Herdr server **as of 0.9.1**; the tool does not measure
+  which Herdr version is installed, so a node running an older server is classified supported here
+  while being unable to host a saved-machine connection.
+- `refused`: always `false`. The field remains in the payload shape for compatibility, but native
+  Windows is a supported classification as of Herdr 0.9.1, so nothing refuses a platform. Do not
+  branch on it. The provisioning slices still do not cover native Windows, so WSL2 remains the
+  Windows path this tool provisions today.
 - `note`: the classification's own detail, verbatim. A platform the signals could not classify is
-  reported as unknown with no platform assumed.
+  reported as unknown with no platform assumed. For `windows-native`, `note` carries the version
+  caveat.
 
 ### `transports` — the decision surface
 
@@ -190,8 +193,11 @@ Run this in order. Nothing below replaces a measurement.
 2. **Check `run.completeness`.** If `incomplete`, read `run.unresolved[]`, name those probes, and
    either re-run to settle them or hold back every conclusion that depends on them. An unresolved
    probe is not a pass.
-3. **Read `node`.** If `refused` is true, stop: this tool does not provision this platform and
-   decides no transport here.
+3. **Read `node`.** `refused` is always `false` in this build: native Windows is a supported
+   classification as of Herdr 0.9.1, so nothing is refused. Read `platform` and `note` for the
+   classification and its caveat; `platform_unknown` means no platform was assumed, and a
+   `windows-native` node is classified supported while the provisioning slices still do not cover
+   it.
 4. **Find the viable transport** — the row with `viable: true`. If one exists, that is the
    transport. Read its `notes[]` for the measurement it rests on and its `requires[]` rows (all
    satisfied) for what it assumes.

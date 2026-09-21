@@ -25,10 +25,9 @@ package diagnosis
 // (resolution, verdict) pair; a non-empty Label matches only the observation the probe reported
 // under that label, while an empty one keeps the semantics every earlier row has.
 //
-// No transport viability is derived anywhere in this package. The `node.platform` refusal names
-// WSL2 as the Windows path this tool handles today because the classification does, and every
-// conclusion that borders on transport states that the transport decision belongs to the transport
-// layer.
+// No transport viability is derived anywhere in this package. The `node.platform` supported
+// conclusion carries the version caveat the classification does, and every conclusion that borders
+// on transport states that the transport decision belongs to the transport layer.
 //
 // A hand-named id may be carried by more than one row, and that is the one thing this file adds to
 // the mechanism PR 10 landed. §5.2's `Requires` column contains disjunctions — a hub failure beside
@@ -506,20 +505,16 @@ func sshdRules() []Rule {
 //
 // `local.env` reports one observation, so every row needs the probe without a label and the group
 // answers the classification's own question over the probe's derived states. The order follows the
-// same FAIL → UNRESOLVED → PASS discipline as the fact slots: a measured refusal is declared first
-// so it can never be reported as supported, and an unclassifiable machine is the absence it is
-// rather than a default.
+// same UNRESOLVED → PASS discipline as the fact slots: an unclassifiable machine is the absence it
+// is rather than a default, and a supported classification — Linux, macOS, WSL2 or native Windows
+// as of Herdr 0.9.1 — is the measured pass it is.
 //
-// The refusal conclusion names WSL2 as the Windows path this tool handles today because the
-// classification's own wording does (R-HR-30), and it decides no transport: whether any transport
-// can reach the hub is the transport layer's decision, and this package derives no viability
-// anywhere.
+// The supported conclusion carries the native-Windows version caveat in its own sentence because
+// the classification's own wording does (R-HR-30), and it decides no transport: whether any
+// transport can reach the hub is the transport layer's decision, and this package derives no
+// viability anywhere.
 func nodePlatformRules() []Rule {
 	return []Rule{
-		// Native Windows: a measured refusal, declared before any weaker reading.
-		newRule(ruleNodePlatformRefusedNativeWindows, questionNodePlatform, namedConclusion(ruleNodePlatformRefusedNativeWindows),
-			needInState("local.env", StateFail),
-		),
 		// The signals matched no supported classification: no platform is assumed.
 		newRule(ruleNodePlatformUnknown, questionNodePlatform, namedConclusion(ruleNodePlatformUnknown),
 			needInState("local.env", StateUnresolved),

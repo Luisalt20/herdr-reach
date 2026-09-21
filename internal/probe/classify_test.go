@@ -133,10 +133,6 @@ var classificationCases = []classificationCase{
 		"platform signals match no supported classification", probe.PurposePlatformClassification, probe.ObsPlatformSignalsUnknown,
 		probe.Classification{Resolution: probe.Unresolved, Verdict: probe.Indeterminate, Reason: probe.ReasonPlatformUnknown},
 	},
-	{
-		"classified native Windows node", probe.PurposePlatformClassification, probe.ObsNodePlatformUnsupported,
-		probe.Classification{Resolution: probe.Measured, Verdict: probe.Fail, Reason: probe.ReasonNodePlatformUnsupported},
-	},
 }
 
 // TestClassificationTable asserts the table's triple for every row of design

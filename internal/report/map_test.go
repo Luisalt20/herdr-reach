@@ -757,26 +757,26 @@ func TestMappingCarriesFindingsAndOpenQuestionsVerbatim(t *testing.T) {
 
 // --- the node classification -------------------------------------------------
 
-// TestMappingNodeReadsTheClassificationAndTheRefusal asserts node comes from the
-// local.env observation, and refused from the refusal rule firing — and that a
-// run that never classified the machine reports the unknown platform rather
-// than inventing one.
-func TestMappingNodeReadsTheClassificationAndTheRefusal(t *testing.T) {
-	note := "native Windows node (GOOS \"windows\", architecture \"amd64\"): upstream Herdr supports a Windows server as of 0.9.1, but this tool does not provision a native Windows node yet, and WSL2 is the Windows path this tool handles today; nothing was changed"
+// TestMappingNodeReadsTheClassification asserts node comes from the local.env
+// observation — platform and architecture from its own target, note from its
+// verbatim detail — and that a run that never classified the machine reports the
+// unknown platform rather than inventing one.
+//
+// `refused` is part of the payload shape and stays present, but after native
+// Windows became a supported classification no finding can set it: the mapping
+// reports false, and the Windows case below proves a platform string cannot set
+// the field on its own.
+func TestMappingNodeReadsTheClassification(t *testing.T) {
+	note := "native Windows node (GOOS \"windows\", architecture \"amd64\"): the platform can host a supported Herdr server as of 0.9.1; this run does not measure which Herdr version is installed, so a node running an older server cannot host a saved-machine connection; this tool's provisioning slices still do not cover native Windows, and this run detects and reports the environment and changes nothing"
 	windowsResult := resultOf("local.env", probe.ProbeLocal, "windows-native/amd64", time.Millisecond, note,
-		failObservation("platform", "windows-native/amd64", probe.ReasonNodePlatformUnsupported, note))
-	refusal := diagnosis.Diagnosis{Findings: []diagnosis.Finding{{
-		Question: "node.platform",
-		Rule:     "NODE_PLATFORM_REFUSED_NATIVE_WINDOWS",
-		Evidence: []diagnosis.Fact{{Probe: "local.env", State: diagnosis.StateFail}},
-	}}}
+		passObservation("platform", "windows-native/amd64", note))
 
-	payload := report.Build(report.Input{Run: testOptions(), Results: []probe.Result{windowsResult}, Diagnosis: refusal})
+	payload := report.Build(report.Input{Run: testOptions(), Results: []probe.Result{windowsResult}})
 	if payload.Node.Platform != "windows-native" || payload.Node.Arch != "amd64" {
 		t.Errorf("node = %q/%q, want windows-native/amd64 from the classification's own target", payload.Node.Platform, payload.Node.Arch)
 	}
-	if !payload.Node.Refused {
-		t.Error("node.refused = false, want true: the refusal rule fired")
+	if payload.Node.Refused {
+		t.Error("node.refused = true for a supported classification: the field stays in the payload shape, but nothing sets it any more")
 	}
 	if payload.Node.Note != note {
 		t.Errorf("node.note = %q, want the classification's verbatim detail %q", payload.Node.Note, note)
@@ -996,13 +996,11 @@ func TestOnlyProducerIsTheMappingInMapGo(t *testing.T) {
 	}
 }
 
-// TestMappingSpelledLayerConstantsRemainDeclared guards the three names the
-// mapping spells because the layers that own them keep them unexported: the two
-// probe names it must recognise in a result and the refusal rule id it reads
-// from the diagnosis. If a layer renames any of them, the mapping would fall
-// silently onto its absence path (no hub address, no classification, no
-// refusal), so this case fails instead.
-func TestMappingSpelledLayerConstantsRemainDeclared(t *testing.T) {
+// TestMappingSpelledProbeNamesRemainDeclared guards the two probe names the
+// mapping spells because the measurement layer keeps them unexported: if a layer
+// renames one, the mapping would fall silently onto its absence path (no hub
+// address, no classification), so this case fails instead.
+func TestMappingSpelledProbeNamesRemainDeclared(t *testing.T) {
 	var registered []string
 	for _, registration := range probe.Registry() {
 		registered = append(registered, registration.Name)
@@ -1011,9 +1009,6 @@ func TestMappingSpelledLayerConstantsRemainDeclared(t *testing.T) {
 		if !slices.Contains(registered, name) {
 			t.Errorf("the mapping spells the probe name %q, which probe.Registry() no longer declares", name)
 		}
-	}
-	if declared := diagnosis.AllRuleIDs(); !slices.Contains(declared, "NODE_PLATFORM_REFUSED_NATIVE_WINDOWS") {
-		t.Errorf("the mapping spells the refusal rule id NODE_PLATFORM_REFUSED_NATIVE_WINDOWS, which diagnosis.AllRuleIDs() no longer declares: %v", declared)
 	}
 }
 

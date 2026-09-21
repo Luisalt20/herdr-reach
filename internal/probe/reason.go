@@ -99,10 +99,6 @@ const (
 	// ReasonPlatformUnknown is a set of platform signals matching no supported
 	// classification. It is ambiguous and no platform is assumed.
 	ReasonPlatformUnknown ReasonCode = "platform_unknown"
-	// ReasonNodePlatformUnsupported is a node classified as native Windows.
-	// The refusal is this tool's measured negative answer, not a usage error,
-	// and the detail names WSL2 as the Windows path this tool handles today.
-	ReasonNodePlatformUnsupported ReasonCode = "node_platform_unsupported"
 	// ReasonInternalError is an unexpected internal failure, including a fact
 	// the classification table does not recognise and a probe that reported no
 	// observation at all. It is unresolved, never a pass.
@@ -138,7 +134,6 @@ var allReasonCodes = []ReasonCode{
 	ReasonCommandDenied,
 	ReasonInputMissingHub,
 	ReasonPlatformUnknown,
-	ReasonNodePlatformUnsupported,
 	ReasonInternalError,
 }
 

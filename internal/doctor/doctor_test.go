@@ -211,11 +211,12 @@ func containsName(names []string, name string) bool {
 
 // TestExitMatrixOverScriptedSeams is the exit matrix of design §3.4 and R-HR-07:
 // a completed measurement — including a negative answer, a run with no viable
-// transport and a native-Windows refusal — exits 0; a run in which at least one
-// probe was attempted and resolved unresolved exits 1, including the hanging
-// probe the runner had to abandon; and a not-measured measurement alone never
-// moves the code. Every case also asserts that the exit code and the document's
-// run.completeness agree, so the two can never drift apart.
+// transport and a supported native-Windows classification — exits 0; a run in
+// which at least one probe was attempted and resolved unresolved exits 1,
+// including the hanging probe the runner had to abandon; and a not-measured
+// measurement alone never moves the code. Every case also asserts that the exit
+// code and the document's run.completeness agree, so the two can never drift
+// apart.
 func TestExitMatrixOverScriptedSeams(t *testing.T) {
 	const (
 		complete   = "complete"
@@ -248,7 +249,8 @@ func TestExitMatrixOverScriptedSeams(t *testing.T) {
 		// transport at all.
 		wantAllTransportsUnviable bool
 		// wantNodePlatform, wantNodeArch and wantNodeRefused assert the node
-		// classification when the case scripts a machine.
+		// classification when the case scripts a machine; wantNodeRefused pins the
+		// payload field that must stay false now that no platform is refused.
 		wantNodePlatform string
 		wantNodeArch     string
 		wantNodeRefused  bool
@@ -279,7 +281,7 @@ func TestExitMatrixOverScriptedSeams(t *testing.T) {
 			wantAllTransportsUnviable: true,
 		},
 		{
-			name: "a native-Windows refusal is a completed run",
+			name: "a supported native-Windows classification is a completed run",
 			seams: func() probe.Seams {
 				seams := probe.DenyAllSeams()
 				seams.Platform = scriptedPlatform{goos: "windows", arch: "amd64"}
@@ -290,7 +292,7 @@ func TestExitMatrixOverScriptedSeams(t *testing.T) {
 			wantCompleteness: complete,
 			wantNodePlatform: "windows-native",
 			wantNodeArch:     "amd64",
-			wantNodeRefused:  true,
+			wantNodeRefused:  false,
 		},
 		{
 			name: "an attempted probe that resolved unresolved makes the run incomplete",

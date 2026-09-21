@@ -28,11 +28,14 @@ import (
 const diagnosisDocRelativePath = "docs/diagnosis-report.md"
 
 // The positive controls' floors. Each is the table's size at the time this case
-// landed: a parse that found nothing, or only a fragment of a table, falls under
-// its floor and fails loudly instead of passing as an empty set comparison.
+// last changed: a parse that found nothing, or only a fragment of a table, falls
+// under its floor and fails loudly instead of passing as an empty set comparison.
+// The floors moved from 28 and 61 to 27 and 60 when the native-Windows refusal
+// left both closed sets, and they stay positive controls: a floor must still fail
+// a scan that read implausibly few entries.
 const (
-	reasonCodeTableFloor = 28
-	ruleIDTableFloor     = 61
+	reasonCodeTableFloor = 27
+	ruleIDTableFloor     = 60
 )
 
 // readDiagnosisDoc reads the contract document from the repository root, failing

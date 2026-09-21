@@ -29,7 +29,7 @@ The people who own these machines are exactly the people who want agents running
 3. Realize an SSH tunnel needs **a domain of your own** in a Cloudflare account. Buy one, or borrow a subdomain and find out that a DNS record is not enough: you need membership in the account that owns the zone.
 4. Create a named tunnel, add a published application route with service type SSH, create an Access application, create a service token, and hope the policy action is `Service Auth` and not `Emails`.
 5. Discover that `cloudflared access ssh` is reported to ignore service tokens on `2026.6.0` ([#1673](https://github.com/cloudflare/cloudflared/issues/1673), open and single-source), so a headless connection falls into a browser flow that can never complete. Pin the last release the report does not implicate and verify its SHA256 by hand.
-6. Discover that the Windows target this tool handles is WSL2 — Herdr added a Windows server only in 0.9.1, and this tool does not provision a native Windows node yet — then install and harden an `sshd` inside it.
+6. Discover that the Windows target this tool provisions is WSL2 — Herdr added a Windows server only in 0.9.1, and the provisioning slices do not cover a native Windows node yet — then install and harden an `sshd` inside it.
 7. Discover that systemd services do **not** keep a WSL2 instance alive; only children of Microsoft's `/init` do. Build a keepalive.
 8. Discover that `vmIdleTimeout` defaults to 60 seconds and is a second, independent shutdown mechanism.
 9. Discover that Docker Desktop can take the whole VM down with it, and build a self-healing watchdog because you cannot stop it.
@@ -43,8 +43,9 @@ Each numbered step is an evening lost by a competent developer. The list is not 
 > (build 26100) running 0.9.1, `herdr machine add` saved the connection and the hub listed the agents
 > running natively on Windows. The trap was real when it was written. What remains true is this
 > tool's limit: `herdr-reach` does not provision a native Windows node yet, so WSL2 is the Windows
-> path it handles. Known limit: the tool does not measure the node's Herdr version, so a node running
-> Herdr older than 0.9.1 is refused here although it also cannot host a saved-machine connection.
+> path it provisions. Known limit: the tool does not measure the node's Herdr version, so a node
+> running Herdr older than 0.9.1 is classified as supported here although it also cannot host a
+> saved-machine connection.
 
 **This is a barrier that shouldn't exist.**
 
@@ -1047,7 +1048,7 @@ Both are cheap, both are counter-intuitive, and both are now product requirement
 | R-HR-27 | The tool MUST NOT patch, wrap or modify the `herdr` binary, and MUST use only its public CLI surface | P0 |
 | R-HR-28 | `remove` MUST delete only artifacts created by the tool and MUST state explicitly what it does not touch (Cloudflare tunnels, DNS records, domains) | P0 |
 | R-HR-29 | The tool MUST support macOS and Linux as both hub and node, and WSL2 as node | P0 |
-| R-HR-30 | The tool MUST refuse to operate on a node that cannot host a supported Herdr server, and MUST explain why (for example, a platform this tool has no provisioning slice for) | P0 |
+| R-HR-30 | The tool MUST refuse to operate on a node that cannot host a supported Herdr server, and MUST explain why (for example, a platform Herdr has no server for) | P0 |
 
 ### Non-Functional Requirements
 
@@ -1114,7 +1115,7 @@ Both are cheap, both are counter-intuitive, and both are now product requirement
 | `authorized_keys` is owned by another user | Report owner, mode and path. Explain that `StrictModes` ignores the key silently, and offer the fix. |
 | The target user's home is not what `~` expands to (a `sudo su` was used) | Detect the mismatch between the intended user and the file's location, and refuse to report success. This case exists because it happened. |
 | Hub and node architectures differ | Detect and report. Never copy a binary between them, and never assume the release asset is the same. |
-| Node is native Windows | Stop, explain that upstream Herdr supports a Windows server as of 0.9.1 but this tool does not provision a native Windows node yet, and offer WSL2 as the Windows path this tool handles today. |
+| Node is native Windows | Classify the platform as supported — upstream Herdr supports a Windows server as of 0.9.1 — and state in the conclusion that this run does not measure which Herdr version is installed and that the provisioning slices still do not cover native Windows, so WSL2 remains the Windows path this tool provisions today. |
 | Node is WSL2 and the instance has no systemd | Offer to enable it, showing the `wsl.conf` change first, and require a restart to apply. |
 | Docker Desktop is installed on a WSL2 node | Warn that it can terminate the VM, and rely on the watchdog. Do not touch its configuration. |
 | The keepalive is not installed yet | Persistence verification fails, and the tool says so instead of reporting a working tunnel. |
@@ -1145,7 +1146,7 @@ Both are cheap, both are counter-intuitive, and both are now product requirement
 | **Shared hostname service** | Let users without a domain borrow a subdomain from a hosted zone, with per-user scoping | Requires a service to run, and a trust model. A hosted component contradicts the self-hosted thesis until it is unavoidable. |
 | **Additional transports** | `ngrok`, `bore`, `rathole`, WireGuard-based options | The `Transport` interface exists precisely so these are additive. None is needed until a measured network demands one. |
 | **Other orchestrators** | Anything with an SSH-based remote machine concept | V1 is Herdr-only by decision. The `shedr` boundary is the seam, not a promise. |
-| **Windows-native node** | Support a node that is plain Windows | No provisioning slice in this tool. Upstream Herdr supports a Windows server as of 0.9.1, so the missing piece is ours, not upstream's. |
+| **Windows-native provisioning** | Provision and persist the tunnel on a node that is plain Windows | The platform is classified as supported as of Herdr 0.9.1, and the run does not measure the node's Herdr version. No provisioning slice covers native Windows yet, so WSL2 remains the Windows path those slices handle. |
 | **Herdr plugin form** | Expose the hub flow as a Herdr plugin | Attractive for discovery; changes the distribution model. Wait until the CLI is stable. |
 | **Recipe export/import** | Share a solved network recipe with a teammate on the same corporate image | Needs a redaction story for any hostname or token the recipe might touch. |
 | **Continuous reachability monitoring** | Alert when a transport silently degrades | Needs a notification channel, which is a different product. |

@@ -144,9 +144,9 @@ func assertNoProvisioningAction(t *testing.T, detail string) {
 // is read back out of the observation's target through the package's own splitter,
 // so the case proves the value a consumer receives, not the value the probe meant.
 //
-// Native Windows is asserted here only as a classification: that the node is
-// classified and reported with its architecture. Its refusal is its own case
-// below, added with the refusal itself.
+// Native Windows is asserted here as a supported classification, with the same
+// measured shape as Linux and macOS. The version caveat its wording must carry is
+// asserted by its own case below.
 func TestLocalEnvClassifiesEachPlatform(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -279,6 +279,20 @@ func TestLocalEnvUnknownPlatformIsNotGuessed(t *testing.T) {
 			wantSignal: "no architecture",
 		},
 		{
+			// Windows became a supported classification in Herdr 0.9.1, so its
+			// architecture half is guarded exactly as Linux's and macOS's are: a
+			// supported operating system whose architecture was not reported is not
+			// classified as supported.
+			name:       "a native windows node with an unknown architecture",
+			platform:   scriptedPlatform{goos: "windows", arch: "unknown"},
+			wantSignal: "no architecture",
+		},
+		{
+			name:       "a native windows node with an empty architecture",
+			platform:   scriptedPlatform{goos: "windows", arch: ""},
+			wantSignal: "no architecture",
+		},
+		{
 			name:       "no platform seam was injected",
 			platform:   nil,
 			wantSignal: "no platform seam",
@@ -318,91 +332,77 @@ func TestLocalEnvUnknownPlatformIsNotGuessed(t *testing.T) {
 	}
 }
 
-// TestLocalEnvRefusesNativeWindows is R-HR-30: a node classified as native
-// Windows is refused, and the refusal explains itself by naming WSL2 as the
-// Windows path this tool handles today and by stating that upstream Herdr
-// supports a Windows server as of 0.9.1. The refusal is the measurement's own
-// negative answer — the operating system answered, and the answer is that this
-// tool does not provision this node — so it is a measured fail with the platform
-// refusal's reason code, never a usage error and never an internal one.
+// TestLocalEnvClassifiesNativeWindowsAsSupported is R-HR-30 applied in the
+// direction that is easy to forget: a pass has to be as earned as a failure.
+// Native Windows is classified the way Linux and macOS are — a measured,
+// supported classification — because upstream Herdr supports a Windows server as
+// of 0.9.1, measured 2026-09-20 when `machine add` saved a Windows 11 24H2 host
+// and the hub listed the agents running natively on it.
 //
-// The case also asserts the two things the refusal must not do: present a
-// transport as viable, and claim any change. A refused node has no viable
-// transport, and this slice changes nothing on any node.
-func TestLocalEnvRefusesNativeWindows(t *testing.T) {
-	cases := []struct {
-		name     string
-		platform scriptedPlatform
-		wantArch string
-	}{
-		{
-			name:     "a measured architecture",
-			platform: scriptedPlatform{goos: "windows", arch: "amd64"},
-			wantArch: "amd64",
-		},
-		{
-			// The refusal rests on the operating system, so an unreported
-			// architecture neither weakens it nor fabricates one.
-			name:     "an architecture the seam did not report",
-			platform: scriptedPlatform{goos: "windows", arch: "unknown"},
-			wantArch: "unknown",
-		},
+// The caveat travels with the classification, in the classification's own
+// wording: the tool does not measure the node's Herdr version, so a node running
+// a server older than 0.9.1 is classified supported here while being unable to
+// host a saved-machine connection. The wording also keeps the boundary that
+// remains: the provisioning slices still do not cover native Windows.
+//
+// The case also asserts the two things the classification must not do: present a
+// transport as viable, and claim any change. Detection is not provisioning, and
+// this slice changes nothing on any node.
+func TestLocalEnvClassifiesNativeWindowsAsSupported(t *testing.T) {
+	result := runLocalEnv(t, scriptedPlatform{goos: "windows", arch: "amd64"})
+
+	if len(result.Observations) != 1 {
+		t.Fatalf("the classification carries %d observations, want 1", len(result.Observations))
+	}
+	observation := result.Observations[0]
+	if observation.Resolution != probe.Measured {
+		t.Fatalf("resolution = %q, want %q: the operating system answered", observation.Resolution, probe.Measured)
+	}
+	if observation.Verdict != probe.Pass {
+		t.Fatalf("verdict = %q, want %q: a platform Herdr supports is not a negative answer", observation.Verdict, probe.Pass)
+	}
+	if observation.Reason != probe.ReasonOK {
+		t.Fatalf("reason = %q, want %q", observation.Reason, probe.ReasonOK)
+	}
+	if result.Verdict != probe.Pass || result.Reason != probe.ReasonOK {
+		t.Fatalf("result = (%q, %q), want (%q, %q)", result.Verdict, result.Reason, probe.Pass, probe.ReasonOK)
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := runLocalEnv(t, tc.platform)
-
-			if len(result.Observations) != 1 {
-				t.Fatalf("the refusal carries %d observations, want 1", len(result.Observations))
-			}
-			observation := result.Observations[0]
-			if observation.Resolution != probe.Measured {
-				t.Fatalf("resolution = %q, want %q: the operating system answered", observation.Resolution, probe.Measured)
-			}
-			if observation.Verdict != probe.Fail {
-				t.Fatalf("verdict = %q, want %q", observation.Verdict, probe.Fail)
-			}
-			if observation.Reason != probe.ReasonNodePlatformUnsupported {
-				t.Fatalf("reason = %q, want %q", observation.Reason, probe.ReasonNodePlatformUnsupported)
-			}
-			if result.Verdict != probe.Fail || result.Reason != probe.ReasonNodePlatformUnsupported {
-				t.Fatalf("result = (%q, %q), want (%q, %q)", result.Verdict, result.Reason, probe.Fail, probe.ReasonNodePlatformUnsupported)
-			}
-
-			platform, arch, ok := probe.SplitNodePlatformIdentity(observation.Target)
-			if !ok {
-				t.Fatalf("observation target %q is not a platform identity", observation.Target)
-			}
-			if platform != probe.NodePlatformWindowsNative || arch != tc.wantArch {
-				t.Fatalf("refused identity = (%q, %q), want (%q, %q)", platform, arch, probe.NodePlatformWindowsNative, tc.wantArch)
-			}
-
-			if !strings.Contains(observation.Detail, "WSL2") || !strings.Contains(observation.Detail, "this tool handles today") {
-				t.Errorf("the refusal does not name WSL2 as the Windows path this tool handles today: %q", observation.Detail)
-			}
-			if !strings.Contains(observation.Detail, "0.9.1") {
-				t.Errorf("the refusal does not state that upstream Herdr supports a Windows server as of 0.9.1: %q", observation.Detail)
-			}
-			if !strings.Contains(observation.Detail, "does not provision a native Windows node yet") {
-				t.Errorf("the refusal does not state that this tool does not provision a native Windows node yet: %q", observation.Detail)
-			}
-			for _, stale := range []string{"WSL2 is the supported path", "cannot host a supported"} {
-				if strings.Contains(observation.Detail, stale) {
-					t.Errorf("the refusal still carries the stale premise %q: %q", stale, observation.Detail)
-				}
-			}
-			if strings.Contains(observation.Detail, "viable") {
-				t.Errorf("the refusal presents a transport as viable: %q", observation.Detail)
-			}
-			for _, claim := range []string{"applied", "enforced"} {
-				if strings.Contains(observation.Detail, claim) {
-					t.Errorf("the refusal claims a change was %s: %q", claim, observation.Detail)
-				}
-			}
-			assertNoProvisioningAction(t, observation.Detail)
-		})
+	platform, arch, ok := probe.SplitNodePlatformIdentity(observation.Target)
+	if !ok {
+		t.Fatalf("observation target %q is not a platform identity", observation.Target)
 	}
+	if platform != probe.NodePlatformWindowsNative || arch != "amd64" {
+		t.Fatalf("classification identity = (%q, %q), want (%q, %q)", platform, arch, probe.NodePlatformWindowsNative, "amd64")
+	}
+
+	// The version caveat must be in the classification's own wording, not only in
+	// the docs: the conclusion is what a reader and an agent act on.
+	for _, want := range []string{
+		"can host a supported Herdr server as of 0.9.1",
+		"does not measure which Herdr version is installed",
+		"older server cannot host a saved-machine connection",
+		"provisioning slices still do not cover native Windows",
+		"changes nothing",
+	} {
+		if !strings.Contains(observation.Detail, want) {
+			t.Errorf("the classification does not carry %q: %q", want, observation.Detail)
+		}
+	}
+	for _, stale := range []string{"unsupported", "refused", "WSL2 is the supported path", "cannot host a supported Herdr server"} {
+		if strings.Contains(observation.Detail, stale) {
+			t.Errorf("the classification still carries the stale claim %q: %q", stale, observation.Detail)
+		}
+	}
+	if strings.Contains(observation.Detail, "viable") {
+		t.Errorf("the classification presents a transport as viable: %q", observation.Detail)
+	}
+	for _, claim := range []string{"applied", "enforced"} {
+		if strings.Contains(observation.Detail, claim) {
+			t.Errorf("the classification claims a change was %s: %q", claim, observation.Detail)
+		}
+	}
+	assertNoProvisioningAction(t, observation.Detail)
 }
 
 // TestLocalEnvWSL2TextIsDocumentedSemanticsOnly is RG-4 and design §5.2's

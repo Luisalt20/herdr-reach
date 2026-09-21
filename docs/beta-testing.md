@@ -99,10 +99,10 @@ herdr-reach doctor --hub <hub address>
   no command runner, so it reports that question as `not measured` instead of reading silence as
   "configured";
 - what platform this is and whether the tool supports it. Native Windows as a node is measured and
-  refused by this tool: upstream Herdr supports a Windows server as of 0.9.1, but this tool does
-  not provision a native Windows node yet, so WSL2 is the Windows path it handles today. The tool
-  does not measure the node's Herdr version, so a node running an older server is refused here
-  although it also cannot host a saved-machine connection.
+  classified as supported: upstream Herdr supports a Windows server as of 0.9.1. The tool does not
+  measure the node's Herdr version, so a node running an older server is classified supported here
+  although it also cannot host a saved-machine connection, and the provisioning slices still do not
+  cover native Windows, so WSL2 is the Windows path this tool provisions today.
 
 ### On the hub
 
@@ -214,7 +214,7 @@ measurement named as a coverage gap.
 
 | Code | Meaning |
 |:---|:---|
-| `0` | A measurement completed — including "blocked" answers and a refused native-Windows node. Those are results, not failures of the run. |
+| `0` | A measurement completed — including "blocked" answers. Those are results, not failures of the run. |
 | `1` | The run is incomplete: at least one attempted measurement produced no answer. Since 2026-09-20 this includes a verified chain whose publisher is outside the declared expected set — see the section above. |
 | `2` | Usage or internal error — a bad flag, an unusable address, a failed write. No diagnosis is presented as completed, and standard output stays empty. |
 

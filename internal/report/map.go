@@ -21,17 +21,14 @@ import (
 
 // The names this mapping must know by name rather than by value.
 //
-// The measurement and reasoning layers declare the hub probe's name, the local
-// environment probe's name and the native-Windows refusal rule's id as
-// unexported constants, so the mapping spells them here, exactly as the
-// transport adapters spell the rule ids they switch on. The suite asserts each
-// is still declared — the two probes among probe.Registry()'s names, the refusal
-// among diagnosis.AllRuleIDs() — so a rename cannot silently strand the mapping
-// on its absence path.
+// The measurement layer declares the hub probe's name and the local environment
+// probe's name as unexported constants, so the mapping spells them here, exactly
+// as the transport adapters spell the rule ids they switch on. The suite asserts
+// each is still declared — both among probe.Registry()'s names — so a rename
+// cannot silently strand the mapping on its absence path.
 const (
 	hubProbeName      = "egress.hub.direct"
 	localEnvProbeName = "local.env"
-	refusalRuleID     = "NODE_PLATFORM_REFUSED_NATIVE_WINDOWS"
 )
 
 // nodeAbsentIdentity is the classification identity the payload reports when the
@@ -240,11 +237,17 @@ func openQuestions(list []diagnosis.OpenQuestion) []OpenQuestionRow {
 // node reads the run's classification. The platform and architecture come from
 // the local.env observation's own target, split by the probe's own inverse so
 // the two halves are the values the probe measured rather than a second parse of
-// its format; refused comes from the native-Windows refusal rule firing; and the
-// note is the classification's own verbatim detail. A run that never classified
-// the machine reports the unknown identity: no platform is invented.
+// its format, and the note is the classification's own verbatim detail. A run
+// that never classified the machine reports the unknown identity: no platform is
+// invented.
+//
+// `NodeInfo.Refused` stays in the payload shape for compatibility, and it is
+// always false: the reasoning layer no longer declares a refusal rule, because
+// native Windows is a supported classification as of Herdr 0.9.1. Nothing here
+// reads the platform string to set it — a platform name is a classification, not
+// a refusal.
 func node(in Input) NodeInfo {
-	info := NodeInfo{Refused: refusalFired(in.Diagnosis.Findings)}
+	info := NodeInfo{}
 	platform, arch, _ := probe.SplitNodePlatformIdentity(nodeAbsentIdentity)
 	info.Platform, info.Arch = string(platform), arch
 
@@ -270,19 +273,6 @@ func classificationObservation(results []probe.Result) (probe.Observation, bool)
 		return result.Observations[0], true
 	}
 	return probe.Observation{}, false
-}
-
-// refusalFired reports whether the native-Windows refusal rule fired. It is read
-// from the rule id the diagnosis quotes and never from the platform string or
-// the conclusion prose: the firing is the reasoning layer's decision, and the
-// mapping only reports it.
-func refusalFired(list []diagnosis.Finding) bool {
-	for _, finding := range list {
-		if finding.Rule == refusalRuleID {
-			return true
-		}
-	}
-	return false
 }
 
 // transports copies the paired rows sorted by name. The sort is stable and runs

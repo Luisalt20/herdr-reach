@@ -126,7 +126,6 @@ var documentedReasonCodes = []probe.ReasonCode{
 	"command_denied",
 	"input_missing_hub",
 	"platform_unknown",
-	"node_platform_unsupported",
 	"internal_error",
 }
 
@@ -160,11 +159,12 @@ func TestReasonCodeSetIsClosed(t *testing.T) {
 	}
 
 	// The count is pinned to the enumeration rather than to the design heading:
-	// design §3.5's heading says "(27)" while the set it prints contains 28
-	// distinct codes (`ok` is the only code two §5.1 rows share). The
-	// enumeration wins, because every one of the 28 is needed by a §5.1 row.
-	if len(documentedReasonCodes) != 28 {
-		t.Errorf("documented set has %d codes, want the 28 enumerated in design §3.5", len(documentedReasonCodes))
+	// design §3.5 records the set as it stood when native Windows was a refusal
+	// (28 codes). Removing the platform-refusal code when native Windows became a
+	// supported classification leaves the 27 distinct codes below, and `ok`
+	// remains the only code two §5.1 rows share.
+	if len(documentedReasonCodes) != 27 {
+		t.Errorf("documented set has %d codes, want the 27 enumerated in this slice", len(documentedReasonCodes))
 	}
 
 	// The closed set is a copy: a caller cannot reorder or shrink the contract.

@@ -15,7 +15,7 @@ row here — or a row without a constant — fails the suite.
 
 | Code | Meaning | Evidence that decides it |
 | --- | --- | --- |
-| `0` | Measurement completed — including "no transport viable" and a native-Windows refusal | every probe resolved (no unresolved observation) |
+| `0` | Measurement completed — including "no transport viable" | every probe resolved (no unresolved observation) |
 | `1` | Run incomplete — at least one probe was attempted and resolved unresolved | `run.completeness == "incomplete"` |
 | `2` | Usage or internal error — no diagnosis is presented as completed; standard output stays empty | bad flag or flag value, unknown `--target` probe name, unusable `--hub` address, JSON write failure |
 
@@ -114,7 +114,6 @@ stays in `detail`. The set is closed.
 | `command_denied` | A command seam denied the execution: the attempt was not made, and the reason names the capability. |
 | `input_missing_hub` | A run with no hub address supplied: the attempt was not made for lack of input, which is never a blocked hub. |
 | `platform_unknown` | A set of platform signals matching no supported classification: ambiguous, and no platform is assumed. |
-| `node_platform_unsupported` | A node classified as native Windows. The refusal is this tool's measured negative answer, not a usage error, and `detail` names WSL2 as the Windows path this tool handles today and states that upstream Herdr supports a Windows server as of 0.9.1. |
 | `internal_error` | An unexpected internal failure, including a fact the classification table does not recognise and a probe that reported no observation at all. Unresolved, never a pass. |
 
 **Adding or renaming a reason code is a contract change.** The payload, the human projection and
@@ -199,9 +198,8 @@ reader can quote which rule fired.
 | `SSHD_ABSENT` | `local.sshd` | No sshd binary is present at the documented path, reached only through the binary observation's own label, so a stopped service cannot produce it. It is not produced on a native-Windows node: the documented path is a POSIX path, so the binary check is not measured there and no absence is claimed. |
 | `SSHD_EFFECTIVE_CONFIG_NOT_MEASURED` | `local.sshd` | The configuration in force was not measured: no claim is made about what configuration is in force. This is the default live case. |
 | `SSHD_PRESENT_CONFIGURED` | `local.sshd` | The sshd binary is present and the configuration in force was measured and agrees with the written one. |
-| `NODE_PLATFORM_REFUSED_NATIVE_WINDOWS` | `node.platform` | The node is native Windows, which upstream Herdr supports as a server but this tool does not provision as a node yet; the conclusion names WSL2 as the Windows path this tool handles today and decides no transport. |
 | `NODE_PLATFORM_UNKNOWN` | `node.platform` | The platform signals matched no supported classification: no platform is assumed. |
-| `NODE_PLATFORM_SUPPORTED` | `node.platform` | The classification and architecture measured for this node; a detection, not a viability decision. |
+| `NODE_PLATFORM_SUPPORTED` | `node.platform` | The classification and architecture measured for this node; a detection, not a viability decision. For native Windows the support is version-dependent: the platform can host a supported Herdr server as of 0.9.1, and the run does not measure which Herdr version is installed. |
 
 **Adding or renaming a rule id is a contract change.** The rule-id set is the complete vocabulary
 of the rule table: every registered probe in every observable state has exactly one derived id, and

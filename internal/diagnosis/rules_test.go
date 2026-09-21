@@ -374,7 +374,6 @@ func TestRuleIDsCoverEveryProbeState(t *testing.T) {
 		"SSHD_ABSENT",
 		"SSHD_EFFECTIVE_CONFIG_NOT_MEASURED",
 		"SSHD_PRESENT_CONFIGURED",
-		"NODE_PLATFORM_REFUSED_NATIVE_WINDOWS",
 		"NODE_PLATFORM_UNKNOWN",
 		"NODE_PLATFORM_SUPPORTED",
 	}
@@ -1923,9 +1922,6 @@ func TestSSHDGroupOneCasePerID(t *testing.T) {
 func nodePlatformObservation(t *testing.T, state diagnosis.State) probe.Observation {
 	t.Helper()
 	switch state {
-	case diagnosis.StateFail:
-		return observation("platform", "windows-native/x86_64", probe.Measured, probe.Fail, probe.ReasonNodePlatformUnsupported,
-			"native Windows node (GOOS \"windows\", architecture \"x86_64\"): upstream Herdr supports a Windows server as of 0.9.1, but this tool does not provision a native Windows node yet, and WSL2 is the Windows path this tool handles today; nothing was changed")
 	case diagnosis.StateUnresolved:
 		return observation("platform", "unknown/unknown", probe.Unresolved, probe.Indeterminate, probe.ReasonPlatformUnknown,
 			"the platform signals (GOOS \"plan9\", architecture \"unknown\") match no supported classification (linux, macOS, wsl2 or native Windows); no platform is assumed and no default is guessed")
@@ -1937,24 +1933,33 @@ func nodePlatformObservation(t *testing.T, state diagnosis.State) probe.Observat
 	return probe.Observation{}
 }
 
+// windowsPlatformObservation is the native-Windows pass `local.env` reports after Herdr 0.9.1: a
+// measured, supported classification whose wording carries the version caveat.
+func windowsPlatformObservation() probe.Observation {
+	return observation("platform", "windows-native/x86_64", probe.Measured, probe.Pass, probe.ReasonOK,
+		"native Windows node (GOOS \"windows\", architecture \"x86_64\"): the platform can host a supported Herdr server as of 0.9.1; this run does not measure which Herdr version is installed, so a node running an older server cannot host a saved-machine connection; this tool's provisioning slices still do not cover native Windows, and this run detects and reports the environment and changes nothing")
+}
+
 // TestNodePlatformOneCasePerID is design §5.2's per-rule case for the `node.platform` group: one
 // case per id, each asserting that the classification `local.env` measured decides the conclusion
 // and that the conclusion quotes the classification it rests on.
 //
-// The refusal names WSL2 as the Windows path this tool handles today and decides nothing about
-// transport; the unknown case assumes no platform; the supported case quotes the classification and
-// the architecture the observation's target carries.
+// The unknown case assumes no platform; the supported case quotes the classification and the
+// architecture the observation's target carries; and the native-Windows case asserts the version
+// caveat travels in the conclusion's own sentence, because the conclusion is what a reader and an
+// agent act on rather than the docs.
 //
 // Each `wantContains` list also pins at least one phrase that appears only in the conclusion's own
 // sentence. The fixture detail and the conclusion deliberately share wording (the conclusion quotes
 // the observation), so a list built only from shared phrases cannot tell a dropped conclusion claim
-// from a quoted one — the refusal case's own sentence, for instance, must be asserted through
-// "provisioning scope" and "No transport is decided here", which the detail never carries.
+// from a quoted one — the native-Windows case's own sentence, for instance, must be asserted
+// through "a node running Herdr older than 0.9.1 cannot host a saved-machine connection", which the
+// detail never carries.
 func TestNodePlatformOneCasePerID(t *testing.T) {
 	cases := []struct {
 		name string
-		// state is the state `local.env` reports, the group's whole evidence.
-		state diagnosis.State
+		// observation is the one `local.env` observation the group's whole evidence is.
+		observation probe.Observation
 		// want is the rule id the run must fire.
 		want string
 		// wantContains lists phrases the conclusion must carry.
@@ -1963,31 +1968,36 @@ func TestNodePlatformOneCasePerID(t *testing.T) {
 		wantAbsent []string
 	}{
 		{
-			name:         "native Windows is a measured refusal that names the tool's own scope and the two paths",
-			state:        diagnosis.StateFail,
-			want:         "NODE_PLATFORM_REFUSED_NATIVE_WINDOWS",
-			wantContains: []string{"measured refusal", "native Windows", "WSL2", "0.9.1", "provisioning scope", "Two paths exist", "by hand", "neither provisions nor verifies", "nothing was changed", "transport layer", "No transport is decided here"},
-			wantAbsent:   []string{"node platform is supported", "cannot host a supported node", "WSL2 is the supported path"},
-		},
-		{
 			name:         "signals matching no supported classification assume no platform",
-			state:        diagnosis.StateUnresolved,
+			observation:  nodePlatformObservation(t, diagnosis.StateUnresolved),
 			want:         "NODE_PLATFORM_UNKNOWN",
 			wantContains: []string{"platform is unknown", "platform_unknown", "No platform is assumed", "unknown/unknown"},
 			wantAbsent:   []string{"node platform is supported"},
 		},
 		{
 			name:         "a supported classification quotes the classification and the architecture",
-			state:        diagnosis.StatePass,
+			observation:  nodePlatformObservation(t, diagnosis.StatePass),
 			want:         "NODE_PLATFORM_SUPPORTED",
 			wantContains: []string{"node platform is supported", "linux", "x86_64", "changes nothing", "it changes nothing"},
-			wantAbsent:   []string{"measured refusal"},
+			wantAbsent:   []string{"measured refusal", "version-dependent"},
+		},
+		{
+			name:        "native Windows is a supported classification that carries the version caveat",
+			observation: windowsPlatformObservation(),
+			want:        "NODE_PLATFORM_SUPPORTED",
+			wantContains: []string{
+				"node platform is supported", "windows-native", "x86_64",
+				"can host a supported Herdr server as of 0.9.1",
+				"a node running Herdr older than 0.9.1 cannot host a saved-machine connection",
+				"changes nothing",
+			},
+			wantAbsent: []string{"measured refusal", "unsupported", "WSL2 is the supported path"},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			run := []probe.Result{result("local.env", probe.ProbeLocal, nodePlatformObservation(t, tc.state))}
+			run := []probe.Result{result("local.env", probe.ProbeLocal, tc.observation)}
 			got := diagnosis.Diagnose(run)
 			finding := findingFor(t, got, "node.platform")
 			if finding.Rule != tc.want {
@@ -2346,7 +2356,7 @@ func TestRemainingGroupsOpenQuestionNeededStates(t *testing.T) {
 	}
 
 	platform := openQuestionFor(t, got, "node.platform")
-	wantPlatform := []string{"local.env FAIL", "local.env UNRESOLVED", "local.env PASS"}
+	wantPlatform := []string{"local.env UNRESOLVED", "local.env PASS"}
 	if !reflect.DeepEqual(platform.NeededStates, wantPlatform) {
 		t.Errorf("the open question for %q needs %v, want %v", platform.Question, platform.NeededStates, wantPlatform)
 	}

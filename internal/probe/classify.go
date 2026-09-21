@@ -142,12 +142,9 @@ const (
 	// supported classification.
 	ObsPlatformSignalsUnknown Observable = "platform_signals_unknown"
 	// ObsPlatformSignalsClassified is a set of platform signals matching one of
-	// the supported classifications: Linux, macOS or WSL2 as a node, or native
-	// Windows (which is classified in order to be refused).
+	// the supported classifications: Linux, macOS, WSL2 or native Windows as a
+	// node.
 	ObsPlatformSignalsClassified Observable = "platform_signals_classified"
-	// ObsNodePlatformUnsupported is a node classified as native Windows, which
-	// this tool refuses to operate on.
-	ObsNodePlatformUnsupported Observable = "node_platform_unsupported"
 	// ObsInternalFailure is a fact no row of the table recognises.
 	ObsInternalFailure Observable = "internal_failure"
 )
@@ -307,9 +304,8 @@ var classificationTable = []classificationRow{
 	{PurposeSSHDConfiguration, ObsCommandDenied, Classification{NotMeasured, Indeterminate, ReasonCommandDenied}},
 
 	// This machine: signals matching one of the supported classifications are a
-	// measured positive, signals matching none are unresolved, and a classified
-	// native Windows node is this tool's measured negative answer rather than an
-	// error.
+	// measured positive — Linux, macOS, WSL2 and native Windows are all classified
+	// as supported as of Herdr 0.9.1 — and signals matching none are unresolved.
 	//
 	// The classified row is the positive counterpart design §5.1 does not print:
 	// §5.3 requires `local.env` to pass with a healthy environment, and a measured
@@ -317,7 +313,6 @@ var classificationTable = []classificationRow{
 	// with the rest of the table, rather than by the probe that first needs it.
 	{PurposePlatformClassification, ObsPlatformSignalsClassified, Classification{Measured, Pass, ReasonOK}},
 	{PurposePlatformClassification, ObsPlatformSignalsUnknown, Classification{Unresolved, Indeterminate, ReasonPlatformUnknown}},
-	{PurposePlatformClassification, ObsNodePlatformUnsupported, Classification{Measured, Fail, ReasonNodePlatformUnsupported}},
 
 	// An internal failure the probe itself noticed is a fact like any other:
 	// it is universal because a failure is not an answer to any declared
