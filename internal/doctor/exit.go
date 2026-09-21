@@ -15,8 +15,8 @@ package doctor
 const (
 	// ExitOK is the code of a completed measurement: every probe either measured
 	// its declared question or was never attempted, and a negative answer — no
-	// viable transport, a refused native-Windows node — is still a completed
-	// measurement. Evidence: the built payload's run.completeness is
+	// viable transport, a hub address that refused the connection — is still a
+	// completed measurement. Evidence: the built payload's run.completeness is
 	// report.CompletenessComplete, so the code is read from the payload rather
 	// than recomputed beside it.
 	ExitOK = 0

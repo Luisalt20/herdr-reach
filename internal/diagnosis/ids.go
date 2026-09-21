@@ -175,11 +175,6 @@ const (
 	// the configuration in force was measured and agrees with the written one.
 	ruleSSHDPresentConfigured = "SSHD_PRESENT_CONFIGURED"
 
-	// ruleNodePlatformRefusedNativeWindows is the `node.platform` refusal conclusion: `local.env`
-	// classified this machine as native Windows, which upstream Herdr supports as a server but this
-	// tool does not provision as a node yet. The conclusion names WSL2 as the Windows path this tool
-	// handles today and decides no transport.
-	ruleNodePlatformRefusedNativeWindows = "NODE_PLATFORM_REFUSED_NATIVE_WINDOWS"
 	// ruleNodePlatformUnknown is the `node.platform` absence conclusion: the signals matched no
 	// supported classification, so no platform is assumed.
 	ruleNodePlatformUnknown = "NODE_PLATFORM_UNKNOWN"
@@ -210,7 +205,6 @@ var handNamedRuleIDs = []string{
 	ruleSSHDAbsent,
 	ruleSSHDEffectiveConfigNotMeasured,
 	ruleSSHDPresentConfigured,
-	ruleNodePlatformRefusedNativeWindows,
 	ruleNodePlatformUnknown,
 	ruleNodePlatformSupported,
 }

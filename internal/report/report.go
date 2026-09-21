@@ -167,9 +167,14 @@ type OpenQuestionRow struct {
 }
 
 // NodeInfo is the payload's `node` level: the classification this machine was
-// placed in, its architecture, whether the classification is a refusal, and the
-// classification's own verbatim detail. A run that never classified the machine
-// reports the unknown platform rather than inventing one.
+// placed in, its architecture, the refusal field the payload keeps for
+// compatibility, and the classification's own verbatim detail. A run that never
+// classified the machine reports the unknown platform rather than inventing one.
+//
+// Refused is always false: native Windows is a supported classification as of
+// Herdr 0.9.1, so no platform is refused and no finding can set the field. It
+// stays in the payload shape so a consumer written against `schema_version` "1"
+// still finds the key.
 type NodeInfo struct {
 	Platform string `json:"platform"`
 	Arch     string `json:"arch"`
@@ -220,8 +225,9 @@ type Input struct {
 	// declare is not part of the run's contract and is ignored.
 	Results []probe.Result
 	// Diagnosis is the reasoning layer's output for the same run: findings and
-	// open questions are echoed in their own order, and the native-Windows
-	// refusal rule's firing is what sets node.refused.
+	// open questions are echoed in their own order. It no longer sets
+	// node.refused: native Windows is a supported classification as of Herdr
+	// 0.9.1, so no finding carries a refusal.
 	Diagnosis diagnosis.Diagnosis
 	// Transports pairs every evaluated feasibility with the name of the transport
 	// it belongs to, so a name cannot silently misalign with its viability.

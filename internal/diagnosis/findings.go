@@ -222,10 +222,11 @@ func factDetail(observation probe.Observation) string {
 // two configurations the probe measured, an absence as the absence the probe reported, and the
 // positive conclusion only states what was found and measured. The node wording repeats the
 // semantics the classification itself carries — upstream Herdr's Windows server as of 0.9.1, this
-// tool's missing provisioning slice, WSL2 as the Windows path it handles today, detection and no
-// change — names the two paths a reader can take without deciding either, and decides no
-// transport: whether any transport can reach the hub is the transport layer's decision, and no
-// group text here claims otherwise. The two `tls.*`
+// tool's missing provisioning slices, detection and no change — and carries the version caveat in
+// the supported conclusion's own sentence, because native Windows is classified supported while
+// this run does not measure which Herdr version is installed. It decides no transport: whether any
+// transport can reach the hub is the transport layer's decision, and no group text here claims
+// otherwise. The two `tls.*`
 // questions have no hand-named wording because this slice restated them to the derived fact ids,
 // whose wording is the fact wording above, and `NODE_WSL2_SYSTEMD_ABSENT` has no wording here
 // because this slice does not implement it.
@@ -274,8 +275,6 @@ func namedConclusionText(id string, matched []Fact) string {
 		return sshdEffectiveConfigNotMeasuredText(matched)
 	case ruleSSHDPresentConfigured:
 		return sshdPresentConfiguredText(matched)
-	case ruleNodePlatformRefusedNativeWindows:
-		return nodePlatformRefusedNativeWindowsText(matched)
 	case ruleNodePlatformUnknown:
 		return nodePlatformUnknownText(matched)
 	case ruleNodePlatformSupported:
@@ -720,26 +719,6 @@ func sshdPresentConfiguredText(matched []Fact) string {
 		describeFact(binary), describeFact(config))
 }
 
-// nodePlatformRefusedNativeWindowsText is the wording of `NODE_PLATFORM_REFUSED_NATIVE_WINDOWS`: the
-// classification measured native Windows, which upstream Herdr supports as a server but this tool
-// does not provision as a node yet (R-HR-30).
-//
-// It quotes the classification and its own detail, states that the refusal is this tool's
-// provisioning scope rather than a limit of Herdr, and names the two paths a reader can take
-// without deciding either: WSL2 on this machine, which this tool handles today, or a native Windows
-// Herdr server added to the hub by hand, which this tool neither provisions nor verifies. It also
-// states two boundaries: nothing was changed, and no transport is decided here. Whether a transport
-// can reach the hub is the transport layer's question; this package derives no viability, and a
-// refusal of the platform is not a verdict about any candidate.
-func nodePlatformRefusedNativeWindowsText(matched []Fact) string {
-	classification, ok := firstFact(matched, "local.env", StateFail)
-	if !ok {
-		return ""
-	}
-	return fmt.Sprintf("the node classification is a measured refusal: %s. Upstream Herdr supports a Windows server as of 0.9.1, so the refusal is this tool's provisioning scope rather than a limit of Herdr. Two paths exist and this run decides neither: WSL2 on this machine, which is the Windows path this tool handles today, or a native Windows Herdr server added to the hub by hand, which this tool neither provisions nor verifies; nothing was changed. No transport is decided here: whether any transport can reach the hub is the transport layer's decision.",
-		describeFact(classification))
-}
-
 // nodePlatformUnknownText is the wording of `NODE_PLATFORM_UNKNOWN`: the signals matched no
 // supported classification, so no platform is assumed.
 //
@@ -763,12 +742,22 @@ func nodePlatformUnknownText(matched []Fact) string {
 // the constructor the probe used — so the two halves are quoted as the values they are rather than
 // as a string. A target the splitter does not recognise is quoted verbatim rather than guessed at.
 // The sentence states the boundary: this is a detection, and nothing was changed.
+//
+// Native Windows is supported as of Herdr 0.9.1, and the probe does not measure the node's Herdr
+// version, so the conclusion carries the caveat in its own sentence: the platform can host a
+// supported server as of 0.9.1, and a node running an older server cannot host a saved-machine
+// connection. The caveat is stated here as well as in the classification's detail because the
+// conclusion is what a reader and an agent act on, and a pass must be as earned as a failure.
 func nodePlatformSupportedText(matched []Fact) string {
 	classification, ok := firstFact(matched, "local.env", StatePass)
 	if !ok {
 		return ""
 	}
-	if platform, arch, ok := probe.SplitNodePlatformIdentity(classification.Observation.Target); ok {
+	if platform, arch, split := probe.SplitNodePlatformIdentity(classification.Observation.Target); split {
+		if platform == probe.NodePlatformWindowsNative {
+			return fmt.Sprintf("the node platform is supported: classification %q, architecture %q — %s. This classification measures the platform and not the installed Herdr version: a node running Herdr older than 0.9.1 cannot host a saved-machine connection. This run detects and reports the environment; it changes nothing.",
+				platform, arch, describeFact(classification))
+		}
 		return fmt.Sprintf("the node platform is supported: classification %q, architecture %q — %s. This run detects and reports the environment; it changes nothing.",
 			platform, arch, describeFact(classification))
 	}

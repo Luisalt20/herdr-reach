@@ -105,8 +105,8 @@ Having picked a transport, an ordinary setup still runs into all of this:
 - **`cloudflared` `2026.6.0` is reported to ignore service tokens** on `access ssh`
   ([#1673](https://github.com/cloudflare/cloudflared/issues/1673) &mdash; open, unlabelled and
   single-source), so a headless connection falls into a browser flow that can never complete.
-- **Herdr added a Windows server only in 0.9.1**, and this tool does not provision a native Windows
-  node yet &mdash; so the Windows path it handles is WSL2, and systemd services **do not** keep a
+- **Herdr added Windows servers in 0.9.1**, and this tool does not provision a native Windows node
+  yet &mdash; so the Windows path it provisions is WSL2, and systemd services **do not** keep a
   WSL2 instance alive. Only children of Microsoft's `/init` do.
 - **`vmIdleTimeout` defaults to 60 seconds** and is a second, independent shutdown.
 - **Docker Desktop can take the whole VM down** when it quits, and you cannot stop it.
@@ -121,11 +121,11 @@ their fault and is not documented anywhere in one place.
 > 26100) running 0.9.1, `herdr machine add` saved the connection and the hub listed the agents
 > running natively on Windows. The trap was real when it was written; the premise changed underneath
 > it. What remains true is this tool's limit: `herdr-reach` does not provision a native Windows node
-> yet, so WSL2 stays the Windows path it handles.
+> yet, so WSL2 stays the Windows path it provisions.
 >
 > **Known limit.** The tool does not measure the node's Herdr version, so a node running Herdr older
-> than 0.9.1 is refused here although it also cannot host a saved-machine connection. Telling those
-> two cases apart needs a version measurement this tool does not make yet.
+> than 0.9.1 is classified as supported here although it also cannot host a saved-machine connection.
+> Telling those two cases apart needs a version measurement this tool does not make yet.
 
 <div align="right"><a href="#top">Back to top</a></div>
 
@@ -168,10 +168,10 @@ kills it. Verified by forcing a `wsl --shutdown`: **back in under 20 seconds, un
 Most of this problem is a network problem. The part that is genuinely undocumented is what
 happens on Windows.
 
-Herdr supports a Windows server as of 0.9.1, but this tool does not provision a native Windows
-node yet, so the Windows target it handles on a work laptop is WSL2. And WSL2 does not behave
-like a machine &mdash; it behaves like a VM trying to shut itself down, through three mechanisms
-that have nothing to do with each other:
+Herdr supports a Windows server as of 0.9.1 and this tool classifies that platform as supported,
+but the provisioning slices still do not cover it, so the Windows target it provisions on a work
+laptop is WSL2. And WSL2 does not behave like a machine &mdash; it behaves like a VM trying to
+shut itself down, through three mechanisms that have nothing to do with each other:
 
 <img width="100%" alt="WSL2 lifetime. Three mechanisms shut the instance down: instance teardown when no child of Microsoft's init remains, a sixty second vmIdleTimeout, and any forced wsl shutdown. A highlighted note states that systemd services do not count as init children, which is why the failure looks like a network fault. Three layers keep it alive: the documented vmIdleTimeout setting, a keepalive that is a real init child and deliberately does no work, and a watchdog that relaunches it. A measured timeline shows the instance killed at zero seconds, relaunched at ten seconds, services up at fifteen, and the tunnel back at twenty, all unassisted." src="docs/assets/diagrams/wsl2-lifetime.svg" />
 
@@ -310,8 +310,8 @@ generic error.
 |:---|:---|:---|
 | **Hub** | Linux, macOS | Herdr's client only |
 | **Node** | Linux, macOS | needs `systemd` or `launchd` |
-| **Node** | **Windows with WSL2** | **supported.** WSL2 is the Windows path this tool handles today, including its lifetime problem. Herdr supports a Windows server as of 0.9.1, but this tool does not provision a native Windows node yet. |
-| **Node** | native Windows | **not provisioned by this tool yet.** Herdr supports a Windows server as of 0.9.1; the missing piece is this tool's provisioning slice. |
+| **Node** | **Windows with WSL2** | **supported.** WSL2 is the Windows path this tool provisions today, including its lifetime problem. Herdr supports a Windows server as of 0.9.1, but the provisioning slices still do not cover native Windows. |
+| **Node** | native Windows | **supported as a platform, not provisioned yet.** Herdr supports a Windows server as of 0.9.1, so the classification passes; the tool does not measure which Herdr version is installed, and the provisioning slices still do not cover it. |
 
 ### Before you use this on a machine you do not own
 
@@ -428,7 +428,8 @@ The full specification is in the [PRD](PRD.md). This is the order of attack.
 | **6. Recipes** | Export and import a solved network profile | For teams on the same corporate image |
 
 **Not in scope, by decision:** a dashboard, a proxy implementation, a hosted service, a
-Herdr patch, native Windows as a node.
+Herdr patch, provisioning native Windows as a node (the platform is classified as supported;
+no provisioning slice covers it yet).
 
 <div align="right"><a href="#top">Back to top</a></div>
 

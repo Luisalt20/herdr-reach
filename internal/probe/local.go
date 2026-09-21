@@ -7,9 +7,9 @@ package probe
 //
 // `local.env` answers one question: what is this machine? It classifies the
 // platform the run is happening on — Linux, macOS, WSL2 or native Windows — and
-// reports the architecture it was classified with (R-HR-29), and it refuses a
-// native-Windows node while stating that the refusal is this tool's provisioning
-// scope and naming WSL2 as the Windows path it handles today (R-HR-30).
+// reports the architecture it was classified with (R-HR-29). All four are
+// measured, supported classifications as of Herdr 0.9.1; the native-Windows
+// wording carries the caveat that its support is version-dependent (R-HR-30).
 //
 // The classification is a pure function of the injected Platform seam. This file
 // opens no file, reads no environment variable and inspects no kernel interface
@@ -56,8 +56,10 @@ const (
 	// a node (R-HR-29); this slice detects it and states no more than that.
 	NodePlatformWSL2 NodePlatform = "wsl2"
 	// NodePlatformWindowsNative is a node running Windows itself. Upstream Herdr
-	// supports a Windows server as of 0.9.1, but this tool does not provision a
-	// native Windows node yet, so the classification is refused (R-HR-30).
+	// supports a Windows server as of 0.9.1, so the platform is classified as
+	// supported; the classification's wording carries the caveat that support is
+	// version-dependent and that this tool does not measure the installed Herdr
+	// version (R-HR-30).
 	NodePlatformWindowsNative NodePlatform = "windows-native"
 	// NodePlatformUnknown is the classification reported when the machine could
 	// not be classified at all. It is a reported absence, never a default guess.
@@ -224,32 +226,30 @@ func (p *localEnv) observe() Observation {
 // `local.env` reports.
 //
 // The branch order is the order of the answers. Native Windows is decided first
-// and on the operating system alone, because the refusal does not depend on the
-// architecture or on the service manager. WSL2 is decided before plain Linux
-// because a WSL2 instance also reports GOOS "linux", so a later plain-Linux
-// branch would swallow it. macOS comes last of the supported platforms. Every
-// remaining case — an operating system outside the supported set, or a supported
-// operating system whose architecture was not reported — degrades to an explicit
-// unknown rather than to a default, because a node we cannot characterise is not
-// a node we may call supported (R-HR-29).
+// and, like Linux and macOS, needs a reported architecture: its classification is
+// a supported one, and the node's architecture decides which binaries it can run.
+// WSL2 is decided before plain Linux because a WSL2 instance also reports GOOS
+// "linux", so a later plain-Linux branch would swallow it. macOS comes last of the
+// supported platforms. Every remaining case — an operating system outside the
+// supported set, or a supported operating system whose architecture was not
+// reported — degrades to an explicit unknown rather than to a default, because a
+// node we cannot characterise is not a node we may call supported (R-HR-29).
 func classifyPlatform(signals platformSignals) Observation {
 	arch := archOrUnknown(signals.arch)
 
 	switch {
-	case signals.goos == goosWindows:
-		// The refusal is measured: the operating system answered, and the answer
-		// is that this tool does not provision this node. It is reported as the
-		// measurement's own negative answer rather than as a usage or internal
-		// error (R-HR-30), and its text names WSL2 as the Windows path this tool
-		// handles today so a reader is never left to guess one. The architecture
-		// is reported verbatim when the seam measured it and as unknown
-		// otherwise: the refusal rests on the operating system, not on the
-		// architecture, so an unreported architecture neither weakens the
-		// refusal nor permits a fabricated one.
+	case signals.goos == goosWindows && signals.archReported():
+		// Native Windows is a supported classification: the operating system and
+		// the architecture were both measured, and upstream Herdr supports a
+		// Windows server as of 0.9.1. It is reported as the measurement's own
+		// positive answer, and its wording carries the caveat that support is
+		// version-dependent and that this run does not measure the installed
+		// Herdr version (R-HR-30). A node whose architecture the seam did not
+		// report is not classified as supported; the guard below catches it.
 		return Observe(platformFactLabel,
 			NodePlatformIdentity(NodePlatformWindowsNative, arch),
 			PurposePlatformClassification,
-			RawObservation{Kind: ObsNodePlatformUnsupported, Wording: windowsWording(signals)})
+			RawObservation{Kind: ObsPlatformSignalsClassified, Wording: windowsWording(signals)})
 
 	case signals.goos == goosLinux && signals.wsl2 && signals.archReported():
 		return Observe(platformFactLabel,
@@ -269,10 +269,11 @@ func classifyPlatform(signals platformSignals) Observation {
 			PurposePlatformClassification,
 			RawObservation{Kind: ObsPlatformSignalsClassified, Wording: macosWording(signals)})
 
-	case signals.goos == goosLinux || signals.goos == goosDarwin:
-		// The operating system is one this tool supports; the architecture is the
-		// half that was not reported. Calling the node supported anyway would
-		// present a classification whose binary-compatibility half is missing.
+	case signals.goos == goosLinux || signals.goos == goosDarwin || signals.goos == goosWindows:
+		// The operating system is one this tool supports (linux, macOS or native
+		// Windows); the architecture is the half that was not reported. Calling the
+		// node supported anyway would present a classification whose
+		// binary-compatibility half is missing.
 		return unknownPlatformObservation(fmt.Sprintf("the platform seam reported %s but no architecture (%q): a node whose architecture was not reported is not classified as supported, because the node's architecture decides which binaries it can run; no architecture is assumed",
 			signals.goos, signals.arch))
 
@@ -307,21 +308,20 @@ func macosWording(signals platformSignals) string {
 }
 
 // windowsWording is the text `local.env` reports for a node running Windows
-// itself. The classification is still a refusal, but its reason is this tool's
-// scope and not the platform's: upstream Herdr supports a Windows server as of
-// 0.9.1 — measured 2026-09-20, when `machine add` saved a Windows 11 24H2 host
-// and the hub listed the agents running natively on it — while this tool
-// provisions Linux/systemd, macOS/launchd and WSL2 nodes only. The text names
-// WSL2 as the Windows path this tool handles today and claims no change to the
-// machine it refused to operate on (R-HR-30).
+// itself. The classification is a measured, supported one: upstream Herdr
+// supports a Windows server as of 0.9.1 — measured 2026-09-20, when `machine add`
+// saved a Windows 11 24H2 host and the hub listed the agents running natively on
+// it — so the platform is classified the way Linux and macOS are.
 //
-// The refusal rests on the classification alone, which leaves one gap this text
-// does not close: the probe does not measure the node's Herdr version, so a node
-// running a server older than 0.9.1 is refused here although it also cannot host
-// a saved-machine connection. Telling those two cases apart would need a version
-// measurement this slice does not make.
+// The support is version-dependent, and the wording says so in its own sentence:
+// the probe does not measure the node's Herdr version, so a node running a server
+// older than 0.9.1 cannot host a saved-machine connection even though this
+// classification passes. The wording also keeps the boundary that remains: the
+// provisioning slices still do not cover native Windows, and this run changes
+// nothing. A pass has to be as earned as a failure, so the caveat travels with
+// the pass instead of being left to the docs.
 func windowsWording(signals platformSignals) string {
-	return fmt.Sprintf("native Windows node (GOOS %q, architecture %q): upstream Herdr supports a Windows server as of 0.9.1, but this tool does not provision a native Windows node yet, and WSL2 is the Windows path this tool handles today; nothing was changed",
+	return fmt.Sprintf("native Windows node (GOOS %q, architecture %q): the platform can host a supported Herdr server as of 0.9.1; this run does not measure which Herdr version is installed, so a node running an older server cannot host a saved-machine connection; this tool's provisioning slices still do not cover native Windows, and this run detects and reports the environment and changes nothing",
 		signals.goos, archOrUnknown(signals.arch))
 }
 
