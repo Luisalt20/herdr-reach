@@ -12,8 +12,10 @@ package report_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"reflect"
 	"slices"
@@ -139,9 +141,9 @@ func fullResults() []probe.Result {
 			passObservation("platform", "linux/aarch64",
 				"linux node (architecture \"aarch64\"): systemd is the running service manager; this run detects and reports the environment and changes nothing")),
 		resultOf("local.sshd", probe.ProbeLocal, "", 5*time.Millisecond,
-			"the sshd binary is absent from the documented path",
+			"the sshd binary is absent from /usr/sbin/sshd",
 			failObservation("binary present", "/usr/sbin/sshd", probe.ReasonSSHDAbsent,
-				"no sshd binary is present at the documented path: installing sshd is work owned by a later slice, and nothing was changed"),
+				"no sshd binary is present at /usr/sbin/sshd: installing sshd is work owned by a later slice, and nothing was changed"),
 			notMeasuredObservation("effective config", probe.ReasonCapabilityExcluded,
 				"sshd -T was not attempted: this run has no command runner wired, and the capability is excluded by this slice's boundary")),
 		resultOf("egress.hub.direct", probe.ProbeEgress, "", time.Millisecond,
@@ -700,6 +702,118 @@ func TestMappingKeepsTheObservationOrderTheProbeReported(t *testing.T) {
 		t.Errorf("observation order = %v, want the reported order %v", got, want)
 	}
 }
+
+// The two documented native-Windows sshd paths the payload case scripts, repeated as literals for
+// the same reason the probe suite repeats the POSIX pair: what a Windows run reports must be these
+// values, so a rename in local.go has to break this case rather than silently move them.
+const (
+	payloadWindowsSSHDBinaryPath = `C:\Windows\System32\OpenSSH\sshd.exe`
+	payloadWindowsSSHDConfigPath = `C:\ProgramData\ssh\sshd_config`
+)
+
+// TestMappingCarriesTheWindowsSSHDPathsTheProbeChecked is issue #72's payload half: the registered
+// `local.sshd` probe is run over a scripted native-Windows node, and the payload's probe row and
+// its two path observations must name the Windows paths that were actually checked, never the
+// POSIX pair. The fixture scripts the Windows binary and written configuration as present and
+// leaves every other path absent, so a probe that asked for a POSIX path would report a different
+// target and these assertions would fail — which is what makes the payload traceable to the
+// filesystem calls.
+func TestMappingCarriesTheWindowsSSHDPathsTheProbeChecked(t *testing.T) {
+	seams := probe.DenyAllSeams()
+	seams.Platform = payloadWindowsPlatform{}
+	seams.FS = payloadWindowsFiles{}
+
+	var result probe.Result
+	for _, entry := range probe.Registry() {
+		if entry.Name != "local.sshd" {
+			continue
+		}
+		if entry.New == nil {
+			t.Fatalf("the registry declares %q without a constructor, so no run could measure it", entry.Name)
+		}
+		result = entry.New(seams, probe.TargetInput{}).Run(context.Background())
+	}
+	if result.Probe != "local.sshd" {
+		t.Fatalf("the registry did not build local.sshd: %+v", result)
+	}
+
+	payload := report.Build(report.Input{Run: testOptions(), Results: []probe.Result{result}})
+	document := decodePayload(t, payload)
+	row := rowFor(t, document, "local.sshd")
+	targetAt(t, "local.sshd.target", row["target"], payloadWindowsSSHDBinaryPath)
+
+	observations := array(t, "local.sshd.observations", row["observations"])
+	if len(observations) != 3 {
+		t.Fatalf("local.sshd carries %d observations, want the probe's 3", len(observations))
+	}
+	binary := object(t, "local.sshd.observations[0]", observations[0])
+	targetAt(t, "local.sshd.observations[0].target", binary["target"], payloadWindowsSSHDBinaryPath)
+	config := object(t, "local.sshd.observations[2]", observations[2])
+	targetAt(t, "local.sshd.observations[2].target", config["target"], payloadWindowsSSHDConfigPath)
+}
+
+// payloadWindowsPlatform scripts the platform signals of a native-Windows node for the payload case.
+type payloadWindowsPlatform struct{}
+
+// GOOS reports the Windows operating system.
+func (payloadWindowsPlatform) GOOS() string { return "windows" }
+
+// Arch reports a 64-bit x86 architecture.
+func (payloadWindowsPlatform) Arch() string { return "amd64" }
+
+// WSL2 reports no WSL2 signal: this is Windows itself.
+func (payloadWindowsPlatform) WSL2() bool { return false }
+
+// Systemd reports no service-manager signal.
+func (payloadWindowsPlatform) Systemd() bool { return false }
+
+// payloadWindowsFiles is the filesystem the payload case scripts: the Windows binary exists, the
+// Windows written configuration exists, and every other path is reported as absent. The POSIX pair
+// is therefore absent by construction, so a probe that asked for it would name a different target
+// and the payload assertions fail.
+type payloadWindowsFiles struct{}
+
+// Stat reports the Windows binary path as existing and every other path as absent.
+func (payloadWindowsFiles) Stat(path string) (os.FileInfo, error) {
+	if path == payloadWindowsSSHDBinaryPath {
+		return payloadFileInfo{name: path}, nil
+	}
+	return nil, fmt.Errorf("%s: %w", path, fs.ErrNotExist)
+}
+
+// ReadFile returns the agreeing written configuration for the Windows configuration path and
+// reports every other path as absent.
+func (payloadWindowsFiles) ReadFile(path string) ([]byte, error) {
+	if path == payloadWindowsSSHDConfigPath {
+		return []byte("PermitRootLogin no\nPasswordAuthentication no\n"), nil
+	}
+	return nil, fmt.Errorf("%s: %w", path, fs.ErrNotExist)
+}
+
+// Getenv reports an empty environment.
+func (payloadWindowsFiles) Getenv(string) string { return "" }
+
+// payloadFileInfo is the os.FileInfo the payload case's filesystem reports. Only existence matters
+// to this probe, so every other attribute is the zero value.
+type payloadFileInfo struct{ name string }
+
+// Name reports the scripted path.
+func (i payloadFileInfo) Name() string { return i.name }
+
+// Size reports zero.
+func (payloadFileInfo) Size() int64 { return 0 }
+
+// Mode reports a regular file's permission bits.
+func (payloadFileInfo) Mode() fs.FileMode { return 0o644 }
+
+// ModTime reports the zero time.
+func (payloadFileInfo) ModTime() time.Time { return time.Time{} }
+
+// IsDir reports false.
+func (payloadFileInfo) IsDir() bool { return false }
+
+// Sys reports no underlying data.
+func (payloadFileInfo) Sys() any { return nil }
 
 // TestMappingSortsTransportsByName asserts the transports are sorted by name
 // whatever order the paired rows arrived in, and that the input slice is not

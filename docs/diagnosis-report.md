@@ -108,9 +108,9 @@ stays in `detail`. The set is closed.
 | `truststore_rejects_chain` | The local trust pool rejected the chain: a definite negative. |
 | `truststore_platform_unavailable` | A platform verifier that cannot answer at all (macOS system roots): the capability was attempted and is unusable. |
 | `truststore_override_platform_bypass` | An `SSL_CERT_FILE`/`SSL_CERT_DIR` override bypasses the platform verifier, so its answer would not mean what the probe claims. Never a false pass. |
-| `sshd_absent` | No sshd binary is present at the documented path. Installing it is work owned by a later slice. |
+| `sshd_absent` | No sshd binary is present at the platform's documented path — `/usr/sbin/sshd` on Linux, macOS and WSL2, `C:\Windows\System32\OpenSSH\sshd.exe` on native Windows. Installing it is work owned by a later slice. |
 | `sshd_config_divergence` | A written sshd configuration that differs from the configuration in force; both are in `detail`. |
-| `capability_excluded` | A capability this slice never attempts (for example `sshd -T` with no production command runner wired): the attempt was not made. A native-Windows node reports it for the sshd binary check, because the documented path is a POSIX path and this tool does not operate on that node, so the absence of the binary is not claimed there. |
+| `capability_excluded` | A capability this slice never attempts (for example `sshd -T` with no production command runner wired): the attempt was not made, and a check that was not attempted never claims an absence. |
 | `command_denied` | A command seam denied the execution: the attempt was not made, and the reason names the capability. |
 | `input_missing_hub` | A run with no hub address supplied: the attempt was not made for lack of input, which is never a blocked hub. |
 | `platform_unknown` | A set of platform signals matching no supported classification: ambiguous, and no platform is assumed. |
@@ -195,7 +195,7 @@ reader can quote which rule fired.
 | `CF_NO_HTTP2_ADVICE_QUIC_USABLE` | `cloudflare.http2` | The datagram measurement drew a reply: no downgrade is recommended, because nothing measured a block. |
 | `CF_HTTP2_ADVISORY_NOT_ASSESSED` | `cloudflare.http2` | The edge itself did not answer, was never measured or produced no answer: no HTTP/2 advice is given, because no measured TCP path could carry one. |
 | `SSHD_PRESENT_CONFIG_DIVERGENT` | `local.sshd` | The written sshd configuration and the configuration in force were both measured and disagree: the node is present but its configuration diverges. |
-| `SSHD_ABSENT` | `local.sshd` | No sshd binary is present at the documented path, reached only through the binary observation's own label, so a stopped service cannot produce it. It is not produced on a native-Windows node: the documented path is a POSIX path, so the binary check is not measured there and no absence is claimed. |
+| `SSHD_ABSENT` | `local.sshd` | No sshd binary is present at the platform's documented path — `/usr/sbin/sshd` on Linux, macOS and WSL2, `C:\Windows\System32\OpenSSH\sshd.exe` on native Windows — reached only through the binary observation's own label, so a stopped service cannot produce it. The check runs on every supported platform, so an absence measured anywhere is this rule. |
 | `SSHD_EFFECTIVE_CONFIG_NOT_MEASURED` | `local.sshd` | The configuration in force was not measured: no claim is made about what configuration is in force. This is the default live case. |
 | `SSHD_PRESENT_CONFIGURED` | `local.sshd` | The sshd binary is present and the configuration in force was measured and agrees with the written one. |
 | `NODE_PLATFORM_UNKNOWN` | `node.platform` | The platform signals matched no supported classification: no platform is assumed. |

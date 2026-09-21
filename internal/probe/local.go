@@ -364,20 +364,30 @@ func unknownPlatformObservation(wording string) Observation {
 // answers it as three separately reportable observations, because the three
 // answers fail differently and a reader has to be able to tell them apart (DEV-2):
 //
-//  1. `binary present` — an sshd binary at the documented path, read through the
-//     injected FS seam. Absence is a measured negative, and its detail states that
-//     installing sshd is not part of this run: this slice detects, it does not
-//     provision (R-HR-02, R-HR-29). On a native-Windows node the documented path
-//     is a POSIX path, so the check is not attempted at all and the observation is
-//     not measured: no absence is claimed, and the outcome cannot depend on the
-//     working directory the process was launched from (issue #66).
+//  1. `binary present` — an sshd binary at the platform's documented path, read
+//     through the injected FS seam. Absence is a measured negative, and its detail
+//     states that installing sshd is not part of this run: this slice detects, it
+//     does not provision (R-HR-02, R-HR-29). The path is chosen from the run's
+//     platform seam: POSIX platforms keep `/usr/sbin/sshd`, and a native-Windows
+//     node is checked at `C:\Windows\System32\OpenSSH\sshd.exe`, where the OpenSSH
+//     server that ships with Windows installs. Issue #66 recorded why the POSIX
+//     path must never be handed to a Windows filesystem: a path beginning with "/"
+//     resolves against the working directory there, so the check would measure
+//     whichever filesystem the process happened to start in. The platform's own
+//     path removes that dependence instead of stepping around it, so the check is a
+//     real measurement on every platform this tool supports.
 //  2. `service state` — a read-only service-manager query through the injected
 //     CommandRunner. The query asks for the unit's state and changes nothing.
-//  3. `effective config` — the written configuration read through the FS seam
-//     compared with the configuration actually in force as `sshd -T` reports it
-//     through the CommandRunner. When the two disagree the observation is a
-//     measured negative and the detail carries both configurations verbatim,
-//     which is what R-HR-18 requires and PRD §13's "show both" means.
+//  3. `effective config` — the platform's written configuration read through the
+//     FS seam — `/etc/ssh/sshd_config` on POSIX platforms and
+//     `C:\ProgramData\ssh\sshd_config` on native Windows — compared with the
+//     configuration actually in force as `sshd -T` reports it through the
+//     CommandRunner. When the two disagree the observation is a measured negative
+//     and the detail carries both configurations verbatim, which is what R-HR-18
+//     requires and PRD §13's "show both" means. The config path needs the same
+//     platform choice as the binary path: on Windows a POSIX config path resolves
+//     against the working directory, so a run launched from a WSL share would read
+//     WSL2's configuration while measuring a Windows machine (issue #72).
 //
 // Degradation is the point of this half of the file (design §5.1 obligation 2). A
 // run with no command runner was never given the capability, so the two
@@ -405,12 +415,21 @@ func unknownPlatformObservation(wording string) Observation {
 // case is exactly a written directive whose effective value differs or is absent.
 
 const (
-	// localSSHDBinaryPath is the documented location of the sshd binary. One path
-	// keeps "where did you look" answerable from the detail, and it is where every
-	// supported platform installs it.
+	// localSSHDBinaryPath and localSSHDConfigPath are the documented sshd locations
+	// on the POSIX platforms: Linux, macOS and WSL2, the last of which reports GOOS
+	// "linux" and is therefore a POSIX platform here. One pair keeps "where did you
+	// look" answerable from the detail.
 	localSSHDBinaryPath = "/usr/sbin/sshd"
-	// localSSHDConfigPath is the written configuration this probe reads.
 	localSSHDConfigPath = "/etc/ssh/sshd_config"
+	// localSSHDBinaryPathWindows and localSSHDConfigPathWindows are the documented
+	// locations of the OpenSSH server that ships with Windows: the optional
+	// `OpenSSH.Server` capability installs sshd.exe under System32\OpenSSH and
+	// generates the server configuration under ProgramData\ssh. They are the pair a
+	// native-Windows node is checked at (issue #72), and the POSIX pair must never
+	// be handed to that filesystem: a path beginning with "/" resolves against the
+	// working directory there (issue #66).
+	localSSHDBinaryPathWindows = `C:\Windows\System32\OpenSSH\sshd.exe`
+	localSSHDConfigPathWindows = `C:\ProgramData\ssh\sshd_config`
 	// localSSHDCommand and localSSHDConfigFlag are the effective-configuration
 	// question: `sshd -T` prints the configuration in force and runs as the
 	// invoking user. A configuration it cannot print is not a divergence, which is
@@ -453,9 +472,9 @@ func runClockNow(seams Seams) time.Time {
 // localSSHD is the `local.sshd` probe. It carries the run's seams and nothing
 // else, and it reads three of them: the filesystem for the two local paths, the
 // command runner for the service query and the effective configuration, and the
-// platform seam for the one question that decides whether a documented path
-// applies at all — on a native-Windows node the binary check is not attempted,
-// because the documented path is a POSIX path (issue #66). A probe that reached
+// platform seam for the one question that decides which pair of documented paths
+// this machine is checked at — the POSIX pair on Linux, macOS and WSL2, and the
+// Windows pair on a native-Windows node (issues #66, #72). A probe that reached
 // the filesystem, executed a binary or classified the platform directly would
 // measure the machine the test runs on instead of the machine the case describes,
 // and would put an exec outside the run's capability set (R-HR-02).
@@ -477,10 +496,10 @@ func (p *localSSHD) Kind() ProbeKind { return ProbeLocal }
 // Run performs the three measurements in declaration order and reports them as
 // three observations plus the reduction of all three.
 //
-// The result's target is the probe's local subject, the documented binary path: a
-// probe that measures this machine dials nothing, and each observation carries the
-// path or unit it actually read, so the caller can tell which local fact the
-// result is about.
+// The result's target is the probe's local subject, the platform's documented
+// binary path: a probe that measures this machine dials nothing, and each
+// observation carries the path or unit it actually read, so the caller can tell
+// which local fact the result is about.
 //
 // The context travels into the two command invocations, so a run that is cancelled
 // or that exhausts its budget stops waiting on a command rather than leaving one
@@ -488,10 +507,15 @@ func (p *localSSHD) Kind() ProbeKind { return ProbeLocal }
 // probe-level budget would add a second, invisible deadline to the same question.
 func (p *localSSHD) Run(ctx context.Context) Result {
 	started := p.now()
+	// The platform seam decides the pair of documented paths once, before the three
+	// measurements, so the result, the binary check and the written-file check all
+	// name the same machine's paths even if the seam were to answer differently on
+	// a second reading.
+	binaryPath, configPath := p.sshdPaths()
 	observations := []Observation{
-		p.observeBinary(),
+		p.observeBinary(binaryPath),
 		p.observeService(ctx),
-		p.observeEffectiveConfig(ctx),
+		p.observeEffectiveConfig(ctx, configPath),
 	}
 	verdict, reason := Aggregate(observations)
 	details := make([]string, 0, len(observations))
@@ -501,7 +525,7 @@ func (p *localSSHD) Run(ctx context.Context) Result {
 	return Result{
 		Probe:        p.Name(),
 		Kind:         p.Kind(),
-		Target:       localSSHDBinaryPath,
+		Target:       binaryPath,
 		Verdict:      verdict,
 		Reason:       reason,
 		Detail:       strings.Join(details, "\n"),
@@ -514,8 +538,8 @@ func (p *localSSHD) Run(ctx context.Context) Result {
 // `local.env` does.
 func (p *localSSHD) now() time.Time { return runClockNow(p.seams) }
 
-// observeBinary reports whether an sshd binary is installed at the documented
-// path.
+// observeBinary reports whether an sshd binary is installed at the platform's
+// documented binary path, which the caller chose from the platform seam.
 //
 // Absence is a measurement, not a skip: the filesystem answered, and the answer is
 // that nothing is there. It is a definite negative for a node that is supposed to
@@ -527,74 +551,63 @@ func (p *localSSHD) now() time.Time { return runClockNow(p.seams) }
 // the path itself, so the observation is unresolved and carries the failure
 // verbatim. Reporting it as absent would be a fabricated measurement.
 //
-// One platform is decided before the question is asked. On a native-Windows node
-// the documented path is a POSIX path, and this tool does not operate on that
-// node, so the check is not attempted at all. Not attempting it is what keeps the
-// outcome independent of the directory the process was launched from: on Windows
-// a path beginning with "/" resolves against the working directory, so a Stat
-// would measure whichever filesystem the process happened to start in — issue #66
-// recorded both a false absence and a false presence from that one behaviour. The
-// check also would not answer the question even when it found a file: the
-// Windows sshd is installed at its own path, which is the measurement a later
-// work unit owes native Windows. The observation reports the not-applicable fact
-// through the classification vocabulary's reusable "the attempt was not made by
-// design" observable, because the closed reason set has no "not applicable" code
-// and adding one is a contract change this fix does not need; the wording names
-// the platform reason, which is what tells a reader this was the POSIX path and
-// not a withheld capability. WSL2 is not caught by that branch: a WSL2 instance
-// reports GOOS "linux", which is exactly why the POSIX path remains meaningful
-// there.
-func (p *localSSHD) observeBinary() Observation {
-	// The platform comes first, before every filesystem read and before the
-	// missing-seam branch: on a native-Windows node the documented path is not a
-	// path this tool may check, and that holds whether or not a filesystem seam was
-	// injected. The branch reads the platform seam rather than the process, so it
-	// scripts and tests like every other local fact.
-	if p.nativeWindowsNode() {
-		return Observe(labelSSHDBinary, localSSHDBinaryPath, PurposeSSHDConfiguration, RawObservation{
-			Kind: ObsCapabilityExcluded,
-			Wording: fmt.Sprintf("%s: the documented path is a POSIX path and this tool does not operate on a native-Windows node, so the path was not checked and the absence of the sshd binary is not claimed",
-				localSSHDBinaryPath),
-		})
-	}
+// The path arrives as an argument rather than from a second platform reading, so
+// every observation of one result describes one machine. Issues #66 and #67 were
+// correct for what they knew: while the POSIX path was the only documented one,
+// attempting it on Windows would have measured the working directory, and the
+// not-applicable branch was the honest answer. The platform's own path is what
+// makes the check a real measurement instead, and the branch is gone with the
+// reason for it.
+func (p *localSSHD) observeBinary(binaryPath string) Observation {
 	if p.seams.FS == nil {
-		return Observe(labelSSHDBinary, localSSHDBinaryPath, PurposeSSHDConfiguration, RawObservation{
+		return Observe(labelSSHDBinary, binaryPath, PurposeSSHDConfiguration, RawObservation{
 			Kind:    ObsCapabilityExcluded,
-			Wording: localSSHDBinaryPath + ": no filesystem seam is injected for this run, so the sshd binary cannot be checked",
+			Wording: binaryPath + ": no filesystem seam is injected for this run, so the sshd binary cannot be checked",
 		})
 	}
-	if _, err := p.seams.FS.Stat(localSSHDBinaryPath); err != nil {
+	if _, err := p.seams.FS.Stat(binaryPath); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return Observe(labelSSHDBinary, localSSHDBinaryPath, PurposeSSHDConfiguration, RawObservation{
+			return Observe(labelSSHDBinary, binaryPath, PurposeSSHDConfiguration, RawObservation{
 				Kind: ObsSSHDBinaryAbsent,
 				Wording: fmt.Sprintf("the sshd binary is not present at %s: no sshd is installed here, and installing it is not part of this run but work owned by a later slice; nothing was changed",
-					localSSHDBinaryPath),
+					binaryPath),
 			})
 		}
-		return Observe(labelSSHDBinary, localSSHDBinaryPath, PurposeSSHDConfiguration, RawObservation{
+		return Observe(labelSSHDBinary, binaryPath, PurposeSSHDConfiguration, RawObservation{
 			Kind:    ObsInternalFailure,
-			Wording: fmt.Sprintf("%s: %v (the path could not be checked, so its absence is not claimed)", localSSHDBinaryPath, err),
+			Wording: fmt.Sprintf("%s: %v (the path could not be checked, so its absence is not claimed)", binaryPath, err),
 		})
 	}
-	return Observe(labelSSHDBinary, localSSHDBinaryPath, PurposeSSHDConfiguration, RawObservation{
+	return Observe(labelSSHDBinary, binaryPath, PurposeSSHDConfiguration, RawObservation{
 		Kind:    ObsSSHDBinaryPresent,
-		Wording: fmt.Sprintf("the sshd binary is present at %s", localSSHDBinaryPath),
+		Wording: fmt.Sprintf("the sshd binary is present at %s", binaryPath),
 	})
 }
 
-// nativeWindowsNode reports whether the run's platform seam classified this
-// machine as Windows itself.
+// sshdPaths returns the pair of documented sshd locations this machine is checked
+// at, chosen from the run's platform seam.
 //
-// The GOOS signal alone decides it, because the operating system alone is the
-// claim: the one thing the branch may conclude from it is that the documented
-// POSIX path does not denote a path on this machine. WSL2 reports GOOS "linux"
-// and is therefore never caught here — its filesystem is where the documented
-// path is real. A run with no platform seam is not a Windows node either: an
-// unclassified machine is not a machine this probe may declare the documented
-// path inapplicable for, so the check proceeds and reports whatever the
-// filesystem answers.
-func (p *localSSHD) nativeWindowsNode() bool {
-	return p.seams.Platform != nil && p.seams.Platform.GOOS() == goosWindows
+// The platform seam is the same one `local.env` classifies with, and GOOS alone
+// decides the pair: native Windows installs the OpenSSH server it ships at its own
+// documented locations, and every other platform — Linux, macOS and WSL2 — keeps
+// the POSIX pair. WSL2 reports GOOS "linux" and is therefore never caught here:
+// its filesystem is where the POSIX paths are real. A run with no platform seam is
+// not a Windows node either: an unclassified machine is not a machine whose POSIX
+// paths this probe may declare wrong, so the POSIX pair is used and the
+// filesystem's own answer decides the observation.
+//
+// Choosing the path is the whole fix for issues #66 and #72, which recorded both
+// halves of the same Windows behaviour: a path beginning with "/" resolves against
+// the working directory, so the POSIX binary check produced both a false absence
+// and a false presence, and the POSIX configuration read would read WSL2's
+// configuration on a run launched from a WSL share while measuring a Windows
+// machine. The platform's own paths make both checks measurements of this machine
+// rather than measurements of the directory the process happened to start in.
+func (p *localSSHD) sshdPaths() (binaryPath, configPath string) {
+	if p.seams.Platform != nil && p.seams.Platform.GOOS() == goosWindows {
+		return localSSHDBinaryPathWindows, localSSHDConfigPathWindows
+	}
+	return localSSHDBinaryPath, localSSHDConfigPath
 }
 
 // observeService asks the service manager whether an sshd unit is active.
@@ -642,8 +655,8 @@ func sshdServiceActive(answer string) bool {
 	return false
 }
 
-// observeEffectiveConfig compares the written configuration with the
-// configuration in force.
+// observeEffectiveConfig compares the written configuration at the platform's
+// documented configuration path with the configuration in force.
 //
 // Three boundaries are deliberate. First, the written file is read before the
 // command runs: if it cannot be read, nothing was compared and the observation
@@ -654,54 +667,63 @@ func sshdServiceActive(answer string) bool {
 // absence is unresolved: nothing was compared, and the failure is carried
 // verbatim.
 //
+// The path is the caller's platform-chosen documented configuration path, not a
+// second platform reading. It has to follow the platform for the same reason the
+// binary path does: on Windows a POSIX path resolves against the working
+// directory, so the written half of the comparison would read whichever
+// configuration the process happened to find there — issue #72 records a run
+// launched from a WSL share reading WSL2's configuration while measuring a Windows
+// machine. The platform's own path is what makes the written half a fact about
+// this machine.
+//
 // The two configurations appear verbatim in the detail of both the divergent and
 // the agreeing case, so a reader can check the comparison rather than trust it
 // (R-HR-07).
-func (p *localSSHD) observeEffectiveConfig(ctx context.Context) Observation {
+func (p *localSSHD) observeEffectiveConfig(ctx context.Context, configPath string) Observation {
 	command := commandLine(localSSHDCommand, localSSHDConfigFlag)
 	if p.seams.FS == nil {
-		return Observe(labelSSHDConfig, localSSHDConfigPath, PurposeSSHDConfiguration, RawObservation{
+		return Observe(labelSSHDConfig, configPath, PurposeSSHDConfiguration, RawObservation{
 			Kind:    ObsCapabilityExcluded,
-			Wording: localSSHDConfigPath + ": no filesystem seam is injected for this run, so the written configuration cannot be read",
+			Wording: configPath + ": no filesystem seam is injected for this run, so the written configuration cannot be read",
 		})
 	}
-	writtenBytes, err := p.seams.FS.ReadFile(localSSHDConfigPath)
+	writtenBytes, err := p.seams.FS.ReadFile(configPath)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return Observe(labelSSHDConfig, localSSHDConfigPath, PurposeSSHDConfiguration, RawObservation{
+		return Observe(labelSSHDConfig, configPath, PurposeSSHDConfiguration, RawObservation{
 			Kind:    ObsInternalFailure,
-			Wording: fmt.Sprintf("%s: %v (the written configuration could not be read, so it was not compared with the configuration in force)", localSSHDConfigPath, err),
+			Wording: fmt.Sprintf("%s: %v (the written configuration could not be read, so it was not compared with the configuration in force)", configPath, err),
 		})
 	}
 	writtenPresent := err == nil
 
 	stdout, denial := p.invoke(ctx, localSSHDCommand, localSSHDConfigFlag)
 	if denial.Kind != "" {
-		return Observe(labelSSHDConfig, localSSHDConfigPath, PurposeSSHDConfiguration, denial)
+		return Observe(labelSSHDConfig, configPath, PurposeSSHDConfiguration, denial)
 	}
 	effectiveText := strings.TrimSpace(string(stdout))
 
 	if !writtenPresent {
-		return Observe(labelSSHDConfig, localSSHDConfigPath, PurposeSSHDConfiguration, RawObservation{
+		return Observe(labelSSHDConfig, configPath, PurposeSSHDConfiguration, RawObservation{
 			Kind: ObsSSHDConfigMatches,
 			Wording: fmt.Sprintf("the written configuration file %s is not present, so no written directive disagrees with the configuration in force; the effective configuration reported by %s is: %s",
-				localSSHDConfigPath, command, effectiveText),
+				configPath, command, effectiveText),
 		})
 	}
 
 	written := parseSSHDConfig(string(writtenBytes))
 	effective := parseSSHDConfig(effectiveText)
 	if diverged := sshdDivergences(written, effective); len(diverged) > 0 {
-		return Observe(labelSSHDConfig, localSSHDConfigPath, PurposeSSHDConfiguration, RawObservation{
+		return Observe(labelSSHDConfig, configPath, PurposeSSHDConfiguration, RawObservation{
 			Kind: ObsSSHDConfigDivergent,
 			Wording: fmt.Sprintf("the written configuration at %s is not the configuration in force: %s disagrees with it on %d of the %d directive(s) the written file sets (%s); written configuration of %s: %s; effective configuration reported by %s: %s",
-				localSSHDConfigPath, command, len(diverged), len(written.names), strings.Join(diverged, ", "),
-				localSSHDConfigPath, string(writtenBytes), command, effectiveText),
+				configPath, command, len(diverged), len(written.names), strings.Join(diverged, ", "),
+				configPath, string(writtenBytes), command, effectiveText),
 		})
 	}
-	return Observe(labelSSHDConfig, localSSHDConfigPath, PurposeSSHDConfiguration, RawObservation{
+	return Observe(labelSSHDConfig, configPath, PurposeSSHDConfiguration, RawObservation{
 		Kind: ObsSSHDConfigMatches,
 		Wording: fmt.Sprintf("%s agrees with the configuration in force reported by %s for every one of the %d directive(s) the written file sets; written configuration of %s: %s; effective configuration reported by %s: %s",
-			localSSHDConfigPath, command, len(written.names), localSSHDConfigPath, string(writtenBytes), command, effectiveText),
+			configPath, command, len(written.names), configPath, string(writtenBytes), command, effectiveText),
 	})
 }
 

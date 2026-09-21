@@ -235,8 +235,10 @@ where the tool ran, not configured.
 - **What the row means.** The node dials the hub and the hub accepts and forwards. Zero third-party
   dependencies; the cost is that the node must serve SSH to the hub.
 - **Requires.** `hub_address` and `sshd_effective_config`: the hub's address must pass its
-  measurement, and the node's sshd must exist with its configuration in force equal to the written
-  one.
+  measurement, and the node's sshd must exist at the platform's documented location — `/usr/sbin/sshd`
+  and `/etc/ssh/sshd_config` on Linux, macOS and WSL2, `C:\Windows\System32\OpenSSH\sshd.exe`
+  and `C:\ProgramData\ssh\sshd_config` on native Windows — with its configuration in force equal
+  to the written one.
 - **How to read a non-viable row.** Precedence in the reason: a measured hub rejection first, then a
   measured sshd rejection (`SSHD_PRESENT_CONFIG_DIVERGENT` or `SSHD_ABSENT`), then an unanswered hub
   attempt, then an unmet requirement. `SSHD_EFFECTIVE_CONFIG_NOT_MEASURED` is the default live case:

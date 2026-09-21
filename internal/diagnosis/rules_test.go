@@ -22,6 +22,8 @@ package diagnosis_test
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -2115,6 +2117,14 @@ func TestSSHDGroupCounterfactuals(t *testing.T) {
 	})
 }
 
+// The two documented native-Windows sshd paths, repeated here for the same reason the probe suite
+// repeats the POSIX pair: the platform's paths are part of the measured contract, so a rename in
+// local.go has to break these cases rather than silently move what they claim.
+const (
+	nativeWindowsSSHDBinaryPath = `C:\Windows\System32\OpenSSH\sshd.exe`
+	nativeWindowsSSHDConfigPath = `C:\ProgramData\ssh\sshd_config`
+)
+
 // windowsPlatform scripts the platform signals of a native-Windows node: GOOS "windows" and no WSL2
 // or systemd signal. WSL2 is deliberately not scripted here — it reports GOOS "linux", which is the
 // point of the probe case that proves the POSIX check survives on WSL2.
@@ -2131,6 +2141,29 @@ func (windowsPlatform) WSL2() bool { return false }
 
 // Systemd reports no service-manager signal.
 func (windowsPlatform) Systemd() bool { return false }
+
+// nativeWindowsSSHDFiles is the filesystem a native-Windows diagnosis case scripts: every path is
+// absent, and every call is recorded, so the case can assert the probe asked for the Windows pair.
+// It follows the deny-all semantics — "this path is not there" — while keeping the call log the
+// registered probe's own platform choice can be checked against.
+type nativeWindowsSSHDFiles struct {
+	calls []string
+}
+
+// Stat records the attempt and reports the path as not existing.
+func (f *nativeWindowsSSHDFiles) Stat(path string) (os.FileInfo, error) {
+	f.calls = append(f.calls, "Stat "+path)
+	return nil, fmt.Errorf("%s: %w", path, fs.ErrNotExist)
+}
+
+// ReadFile records the attempt and reports the path as not existing.
+func (f *nativeWindowsSSHDFiles) ReadFile(path string) ([]byte, error) {
+	f.calls = append(f.calls, "ReadFile "+path)
+	return nil, fmt.Errorf("%s: %w", path, fs.ErrNotExist)
+}
+
+// Getenv reports an empty environment.
+func (f *nativeWindowsSSHDFiles) Getenv(string) string { return "" }
 
 // runRegisteredProbe builds one registered probe from the run's seams and runs it, exactly as a run
 // reaches it, so a case can measure the probe's own outcome instead of a hand-written fixture.
@@ -2149,43 +2182,81 @@ func runRegisteredProbe(t *testing.T, name string, seams probe.Seams) probe.Resu
 	return probe.Result{}
 }
 
-// TestSshdOnNativeWindowsNeverReportsTheBinaryAbsent is issue #66's consequence case: the real
-// `local.sshd` probe is run over a scripted native-Windows node, and the reasoning layer must not
-// report the binary as absent from what the probe reports.
+// TestSshdOnNativeWindowsReportsAnAbsentBinaryFromTheWindowsPath is issue #72's consequence case
+// for the reasoning layer: the real `local.sshd` probe is run over a scripted native-Windows node,
+// and an absent binary at the Windows path is the measured negative that fires `SSHD_ABSENT` — the
+// same conclusion any other supported platform fires from the same measurement.
 //
-// The case runs the registered probe rather than a hand-written fixture, because the defect it
-// guards against is exactly a probe outcome: on a native-Windows node the documented binary path is
-// a POSIX path, and a Stat of it resolves against the working directory, which is how the recorded
-// run produced both a false absence and a false presence. The probe reports the check as not
-// measured; this case proves the absence conclusion is unreachable from that state, and that no
-// finding of the run claims the binary is absent.
-func TestSshdOnNativeWindowsNeverReportsTheBinaryAbsent(t *testing.T) {
-	seams := probe.DenyAllSeams()
-	seams.Platform = windowsPlatform{}
-	run := []probe.Result{runRegisteredProbe(t, "local.sshd", seams)}
+// The case replaces issue #66's `NeverReportsTheBinaryAbsent` guard, which was correct while the
+// only documented path was a POSIX path: the probe then had to refuse the check on Windows because
+// a Stat of the POSIX path would resolve against the working directory. Now that the platform has
+// its own path the check is performed, and the guard's real property survives in the second
+// sub-case: when the filesystem capability is missing the absence is still not claimed, with the
+// missing capability — not the platform — as the reason.
+func TestSshdOnNativeWindowsReportsAnAbsentBinaryFromTheWindowsPath(t *testing.T) {
+	t.Run("the Windows path is checked and the binary is absent", func(t *testing.T) {
+		seams := probe.DenyAllSeams()
+		seams.Platform = windowsPlatform{}
+		files := &nativeWindowsSSHDFiles{}
+		seams.FS = files
 
-	binary, ok := observationByLabel(run[0], testSSHDLabelBinary)
-	if !ok {
-		t.Fatalf("the registered local.sshd probe reported no binary observation: %+v", run[0].Observations)
-	}
-	if binary.Resolution != probe.NotMeasured || binary.Verdict != probe.Indeterminate {
-		t.Errorf("the native-Windows binary observation = (%q, %q), want (%q, %q): the POSIX path does not apply on this node",
-			binary.Resolution, binary.Verdict, probe.NotMeasured, probe.Indeterminate)
-	}
+		run := []probe.Result{runRegisteredProbe(t, "local.sshd", seams)}
 
-	got := diagnosis.Diagnose(run)
-	finding := findingFor(t, got, "local.sshd")
-	if finding.Rule == "SSHD_ABSENT" {
-		t.Fatalf("the native-Windows run fired SSHD_ABSENT from the not-measured binary observation: %s", finding.Conclusion)
-	}
-	if finding.Rule != "SSHD_EFFECTIVE_CONFIG_NOT_MEASURED" {
-		t.Errorf("the run fired %q, want %q: no configuration in force was measured on this node either", finding.Rule, "SSHD_EFFECTIVE_CONFIG_NOT_MEASURED")
-	}
-	for _, finding := range got.Findings {
-		if strings.Contains(finding.Conclusion, "no sshd binary is present") {
-			t.Errorf("the finding %q claims the binary is absent on a node where the check was not measured: %s", finding.Rule, finding.Conclusion)
+		binary, ok := observationByLabel(run[0], testSSHDLabelBinary)
+		if !ok {
+			t.Fatalf("the registered local.sshd probe reported no binary observation: %+v", run[0].Observations)
 		}
-	}
+		if binary.Resolution != probe.Measured || binary.Verdict != probe.Fail || binary.Reason != probe.ReasonSSHDAbsent {
+			t.Errorf("the native-Windows binary observation = (%q, %q, %q), want (%q, %q, %q): the Windows path applies on this node, so the absence is a measurement",
+				binary.Resolution, binary.Verdict, binary.Reason, probe.Measured, probe.Fail, probe.ReasonSSHDAbsent)
+		}
+		if binary.Target != nativeWindowsSSHDBinaryPath {
+			t.Errorf("the native-Windows binary observation target = %q, want the Windows path that was checked, %q", binary.Target, nativeWindowsSSHDBinaryPath)
+		}
+
+		finding := findingFor(t, diagnosis.Diagnose(run), "local.sshd")
+		if finding.Rule != "SSHD_ABSENT" {
+			t.Fatalf("the native-Windows run fired %q, want %q: an absent binary at the Windows path is the same measured absence as anywhere else", finding.Rule, "SSHD_ABSENT")
+		}
+		if !strings.Contains(finding.Conclusion, nativeWindowsSSHDBinaryPath) {
+			t.Errorf("the SSHD_ABSENT conclusion %q does not name the Windows path that was checked", finding.Conclusion)
+		}
+
+		wantCalls := []string{"Stat " + nativeWindowsSSHDBinaryPath, "ReadFile " + nativeWindowsSSHDConfigPath}
+		if !reflect.DeepEqual(files.calls, wantCalls) {
+			t.Errorf("the probe's filesystem calls = %v, want exactly %v: on a native-Windows node only the Windows pair may be touched", files.calls, wantCalls)
+		}
+	})
+
+	t.Run("the missing filesystem capability still claims no absence", func(t *testing.T) {
+		seams := probe.DenyAllSeams()
+		seams.Platform = windowsPlatform{}
+		seams.FS = nil
+
+		run := []probe.Result{runRegisteredProbe(t, "local.sshd", seams)}
+
+		binary, ok := observationByLabel(run[0], testSSHDLabelBinary)
+		if !ok {
+			t.Fatalf("the registered local.sshd probe reported no binary observation: %+v", run[0].Observations)
+		}
+		if binary.Resolution != probe.NotMeasured || binary.Verdict != probe.Indeterminate || binary.Reason != probe.ReasonCapabilityExcluded {
+			t.Errorf("the native-Windows binary observation = (%q, %q, %q), want (%q, %q, %q): no filesystem seam was injected, so the check was not attempted",
+				binary.Resolution, binary.Verdict, binary.Reason, probe.NotMeasured, probe.Indeterminate, probe.ReasonCapabilityExcluded)
+		}
+		if !strings.Contains(binary.Detail, nativeWindowsSSHDBinaryPath) {
+			t.Errorf("the not-measured wording does not name the Windows path it would have checked: %q", binary.Detail)
+		}
+
+		got := diagnosis.Diagnose(run)
+		if finding := findingFor(t, got, "local.sshd"); finding.Rule == "SSHD_ABSENT" {
+			t.Fatalf("the native-Windows run fired SSHD_ABSENT from a check that was not attempted: %s", finding.Conclusion)
+		}
+		for _, finding := range got.Findings {
+			if strings.Contains(finding.Conclusion, "no sshd binary is present") {
+				t.Errorf("the finding %q claims the binary is absent while the check was not measured: %s", finding.Rule, finding.Conclusion)
+			}
+		}
+	})
 }
 
 // observationByLabel finds one observation of a result by its label, so a case can name the half of
