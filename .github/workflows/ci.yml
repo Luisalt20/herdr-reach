@@ -168,6 +168,54 @@ jobs:
             echo "::error::the selector matched no test: the trust-store measurement did not run"
             exit 1
           }
+      # Issue #82's platform table records macOS as compiled, cross-built and
+      # tested by CI but never measured against a real network, and the release
+      # notes will quote that table. This step is the measurement, run on the
+      # real macOS runner with the release's own build shape (CGO_ENABLED=0) so
+      # what is measured and what ships cannot drift apart. `--hub` is absent by
+      # design: CI has no hub to measure, so `egress.hub.direct` reports
+      # `input_missing_hub`, nothing is claimed about the hub, and no
+      # hub-dependent transport is decided by this run.
+      #
+      # The exit code is printed rather than asserted on, and that is the reading
+      # a later editor must not "improve" into a gate: exit 0 is a completed
+      # measurement and exit 1 is an incomplete one — a probe was attempted and
+      # produced no answer — and an incomplete run is exactly the honest result
+      # this evidence records. Only a status outside that contract fails the
+      # step: exit 2 is the documented usage or internal error, and a run that
+      # produced no diagnosis cannot stand as evidence.
+      - name: "Real-network run on macOS (release evidence, issue #82)"
+        if: runner.os == 'macOS'
+        run: |
+          echo "=== herdr-reach real-network run: evidence for the v0.1.0 platform table (issue #82) ==="
+          echo "commit: $GITHUB_SHA"
+          echo "platform: $RUNNER_OS/$RUNNER_ARCH ($(uname -srm))"
+          echo "hub: deliberately absent — CI has no hub to measure, so egress.hub.direct reports input_missing_hub; nothing is claimed about the hub, and no hub-dependent transport is decided by this run"
+          echo
+
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/herdr-reach" ./cmd/herdr-reach
+
+          # One doctor invocation: its whole output, both streams, is captured
+          # and printed in full, and its exit code is printed beside it. The
+          # function treats 0 and 1 as results, never as failures; a status
+          # outside the contract stops the step.
+          run_doctor() {
+            local label="$1"
+            shift
+            local status=0
+            local output
+            output="$("$RUNNER_TEMP/herdr-reach" doctor "$@" 2>&1)" || status=$?
+            printf '\n=== %s ===\n' "$label"
+            printf '%s\n' "$output"
+            printf '[doctor exit code: %s]\n' "$status"
+            if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+              echo "::error::doctor exited $status: the run produced no diagnosis, so it cannot stand as evidence"
+              exit 1
+            fi
+          }
+
+          run_doctor "doctor (human report)"
+          run_doctor "doctor --json (machine-readable document; human report on stderr too)" --json
 
   cross-build:
     # The release builds binaries for these platforms; compiling for each of them
