@@ -24,7 +24,8 @@ row here — or a row without a constant — fails the suite.
 - A default live run **with no `--hub`** on Linux exits `0` with a named coverage gap: the hub was
   not measured, and `sshd -T` is not measured by this slice's boundary.
 - A default live run on **macOS exits `1`**, because `tls.truststore` is attempted and unresolved
-  there by decision (RG-3). The Linux expectation is not universal.
+  there by decision (RG-3), whose enumeration limitation is measured on a real macOS runner rather
+  than assumed (issue #81). The Linux expectation is not universal.
 - A TLS chain that verified with an issuing-CA organization outside the declared expected set is
   an unresolved observation as of 2026-09-20 (see the `tls_issuer_unexpected` row below): the run
   attempted a question it could not settle, so it is incomplete and exits `1`. The compared value

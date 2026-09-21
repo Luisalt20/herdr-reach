@@ -227,8 +227,9 @@ measurement named as a coverage gap.
 | `2` | Usage or internal error — a bad flag, an unusable address, a failed write. No diagnosis is presented as completed, and standard output stays empty. |
 
 One platform expectation to know before you file a bug: on macOS the run cannot resolve the local
-trust store by decision, so even a default run reports it `unresolved` and exits `1`. On Linux
-the same run exits `0`. The report states which case you are in.
+trust store by decision — backed by a measurement on a real macOS runner, not folklore
+(issue #81) — so even a default run reports it `unresolved` and exits `1`. On Linux the same run
+exits `0`. The report states which case you are in.
 
 ## What the tool guarantees
 
