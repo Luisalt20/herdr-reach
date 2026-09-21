@@ -1,20 +1,19 @@
-# Beta testing herdr-reach
+# Testing herdr-reach
 
 `herdr-reach doctor` is one read-only measurement run per invocation: it measures the machine it
-runs on, reports what it found, and writes nothing to the machine. This guide is for the beta
-testers running it on the two machines that matter. It covers what you download, how you verify
-it, which run answers which question, how to read the answer, and what to send back.
+runs on, reports what it found, and writes nothing to the machine. This guide is for anyone
+running it on the two machines that matter. It covers what you download, how you verify it, which
+run answers which question, how to read the answer, and what to send back.
 
-The beta does not install, configure or provision anything, and it does not connect two machines.
-It produces evidence. Everything a report says is a measurement taken where the run happened; a
-transport row describes a path this run measured, never a path this run configured.
+This slice does not install, configure or provision anything, and it does not connect two
+machines. It produces evidence. Everything a report says is a measurement taken where the run
+happened; a transport row describes a path this run measured, never a path this run configured.
 
 ## What you are downloading
 
-Beta releases are published as **pre-releases** on the repository's
-[releases page](https://github.com/Luisalt20/herdr-reach/releases). A beta tag carries a hyphen,
-for example `v0.1.0-beta.1`. Each release attaches one binary per platform plus a `SHA256SUMS`
-file:
+Releases are published on the repository's
+[releases page](https://github.com/Luisalt20/herdr-reach/releases). Each release attaches one
+binary per platform plus a `SHA256SUMS` file:
 
 | Platform | Artifact |
 |:---|:---|
@@ -24,8 +23,9 @@ file:
 | macOS, Apple silicon | `herdr-reach_<tag>_darwin_arm64` |
 | Windows, x86-64 | `herdr-reach_<tag>_windows_amd64.exe` |
 
-`<tag>` is the release you downloaded, for example `v0.1.0-beta.1`. Download your binary and
-`SHA256SUMS` from the same release, and verify both the bytes and the build before you run it.
+`<tag>` is the release you downloaded, written exactly as that release names it. Download your
+binary and `SHA256SUMS` from the same release, and verify both the bytes and the build before you
+run it.
 
 **The checksum proves the bytes** are the ones the release published. `SHA256SUMS` lists all five
 platform binaries, so check the line for the one you actually downloaded:
@@ -51,13 +51,28 @@ Get-FileHash .\herdr-reach_<tag>_windows_amd64.exe -Algorithm SHA256
 ./herdr-reach_<tag>_linux_amd64 --version
 ```
 
-It must print `herdr-reach <tag>`, for example `herdr-reach v0.1.0-beta.1`. A binary built from
-source with no release metadata reports `herdr-reach 0.0.0-dev`, so this check is also what tells
-a release build from a development one.
+It must print `herdr-reach <tag>`, the tag of the release the binary came from. A binary built
+from source with no release metadata reports `herdr-reach 0.0.0-dev`, so this check is also what
+tells a release build from a development one.
 
-The beta binaries are unsigned and not notarised. macOS may quarantine one downloaded through a
+The release binaries are unsigned and not notarised. macOS may quarantine one downloaded through a
 browser and refuse it on first run (`xattr -d com.apple.quarantine <binary>` clears the
 attribute), and Windows may show a SmartScreen warning. Neither is a bug in the tool.
+
+## What has been measured on which platform
+
+Every artifact above can be downloaded, but not every platform has the same real-network evidence
+behind it, and the difference decides what a report from your machine adds. This is each platform's
+evidence at this release.
+
+| Platform | The run behind it | What the run does not establish |
+|:---|:---|:---|
+| Linux/ARM64 | The published binary, checksum and injected version verified, on a real network with **no `--hub`** (2026-09-21); all ten probes ran. | Nothing about a hub, because none was named: `egress.hub.direct` reports `input_missing_hub`, and no hub-dependent transport is decided. |
+| macOS | The trust-store measurement on a real macOS runner (issue #81), and a real-network `doctor` run on the CI runner with the release's own `CGO_ENABLED=0` build shape and **no `--hub`**. | A CI runner's network is not a corporate network, so it says nothing about the locked-down machines this tool targets. It also establishes nothing about a hub, for the same `input_missing_hub` reason. |
+| Windows | The published beta binaries have been run on real Windows machines during the beta series, all with no `--hub`: issues #59 and #72 record the measurements, and a tester ran `herdr-reach_v0.1.0-beta.4_windows_amd64.exe` on Windows 11 (the report behind issues #78 and #79). The platform is classified as supported, and the Herdr plugin declares `linux` and `macos`, not Windows. | No hub run has been made on any platform, Windows included. No provisioning slice covers native Windows, so WSL2 remains the Windows path this tool would provision. |
+
+The `1` the Linux and macOS runs exited with is the ordinary outcome on a real network, not a
+defect: the [exit codes](#exit-codes) below explain what it does and does not say.
 
 ## The two profiles
 
@@ -73,9 +88,9 @@ address of **the other side** of the link being diagnosed; the default port is 2
 single most important thing to understand before reading the output: the same command answers a
 different question depending on which machine runs it.
 
-This beta has no role switch. There is no `--role` flag and no prompt asking which machine this
+This slice has no role switch. There is no `--role` flag and no prompt asking which machine this
 is: the tool is role-agnostic by design, and the role question belongs to the interface that is
-not part of this beta. It measures this machine plus the address you point it at, and choosing
+not part of this release. It measures this machine plus the address you point it at, and choosing
 that address is the profile.
 
 ### On the node
@@ -96,9 +111,12 @@ herdr-reach doctor --hub <hub address>
   ports, including whether the UDP path answers;
 - is an `sshd` present on this machine at the path the platform documents — `/usr/sbin/sshd` on Linux,
   macOS and WSL2, `C:\Windows\System32\OpenSSH\sshd.exe` on native Windows — the daemon a transport would
-  eventually reach. The configuration *in force* is not measured in this beta: the run is given
-  no command runner, so it reports that question as `not measured` instead of reading silence as
-  "configured";
+  eventually reach. The two command-backed questions are not measured in this slice: the run is given
+  no command runner, so it reports the service state and the configuration *in force* as `not measured`
+  instead of reading silence as "running" or "configured". The service question is the platform's own:
+  on Linux, macOS and WSL2 it is the systemd `is-active` query for the units a distribution ships, and
+  on native Windows this slice declares the platform's `sshd` service question without putting it to
+  the machine, so a Windows report claims no service state there (issue #79);
 - what platform this is and whether the tool supports it. Native Windows as a node is measured and
   classified as supported: upstream Herdr supports a Windows server as of 0.9.1. The tool does not
   measure the node's Herdr version, so a node running an older server is classified supported here
@@ -133,7 +151,7 @@ or `not viable` with the reason the verdict rests on and the requirements that w
 The measurement rule applies here too: on a hub run, these rows describe the paths a node would
 use, measured from the hub. `viable` means this run measured every requirement of that path
 satisfied *from where the tool ran*; it does not mean the transport is configured, and nothing in
-this beta configures one.
+this slice configures one.
 
 ## Reading the output
 
@@ -163,7 +181,7 @@ classification, then prints four sections:
 `COVERAGE` uses two words that look like problems and are not:
 
 - **`not measured`** means the run never attempted a measurement. Usually there was no input for
-  it (no `--hub` was supplied), or the capability is outside this beta's boundary. The tool lists
+  it (no `--hub` was supplied), or the capability is outside this slice's boundary. The tool lists
   the gap instead of implying the measurement passed.
 - **`unresolved`** means the run attempted a measurement and the attempt produced no answer: a
   resolver that did not reply, a handshake that did not complete, a platform verifier that cannot
@@ -215,31 +233,38 @@ there is a stated reason for it, never by copying a publisher that a run happene
   on the `unresolved:` line below.
 
 A `not measured` probe does not make a run incomplete, and it still appears on the `not measured:`
-line. A run with no `--hub` on Linux is the ordinary case: complete, exit `0`, with the hub
-measurement named as a coverage gap.
+line. A run with no `--hub` names the hub measurement as a coverage gap and answers everything else
+it attempts — but on a real network it commonly exits `1` anyway, because `tls.interception` and
+`egress.quic` are attempted and produce no answer. Read `completeness:` (`run.completeness` in the
+document), not the exit code, to know which case you are in.
 
 ### Exit codes
 
 | Code | Meaning |
 |:---|:---|
 | `0` | A measurement completed — including "blocked" answers. Those are results, not failures of the run. |
-| `1` | The run is incomplete: at least one attempted measurement produced no answer. Since 2026-09-20 this includes a verified chain whose publisher is outside the declared expected set — see the section above. |
+| `1` | The run is incomplete: at least one attempted measurement produced no answer. This is common on a real network and it is a result, not a failed run: `tls.interception` and `egress.quic` are attempted and produce no answer, and since 2026-09-20 a verified chain whose issuing organization is outside the declared expected set is one of the causes — see the section above. |
 | `2` | Usage or internal error — a bad flag, an unusable address, a failed write. No diagnosis is presented as completed, and standard output stays empty. |
 
 One platform expectation to know before you file a bug: on macOS the run cannot resolve the local
-trust store by decision — backed by a measurement on a real macOS runner, not folklore
-(issue #81) — so even a default run reports it `unresolved` and exits `1`. On Linux the same run
-exits `0`. The report states which case you are in.
+trust store by decision. The enumeration half of that limitation was measured on a real macOS
+runner rather than assumed, and the keychain half rests on `crypto/x509`'s own source because the
+measurement performs no handshake (issue #81). So a default macOS run reports `tls.truststore`
+`unresolved` on top of whatever else was attempted. On Linux that probe answers; on both platforms
+the run still commonly exits `1` for the unresolved probes named just above. The report states
+which unresolved probes you are in, and `completeness:` (`run.completeness` in the `--json`
+document) is the line that summarises it.
 
 ## What the tool guarantees
 
-In this beta, a `doctor` run:
+In this slice, a `doctor` run:
 
 - **is read-only**: it writes nothing to the machine — no file, no service, no configuration, no
   receipt; its only output is the report and the document;
-- **executes no third-party binary**: no `ssh`, no package manager, no helper process. The one
-  command-backed capability, the sshd configuration in force, is reported as `not measured`
-  rather than executed;
+- **executes no third-party binary**: no `ssh`, no package manager, no helper process. The
+  command-backed questions, the sshd configuration in force and the POSIX service state, are
+  reported as `not measured` rather than executed, and the native-Windows service question is
+  declared without being put to the machine (issue #79);
 - **dials only the targets it declares**: every target it will dial is listed in the document
   under `targets.declared`, and the run dials exactly that set;
 - **reports reasons instead of guessing**: every measurement carries a reason code from a closed
@@ -262,6 +287,6 @@ Open an issue on the repository and attach the document. If the tool says `unres
 as it stands rather than guessing a cause: the refusal to guess is what makes the report
 trustworthy.
 
-This is a **pre-release built to be tested**. Failures are the point: an incomplete run, an
-unexpected block, or a reason code that does not match your network is exactly what a beta is
-for — not a sign that you are using it wrong.
+This is a **measurement built to be reported**. An incomplete run, an unexpected block, or a
+reason code that does not match your network is exactly what the report is for — not a sign that
+you are using it wrong.

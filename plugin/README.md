@@ -30,8 +30,11 @@ platform from a release of this repository and verifies it against that release'
 sandbox plugin code: the checksum is what makes the binary this plugin runs the one the release
 published.
 
-The plugin declares `platforms = ["linux", "macos"]`. It runs on the machine whose Herdr holds
-the UI, which is the machine each action measures.
+The plugin declares `platforms = ["linux", "macos"]`: it runs on the machine whose Herdr holds
+the UI, which is the machine each action measures. There is no Windows plugin: the published
+beta binaries have been run on real Windows machines for measurement (issues #59 and #72, and
+the tester report behind issues #78 and #79), but no plugin is offered there, and WSL2 remains
+the Windows path this tool would provision.
 
 ## Configure
 
@@ -79,8 +82,9 @@ dials only the targets it declares. Its report goes to standard error, and the m
 document to standard output; the plugin shows the report.
 
 With no address configured the run still happens, without `--hub`: the report names the missing
-measurement as `not measured` instead of guessing, and the run does not fail because of the
-missing configuration.
+measurement as `not measured` instead of guessing, and the missing address alone does not change
+the exit code. Other probes can still leave the run incomplete — the exit section below says
+which.
 
 ## Exit codes
 
@@ -88,27 +92,30 @@ missing configuration.
 
 | Code | Meaning |
 |:---|:---|
-| `0` | Measurement completed — including "no transport viable" and a native-Windows refusal; those are results, not failures of the run. |
-| `1` | Run incomplete — at least one probe was attempted and produced no answer. |
+| `0` | Measurement completed — including "no transport viable"; that is a result, not a failure of the run. |
+| `1` | Run incomplete — at least one probe was attempted and produced no answer; `run.completeness` is the field that says so. |
 | `2` | Usage or internal error — no diagnosis is presented as completed, and standard output stays empty. |
 
 Herdr derives a plugin action's status from the process exit code, so an action lands in the
 plugin log as `failed` when `doctor` exits `1`. **That means "incomplete measurement", not "the
-plugin broke".** The report is complete for every question it answered; the `unresolved` line
-names the question that was attempted and could not be settled, and this is a result, not a
-failure of the run. A verified TLS chain whose publisher is outside the declared expected set is
-one of the causes of an incomplete run. Both entrypoints print this explanation on standard error
-after the report and still exit `1`; the plugin never rewrites the tool's status. A status outside
-`0`, `1`, and `2` is outside the documented set, and the plugin names it as such before passing it
-through.
+plugin broke".** Exit `1` is the common outcome on a real network, not an exception:
+`tls.interception` and `egress.quic` are attempted and produce no answer, a macOS run adds
+`tls.truststore`, and a verified TLS chain whose issuing organization is outside the declared
+expected set is one of the causes. The report is complete for every question it answered; the
+`unresolved` line names the question that was attempted and could not be settled, and this is a
+result, not a failure of the run. The field to read is `run.completeness`, never the action's
+status. Both entrypoints print this explanation on standard error after the report and still exit
+`1`; the plugin never rewrites the tool's status. A status outside `0`, `1`, and `2` is outside
+the documented set, and the plugin names it as such before passing it through.
 
 ## Known limit
 
 The doctor does not measure the node's Herdr version. A node running Herdr older than 0.9.1 is
-refused by the tool while also being unable to host a saved-machine connection; the report says
-which case it found.
+classified as supported here — `refused` is always `false` — while it also cannot host a
+saved-machine connection; telling those two cases apart needs a version measurement this tool does
+not make, and the report carries the caveat in the node classification's own note.
 
 ## More
 
-[The beta testing guide](../docs/beta-testing.md) is the full picture of what the shipped binary
+[Testing herdr-reach](../docs/beta-testing.md) is the full picture of what the shipped binary
 measures, how to read its report, and what to send back when a run surprises you.

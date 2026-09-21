@@ -19,13 +19,20 @@ row here — or a row without a constant — fails the suite.
 | `1` | Run incomplete — at least one probe was attempted and resolved unresolved | `run.completeness == "incomplete"` |
 | `2` | Usage or internal error — no diagnosis is presented as completed; standard output stays empty | bad flag or flag value, unknown `--target` probe name, unusable `--hub` address, JSON write failure |
 
+Read `run.completeness` and `run.unresolved`, never the code alone: exit `1` is common on a real
+network and it is a result, not a failed run.
+
 - A not-measured observation alone never changes the exit code, but it always appears in
   `run.not_measured` so the coverage gap stays visible.
-- A default live run **with no `--hub`** on Linux exits `0` with a named coverage gap: the hub was
-  not measured, and `sshd -T` is not measured by this slice's boundary.
-- A default live run on **macOS exits `1`**, because `tls.truststore` is attempted and unresolved
-  there by decision (RG-3), whose enumeration limitation is measured on a real macOS runner rather
-  than assumed (issue #81). The Linux expectation is not universal.
+- A run **with no `--hub`** names the hub row in `run.not_measured`, and that alone does not change
+  the exit code. On a real network the run commonly exits `1` anyway: `tls.interception` and
+  `egress.quic` are attempted and left unresolved — measured on 2026-09-21 with a Linux/arm64 VPS
+  and on the macOS CI runner. No platform is documented as exiting `0` on a default run; the fields
+  to read are `run.completeness` and `run.unresolved`.
+- A default live run on **macOS exits `1`** for one more reason: `tls.truststore` is attempted and
+  unresolved there by decision (RG-3). The enumeration half of that limitation was measured on a
+  real macOS runner rather than assumed; the keychain half rests on `crypto/x509`'s own source,
+  because the measurement performs no handshake (issue #81).
 - A TLS chain that verified with an issuing-CA organization outside the declared expected set is
   an unresolved observation as of 2026-09-20 (see the `tls_issuer_unexpected` row below): the run
   attempted a question it could not settle, so it is incomplete and exits `1`. The compared value
@@ -113,7 +120,7 @@ stays in `detail`. The set is closed.
 | `truststore_override_platform_bypass` | An `SSL_CERT_FILE`/`SSL_CERT_DIR` override bypasses the platform verifier, so its answer would not mean what the probe claims. Never a false pass. |
 | `sshd_absent` | No sshd binary is present at the platform's documented path — `/usr/sbin/sshd` on Linux, macOS and WSL2, `C:\Windows\System32\OpenSSH\sshd.exe` on native Windows. Installing it is work owned by a later slice. |
 | `sshd_config_divergence` | A written sshd configuration that differs from the configuration in force; both are in `detail`. |
-| `capability_excluded` | A capability this slice never attempts (for example `sshd -T` with no production command runner wired): the attempt was not made, and a check that was not attempted never claims an absence. The `local.sshd` service-state question is excluded by design on native Windows as well, whether or not a command runner was injected: the platform's own `Get-Service`-style query for the `sshd` service the OpenSSH Server capability installs is declared in the observation and never put to the machine, so a Windows report names that platform question, carries no systemd vocabulary, and claims no service state (issue #79). |
+| `capability_excluded` | A capability this slice never attempts (for example `sshd -T` with no production command runner wired): the attempt was not made, and a check that was not attempted never claims an absence. The `local.sshd` service-state question is the platform's own: on the POSIX platforms it is the systemd `is-active` query for the units a distribution ships, run only through an injected command runner; on a native-Windows node this slice declares the platform's own question — the state of the `sshd` service the OpenSSH Server capability installs, which a Get-Service-style query reports — and does not put it to the machine, whether or not a command runner was injected, so a Windows report names that platform question, carries no systemd vocabulary, and claims no service state (issue #79). |
 | `command_denied` | A command seam denied the execution: the attempt was not made, and the reason names the capability. |
 | `input_missing_hub` | A run with no hub address supplied: the attempt was not made for lack of input, which is never a blocked hub. |
 | `platform_unknown` | A set of platform signals matching no supported classification: ambiguous, and no platform is assumed. |

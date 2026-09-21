@@ -10,7 +10,7 @@
 <p><strong>Make a locked-down machine reachable to your Herdr.</strong></p>
 
 <p>
-<img src="https://img.shields.io/badge/status-beta%20%C2%B7%20diagnosis%20only-E0C15A?style=for-the-badge&labelColor=1A1B26" alt="Status: beta, diagnosis only">
+<img src="https://img.shields.io/badge/status-diagnosis%20only-E0C15A?style=for-the-badge&labelColor=1A1B26" alt="Status: diagnosis only">
 <img src="https://img.shields.io/badge/Linux%20%C2%B7%20macOS%20%C2%B7%20WSL2-7FB4CA?style=for-the-badge&labelColor=1A1B26" alt="Platform">
 <img src="https://img.shields.io/badge/Go-1.25.10-7FB4CA?style=for-the-badge&labelColor=1A1B26" alt="Go 1.25.10">
 <a href="LICENSE"><img src="https://img.shields.io/badge/MIT-B7CC85?style=for-the-badge&labelColor=1A1B26" alt="License: MIT"></a>
@@ -47,13 +47,14 @@ transport that will work, proves it works, and makes it survive reboots.</strong
 </div>
 
 > [!IMPORTANT]
-> **Status: beta, diagnosis only.** `herdr-reach doctor` ships in the latest
-> [pre-release](https://github.com/Luisalt20/herdr-reach/releases): one read-only
+> **Status: diagnosis only.** `herdr-reach doctor` is published on the
+> [releases page](https://github.com/Luisalt20/herdr-reach/releases): one read-only
 > measurement run per invocation, which reports what your network allows and why a transport cannot
 > work. **Everything else in this document is still planned** &mdash; pairing, provisioning,
-> persistence, and the interface described below do not exist yet. [Beta testing](docs/beta-testing.md)
-> covers what the shipped binary does and, just as deliberately, what it does not.
-> [For agents](docs/for-agents.md) is the companion playbook: reading the payload, choosing a transport, and acting on the measurement.
+> persistence, and the interface described below do not exist yet. [Testing herdr-reach](docs/beta-testing.md)
+> covers what the shipped binary does and, just as deliberately, what it does not &mdash; its exit
+> codes, its platform limits, and what each platform's real-network evidence does and does not
+> establish. [For agents](docs/for-agents.md) is the companion playbook: reading the payload, choosing a transport, and acting on the measurement.
 
 <div align="center"><sub>&middot; &middot; &middot;</sub></div>
 
@@ -311,7 +312,14 @@ generic error.
 | **Hub** | Linux, macOS | Herdr's client only |
 | **Node** | Linux, macOS | needs `systemd` or `launchd` |
 | **Node** | **Windows with WSL2** | **supported.** WSL2 is the Windows path this tool provisions today, including its lifetime problem. Herdr supports a Windows server as of 0.9.1, but the provisioning slices still do not cover native Windows. |
-| **Node** | native Windows | **supported as a platform, not provisioned yet.** Herdr supports a Windows server as of 0.9.1, so the classification passes; the tool does not measure which Herdr version is installed, and the provisioning slices still do not cover it. |
+| **Node** | native Windows | **supported as a platform, measurement only.** The platform is classified as supported, and the published beta binaries have been run on real Windows machines: issues #59 and #72 record the measurements, and a tester ran `herdr-reach_v0.1.0-beta.4_windows_amd64.exe` on Windows 11 (the report behind issues #78 and #79). In-tree, the cross-build compiles `windows/amd64`, the CI leg runs the test suite on `windows-latest`, and the release pipeline builds the `.exe`. No provisioning slice covers native Windows, so WSL2 remains the Windows path this tool provisions. Herdr supports a Windows server as of 0.9.1, so the classification passes, but the tool does not measure which Herdr version is installed, and a node running an older server is classified as supported here while it cannot host a saved-machine connection. |
+
+Real-network evidence, per platform: the published Linux/ARM64 binary has been run with **no `--hub`**
+on a real network (2026-09-21), and macOS has a CI run of the release's own build shape, also with
+**no `--hub`** &mdash; its hub row is `input_missing_hub` and no hub-dependent transport is decided,
+and a CI runner's network is not the locked-down corporate network this tool targets. Native Windows
+has no hub run. [Testing herdr-reach](docs/beta-testing.md) carries the table and what each run does
+not establish.
 
 ### Before you use this on a machine you do not own
 
@@ -364,13 +372,12 @@ undone. Nothing in this tool changes a system as a side effect of thinking about
 
 ## Install
 
-**The diagnosis slice is available as a pre-release.**
-The [releases page](https://github.com/Luisalt20/herdr-reach/releases) attaches one binary per
-platform plus a `SHA256SUMS` file, and this section names no version on purpose: the version to
-install is the one on that page, and a tag written here goes stale at the next release. Verify the
-bytes and the build before you run it &mdash;
-[Beta testing](docs/beta-testing.md) walks through both, and through the two profiles the run is
-meant for.
+**The diagnosis slice is published on the [releases page](https://github.com/Luisalt20/herdr-reach/releases).**
+That page attaches one binary per platform plus a `SHA256SUMS` file, and this section names no
+version on purpose: the version to install is the one it lists, and a tag written here goes stale
+at the next release. Verify the bytes and the build before you run it &mdash;
+[Testing herdr-reach](docs/beta-testing.md) walks through both, and through the two profiles the
+run is meant for.
 
 Package managers are planned, not available:
 
@@ -382,7 +389,8 @@ brew install Luisalt20/tap/herdr-reach
 curl -fsSL https://raw.githubusercontent.com/Luisalt20/herdr-reach/main/scripts/install.sh | bash
 
 # Any platform with Go 1.25.10+ — `<tag>` is the release you want, written as the
-# releases page writes it: a pre-release is never @latest
+# releases page writes it. @latest resolves to the newest release, and to a
+# pre-release only while no release exists, so name the tag you want.
 go install github.com/Luisalt20/herdr-reach/cmd/herdr-reach@<tag>
 ```
 
