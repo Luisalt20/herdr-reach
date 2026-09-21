@@ -376,8 +376,12 @@ func unknownPlatformObservation(wording string) Observation {
 //     whichever filesystem the process happened to start in. The platform's own
 //     path removes that dependence instead of stepping around it, so the check is a
 //     real measurement on every platform this tool supports.
-//  2. `service state` — a read-only service-manager query through the injected
-//     CommandRunner. The query asks for the unit's state and changes nothing.
+//  2. `service state` — the platform's own service question (issue #79). POSIX
+//     platforms ask the service manager for the unit's state through the injected
+//     CommandRunner, a read-only query that changes nothing; a native-Windows node
+//     declares the platform's own question for the service the OpenSSH Server
+//     capability installs and does not put it to the machine in this slice, so its
+//     observation is not measured and claims no service state.
 //  3. `effective config` — the platform's written configuration read through the
 //     FS seam — `/etc/ssh/sshd_config` on POSIX platforms and
 //     `C:\ProgramData\ssh\sshd_config` on native Windows — compared with the
@@ -390,12 +394,15 @@ func unknownPlatformObservation(wording string) Observation {
 //     WSL2's configuration while measuring a Windows machine (issue #72).
 //
 // Degradation is the point of this half of the file (design §5.1 obligation 2). A
-// run with no command runner was never given the capability, so the two
+// run with no command runner was never given the capability, so the
 // command-derived observations are not measured and name the capability they
 // needed. A run whose command seam denies the execution is not measured either,
 // with a *different* reason code, so "the capability was never there" and "the
-// capability refused" stay distinguishable. Either way the probe is never a pass:
-// it passes only when all three observations were measured, which the aggregate
+// capability refused" stay distinguishable. On a native-Windows node the
+// service-state question is excluded before any command is considered: this slice
+// declares the platform's question and does not put it to the machine, whether or
+// not a runner was injected (issue #79). Either way the probe is never a pass: it
+// passes only when all three observations were measured, which the aggregate
 // order makes structural rather than a matter of care.
 //
 // The closed reason-code set holds no code for "installed but not running". The
@@ -437,7 +444,10 @@ const (
 	localSSHDCommand    = "sshd"
 	localSSHDConfigFlag = "-T"
 	// localSSHDServiceCommand and localSSHDServiceQuery are the service-state
-	// question. `is-active` reports a unit's state and changes nothing.
+	// question on the POSIX platforms: `is-active` reports a unit's state and
+	// changes nothing. They are systemd vocabulary and are never handed to a
+	// native-Windows machine, whose service question observeService declares
+	// through windowsSSHDServiceName instead (issue #79).
 	localSSHDServiceCommand = "systemctl"
 	localSSHDServiceQuery   = "is-active"
 	// The two unit names a distribution may ship, queried together: Debian and
@@ -446,6 +456,12 @@ const (
 	// question — "is either serving?" — instead of guessing a distribution.
 	localSSHDServiceUnitSSHD = "sshd.service"
 	localSSHDServiceUnitSSH  = "ssh.service"
+	// windowsSSHDServiceName is the service the OpenSSH Server capability installs
+	// on Windows. It is the subject of the platform's own service question, which a
+	// Get-Service-style query asks, and it is a Windows service name rather than a
+	// systemd unit name: a native-Windows report names this service and never
+	// `sshd.service` (issue #79).
+	windowsSSHDServiceName = "sshd"
 	// The three observation labels. They are the separately reportable answers
 	// R-HR-18 names, and they are stable because the reasoning layer and the human
 	// projection both quote them.
@@ -471,13 +487,15 @@ func runClockNow(seams Seams) time.Time {
 
 // localSSHD is the `local.sshd` probe. It carries the run's seams and nothing
 // else, and it reads three of them: the filesystem for the two local paths, the
-// command runner for the service query and the effective configuration, and the
-// platform seam for the one question that decides which pair of documented paths
-// this machine is checked at — the POSIX pair on Linux, macOS and WSL2, and the
-// Windows pair on a native-Windows node (issues #66, #72). A probe that reached
-// the filesystem, executed a binary or classified the platform directly would
-// measure the machine the test runs on instead of the machine the case describes,
-// and would put an exec outside the run's capability set (R-HR-02).
+// command runner for the POSIX service query and the effective configuration,
+// and the platform seam for the one question that decides which pair of
+// documented paths this machine is checked at and whether its service question is
+// the POSIX one — the POSIX pair and question on Linux, macOS and WSL2, and the
+// Windows pair and service question on a native-Windows node (issues #66, #72,
+// #79). A probe that reached the filesystem, executed a binary or classified the
+// platform directly would measure the machine the test runs on instead of the
+// machine the case describes, and would put an exec outside the run's capability
+// set (R-HR-02).
 type localSSHD struct {
 	seams Seams
 }
@@ -498,8 +516,8 @@ func (p *localSSHD) Kind() ProbeKind { return ProbeLocal }
 //
 // The result's target is the probe's local subject, the platform's documented
 // binary path: a probe that measures this machine dials nothing, and each
-// observation carries the path or unit it actually read, so the caller can tell
-// which local fact the result is about.
+// observation carries the path, unit or service name the fact is about, so the
+// caller can tell which local fact the result is about.
 //
 // The context travels into the two command invocations, so a run that is cancelled
 // or that exhausts its budget stops waiting on a command rather than leaving one
@@ -507,14 +525,15 @@ func (p *localSSHD) Kind() ProbeKind { return ProbeLocal }
 // probe-level budget would add a second, invisible deadline to the same question.
 func (p *localSSHD) Run(ctx context.Context) Result {
 	started := p.now()
-	// The platform seam decides the pair of documented paths once, before the three
-	// measurements, so the result, the binary check and the written-file check all
-	// name the same machine's paths even if the seam were to answer differently on
+	// The platform seam is read once, before the three measurements, so the
+	// result, the binary check, the service question and the written-file check
+	// all describe the same machine even if the seam were to answer differently on
 	// a second reading.
-	binaryPath, configPath := p.sshdPaths()
+	nativeWindows := p.nativeWindows()
+	binaryPath, configPath := p.sshdPaths(nativeWindows)
 	observations := []Observation{
 		p.observeBinary(binaryPath),
-		p.observeService(ctx),
+		p.observeService(ctx, nativeWindows),
 		p.observeEffectiveConfig(ctx, configPath),
 	}
 	verdict, reason := Aggregate(observations)
@@ -584,17 +603,27 @@ func (p *localSSHD) observeBinary(binaryPath string) Observation {
 	})
 }
 
-// sshdPaths returns the pair of documented sshd locations this machine is checked
-// at, chosen from the run's platform seam.
+// nativeWindows reports whether the run's platform seam describes a native
+// Windows node. It is the one platform question this probe asks, and the caller
+// asks it once per run: both the documented paths and the service question are
+// chosen from its answer, so one result describes one machine.
 //
-// The platform seam is the same one `local.env` classifies with, and GOOS alone
-// decides the pair: native Windows installs the OpenSSH server it ships at its own
-// documented locations, and every other platform — Linux, macOS and WSL2 — keeps
-// the POSIX pair. WSL2 reports GOOS "linux" and is therefore never caught here:
-// its filesystem is where the POSIX paths are real. A run with no platform seam is
-// not a Windows node either: an unclassified machine is not a machine whose POSIX
-// paths this probe may declare wrong, so the POSIX pair is used and the
-// filesystem's own answer decides the observation.
+// GOOS alone decides, exactly as `local.env` classifies: WSL2 reports GOOS
+// "linux" and is therefore never caught here, which is what keeps its service
+// question the POSIX one. A run with no platform seam is not a Windows node
+// either: an unclassified machine is not a machine whose POSIX questions this
+// probe may declare wrong, so the POSIX pair of paths and the POSIX service
+// question are used and the seams' own answers decide the observations.
+func (p *localSSHD) nativeWindows() bool {
+	return p.seams.Platform != nil && p.seams.Platform.GOOS() == goosWindows
+}
+
+// sshdPaths returns the pair of documented sshd locations this machine is checked
+// at, from the caller's single platform reading.
+//
+// Native Windows installs the OpenSSH server it ships at its own documented
+// locations, and every other platform — Linux, macOS and WSL2 — keeps the POSIX
+// pair.
 //
 // Choosing the path is the whole fix for issues #66 and #72, which recorded both
 // halves of the same Windows behaviour: a path beginning with "/" resolves against
@@ -603,21 +632,46 @@ func (p *localSSHD) observeBinary(binaryPath string) Observation {
 // configuration on a run launched from a WSL share while measuring a Windows
 // machine. The platform's own paths make both checks measurements of this machine
 // rather than measurements of the directory the process happened to start in.
-func (p *localSSHD) sshdPaths() (binaryPath, configPath string) {
-	if p.seams.Platform != nil && p.seams.Platform.GOOS() == goosWindows {
+func (p *localSSHD) sshdPaths(nativeWindows bool) (binaryPath, configPath string) {
+	if nativeWindows {
 		return localSSHDBinaryPathWindows, localSSHDConfigPathWindows
 	}
 	return localSSHDBinaryPath, localSSHDConfigPath
 }
 
-// observeService asks the service manager whether an sshd unit is active.
+// observeService asks the platform's own service-state question: whether an sshd
+// service is serving here.
 //
-// The answer decides the observation, not the exit status: `systemctl is-active`
-// exits 3 when no queried unit is active, so a stopped service arrives as output
-// beside an error, and the verbatim answer is what a reader compares against their
-// own `systemctl` run. An answer naming an active unit is a measured pass; an
-// answer naming none is a measured negative about this machine's sshd.
-func (p *localSSHD) observeService(ctx context.Context) Observation {
+// The question is platform-chosen, from the same single platform reading the
+// documented paths are chosen from, so a POSIX platform and a native-Windows node
+// each name a question their machine actually has (issue #79).
+//
+// On a native-Windows node the question is the state of the service the OpenSSH
+// Server capability installs, which a Get-Service-style query asks for. This
+// slice declares that question and does not put it to the machine: `local.sshd`
+// has no Windows service query to run, so there is no `invoke` here and the
+// session's command runner is never asked it, whether or not one is injected. The
+// observation is `capability_excluded` — the vocabulary's "the attempt was not
+// made by design" fact — and its wording names the platform's own question while
+// claiming nothing about the service state. No Windows interpretation of an
+// answer is declared: a reading this slice cannot execute or test would
+// manufacture a "not running" negative out of an answer it never read, and the
+// slice that wires the platform query declares the question and its
+// interpretation together.
+//
+// On the POSIX platforms the answer decides the observation, not the exit status:
+// `systemctl is-active` exits 3 when no queried unit is active, so a stopped
+// service arrives as output beside an error, and the verbatim answer is what a
+// reader compares against their own `systemctl` run. An answer naming an active
+// unit is a measured pass; an answer naming none is a measured negative about
+// this machine's sshd.
+func (p *localSSHD) observeService(ctx context.Context, nativeWindows bool) Observation {
+	if nativeWindows {
+		return Observe(labelSSHDService, windowsSSHDServiceName, PurposeSSHDConfiguration, RawObservation{
+			Kind:    ObsCapabilityExcluded,
+			Wording: windowsServiceStateWording(),
+		})
+	}
 	target := strings.Join(sshdServiceUnits, ",")
 	args := append([]string{localSSHDServiceQuery}, sshdServiceUnits...)
 	stdout, denial := p.invoke(ctx, localSSHDServiceCommand, args...)
@@ -637,6 +691,18 @@ func (p *localSSHD) observeService(ctx context.Context) Observation {
 		Wording: fmt.Sprintf("the sshd service is not running: %s answered %q for %s, so no sshd unit is active on this machine; this run reports the state it read and changes nothing",
 			commandLine(localSSHDServiceCommand, args...), answer, target),
 	})
+}
+
+// windowsServiceStateWording is the wording `local.sshd` reports for the
+// service-state observation on a native-Windows node: the platform's own
+// question, named, and the statement that this slice does not put it to the
+// machine. It claims nothing about the service state and contains no systemd
+// vocabulary: the platform's service question is the Windows service the OpenSSH
+// Server capability installs, which a Get-Service-style query asks for (issue
+// #79).
+func windowsServiceStateWording() string {
+	return fmt.Sprintf("the service-state question on this platform is the state of the %s service that the OpenSSH Server capability installs, which a Get-Service-style query would report; this slice does not put that question to the machine, so no service state is claimed",
+		windowsSSHDServiceName)
 }
 
 // sshdServiceActive reports whether the service manager named an active unit.
