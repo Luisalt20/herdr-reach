@@ -6,6 +6,13 @@
 package probe_test
 
 import (
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/Luisalt20/herdr-reach/internal/probe"
@@ -429,6 +436,348 @@ func TestAggregateNeverPromotesAnUnmeasuredObservation(t *testing.T) {
 					if gotReason == unmeasured {
 						t.Fatalf("failure reason = %q, which means the observation was not measured", gotReason)
 					}
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Issue #68 — a detail names the address it measured exactly once
+// ---------------------------------------------------------------------------
+
+// TestDetailsNameTheMeasuredAddressOnce asserts issue #68's property over every wording
+// that quotes the error that ended an attempt: the detail names the address the attempt
+// was against exactly once.
+//
+// The standard library formats its own network errors as "<operation> <address>:
+// <cause>" — "dial tcp 127.0.0.1:1: connect: connection refused", "read tcp
+// 192.0.2.5:53124->198.51.100.7:443: i/o timeout", "lookup nosuch.example: no such host"
+// — so a detail that joins the probe's own "<operation> <address>:" prefix to one names
+// the address twice, and the doubling reaches every conclusion that quotes the detail.
+//
+// The property is asserted, not the sentence: a wording edit may rewrite these sentences
+// freely, while a case that compared whole strings would have to be rewritten beside
+// every edit and would not notice the doubling returning inside a differently shaped
+// sentence. The denied-seam cases are the control — ErrSeamDenied names no address, so
+// there the probe's own prefix is the only thing that says what was attempted, and a
+// repair that dropped the address from every detail would fail those cases.
+//
+// Each case also pins the classification the same input produced before the wording was
+// repaired. Classify chooses a resolution, a verdict and a reason code together, from one
+// table row, so a matching reason code is the same classification the run reported then:
+// the repair is shown to be wording only, and no conclusion built from these facts moves.
+func TestDetailsNameTheMeasuredAddressOnce(t *testing.T) {
+	hubAddress := testHubAddress
+	sshAddress := declaredAddress(t, testSSHKnownProbe)
+	sshHost, _, err := net.SplitHostPort(sshAddress)
+	if err != nil {
+		t.Fatalf("the declared public-SSH target %q is not host:port: %v", sshAddress, err)
+	}
+	quicAddresses := declaredAddresses(t, testQuicProbe)
+	tlsAddress := declaredAddress(t, testTLSInterceptionProbe)
+	trustStoreAddress := declaredAddress(t, testTLSTrustStoreProbe)
+
+	// networkError builds what the standard library's own network code returns: an
+	// *net.OpError whose message is "<operation> <network> <address>: <cause>". The
+	// scripted address is a net.Addr like any other, so the message is the one a real
+	// dial, read or write carries.
+	networkError := func(operation, network, address string, cause error) error {
+		return &net.OpError{Op: operation, Net: network, Addr: scriptedAddr(address), Err: cause}
+	}
+	// refused is the dial failure the released binary printed, wrapped the way net
+	// wraps it, so its message reads "connect: connection refused" rather than the bare
+	// syscall wording.
+	refused := func(operation, network, address string) error {
+		return networkError(operation, network, address, os.NewSyscallError("connect", syscall.ECONNREFUSED))
+	}
+	// packetErrors scripts one datagram socket per declared edge region, each socket's
+	// error naming its own region: the two regions are measured separately, so a shared
+	// error would name the wrong region's address.
+	packetErrors := func(script func(address string) *scriptedPacketConn) *scriptedPacketDialer {
+		perAddress := make(map[string]*scriptedPacketConn, len(quicAddresses))
+		for _, address := range quicAddresses {
+			perAddress[address] = script(address)
+		}
+		return &scriptedPacketDialer{perAddress: perAddress}
+	}
+
+	cases := []struct {
+		name string
+		// run scripts one measurement and returns the address each observation's
+		// detail must name exactly once, in observation order. For a resolution
+		// failure it is the host the resolver's own error names; everywhere else it is
+		// the observation's own target.
+		run func(t *testing.T) (probe.Result, []string)
+		// wantReasons pins the reason code of every observation, in order.
+		wantReasons []probe.ReasonCode
+	}{
+		{
+			// egress.go dialFactFor: the error already names the operation and the
+			// address, so the probe must use it verbatim.
+			name: "a refused hub dial",
+			run: func(t *testing.T) (probe.Result, []string) {
+				dialer := &scriptedDialer{err: refused("dial", "tcp", hubAddress)}
+				return runHub(t, dialer, probe.TargetInput{Hub: hubAddress}), []string{hubAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonConnRefused},
+		},
+		{
+			// egress.go dialFactFor's budget branch: the probe's own sentence follows
+			// the error, which already names the address.
+			name: "a hub dial that expired the probe's own budget",
+			run: func(t *testing.T) (probe.Result, []string) {
+				dialer := &scriptedDialer{err: networkError("dial", "tcp", hubAddress, os.ErrDeadlineExceeded)}
+				return runHub(t, dialer, probe.TargetInput{Hub: hubAddress}), []string{hubAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonBudgetExpired},
+		},
+		{
+			// egress.go dialFactFor's default branch, whose sentence is appended to
+			// the error that already names the address.
+			name: "a hub dial that failed for a reason no row names",
+			run: func(t *testing.T) (probe.Result, []string) {
+				dialer := &scriptedDialer{err: networkError("dial", "tcp", hubAddress, errors.New("no route to host"))}
+				return runHub(t, dialer, probe.TargetInput{Hub: hubAddress}), []string{hubAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonInternalError},
+		},
+		{
+			// Control: a denied seam names no address, so the probe's own prefix is
+			// the only thing that says what was dialed.
+			name: "a hub dial the seam denied",
+			run: func(t *testing.T) (probe.Result, []string) {
+				dialer := &scriptedDialer{err: probe.ErrSeamDenied}
+				return runHub(t, dialer, probe.TargetInput{Hub: hubAddress}), []string{hubAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonCommandDenied},
+		},
+		{
+			// Control: a dialer whose own error names neither operation nor address
+			// still gets the probe's prefix, so the detail says what was dialed.
+			name: "a hub dial whose own error names nothing",
+			run: func(t *testing.T) (probe.Result, []string) {
+				dialer := &scriptedDialer{err: errors.New("the scripted dialer refused the attempt")}
+				return runHub(t, dialer, probe.TargetInput{Hub: hubAddress}), []string{hubAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonInternalError},
+		},
+		{
+			// egress.go resolverFact: the resolver's own error names the lookup.
+			name: "a name the resolver answered authoritatively",
+			run: func(t *testing.T) (probe.Result, []string) {
+				resolver := &scriptedResolver{err: &net.DNSError{Err: "no such host", Name: sshHost, IsNotFound: true}}
+				return runSsh(t, testSSHKnownProbe, reachSeams(resolver, &scriptedDialer{}), probe.TargetInput{}), []string{sshHost}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonDNSNoSuchHost},
+		},
+		{
+			// egress.go resolverFact's unresolved branch.
+			name: "a resolver that did not answer",
+			run: func(t *testing.T) (probe.Result, []string) {
+				resolver := &scriptedResolver{err: &net.DNSError{Err: "i/o timeout", Name: sshHost, IsTimeout: true}}
+				return runSsh(t, testSSHKnownProbe, reachSeams(resolver, &scriptedDialer{}), probe.TargetInput{}), []string{sshHost}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonDNSUnresolved},
+		},
+		{
+			// The same fact raised by the dialer's own resolution, which net reports
+			// as "dial tcp: lookup <host>: no such host".
+			name: "a name the dialer's own resolution did not find",
+			run: func(t *testing.T) (probe.Result, []string) {
+				dialer := &scriptedDialer{err: &net.OpError{Op: "dial", Net: "tcp", Err: &net.DNSError{Err: "no such host", Name: sshHost, IsNotFound: true}}}
+				resolver := &scriptedResolver{addresses: []string{"203.0.113.7"}}
+				return runSsh(t, testSSHKnownProbe, reachSeams(resolver, dialer), probe.TargetInput{}), []string{sshHost}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonDNSNoSuchHost},
+		},
+		{
+			// Control: a denied lookup carries no address.
+			name: "a lookup the seam denied",
+			run: func(t *testing.T) (probe.Result, []string) {
+				resolver := &scriptedResolver{err: probe.ErrSeamDenied}
+				return runSsh(t, testSSHKnownProbe, reachSeams(resolver, &scriptedDialer{}), probe.TargetInput{}), []string{sshHost}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonCommandDenied},
+		},
+		{
+			// egress.go bannerFact's reset branch.
+			name: "a read the far end reset",
+			run: func(t *testing.T) (probe.Result, []string) {
+				conn := &scriptedBannerConn{readErr: networkError("read", "tcp", sshAddress, syscall.ECONNRESET)}
+				dialer := &scriptedDialer{conn: conn}
+				resolver := &scriptedResolver{addresses: []string{"203.0.113.7"}}
+				return runSsh(t, testSSHKnownProbe, reachSeams(resolver, dialer), probe.TargetInput{}), []string{sshAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonConnReset},
+		},
+		{
+			// egress.go bannerFact's default read-failure branch.
+			name: "a read that failed for a reason no row names",
+			run: func(t *testing.T) (probe.Result, []string) {
+				conn := &scriptedBannerConn{readErr: networkError("read", "tcp", sshAddress, errors.New("connection aborted"))}
+				dialer := &scriptedDialer{conn: conn}
+				resolver := &scriptedResolver{addresses: []string{"203.0.113.7"}}
+				return runSsh(t, testSSHKnownProbe, reachSeams(resolver, dialer), probe.TargetInput{}), []string{sshAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonInternalError},
+		},
+		{
+			// egress.go bannerFact's budget branch, the read-side expiry beside the
+			// dial-side one above.
+			name: "a read that expired the probe's own budget",
+			run: func(t *testing.T) (probe.Result, []string) {
+				conn := &scriptedBannerConn{readErr: networkError("read", "tcp", sshAddress, os.ErrDeadlineExceeded)}
+				dialer := &scriptedDialer{conn: conn}
+				resolver := &scriptedResolver{addresses: []string{"203.0.113.7"}}
+				return runSsh(t, testSSHKnownProbe, reachSeams(resolver, dialer), probe.TargetInput{}), []string{sshAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonBudgetExpired},
+		},
+		{
+			// Control: a far end that sends nothing ends the read with io.EOF, which
+			// names no address, so this wording keeps the probe's own prefix — the fix
+			// must not have dropped the address from the branch that never doubled it.
+			name: "a read the far end ended without sending anything",
+			run: func(t *testing.T) (probe.Result, []string) {
+				conn := &scriptedBannerConn{readErr: io.EOF}
+				dialer := &scriptedDialer{conn: conn}
+				resolver := &scriptedResolver{addresses: []string{"203.0.113.7"}}
+				return runSsh(t, testSSHKnownProbe, reachSeams(resolver, dialer), probe.TargetInput{}), []string{sshAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonBannerNotSSH},
+		},
+		{
+			// Control: a denied packet seam carries no address, and each region's
+			// detail is named by the probe's own prefix.
+			name: "a packet socket the seam denied",
+			run: func(t *testing.T) (probe.Result, []string) {
+				dialer := &scriptedPacketDialer{err: fmt.Errorf("dial udp: %w", probe.ErrSeamDenied)}
+				return runQuic(t, packetSeams(dialer), probe.TargetInput{}), quicAddresses
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonCommandDenied, probe.ReasonCommandDenied},
+		},
+		{
+			// quic.go packetErrorFact's refusal branch, reached through a failing
+			// write.
+			name: "a datagram write the socket refused",
+			run: func(t *testing.T) (probe.Result, []string) {
+				dialer := packetErrors(func(address string) *scriptedPacketConn {
+					return &scriptedPacketConn{writeErr: networkError("write", "udp", address, os.NewSyscallError("write", syscall.ECONNREFUSED))}
+				})
+				return runQuic(t, packetSeams(dialer), probe.TargetInput{}), quicAddresses
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonUDPUnreachable, probe.ReasonUDPUnreachable},
+		},
+		{
+			// quic.go packetErrorFact's default branch.
+			name: "a datagram write that failed for a reason no row names",
+			run: func(t *testing.T) (probe.Result, []string) {
+				dialer := packetErrors(func(address string) *scriptedPacketConn {
+					return &scriptedPacketConn{writeErr: networkError("write", "udp", address, errors.New("network is down"))}
+				})
+				return runQuic(t, packetSeams(dialer), probe.TargetInput{}), quicAddresses
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonUDPErrorUnclassified, probe.ReasonUDPErrorUnclassified},
+		},
+		{
+			// quic.go udpReplyFact's refusal branch.
+			name: "a datagram read the socket refused",
+			run: func(t *testing.T) (probe.Result, []string) {
+				dialer := packetErrors(func(address string) *scriptedPacketConn {
+					return &scriptedPacketConn{readErr: networkError("read", "udp", address, syscall.ECONNREFUSED)}
+				})
+				return runQuic(t, packetSeams(dialer), probe.TargetInput{}), quicAddresses
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonUDPUnreachable, probe.ReasonUDPUnreachable},
+		},
+		{
+			// quic.go udpReplyFact's default branch.
+			name: "a datagram read that failed for a reason no row names",
+			run: func(t *testing.T) (probe.Result, []string) {
+				dialer := packetErrors(func(address string) *scriptedPacketConn {
+					return &scriptedPacketConn{readErr: networkError("read", "udp", address, errors.New("socket is not connected"))}
+				})
+				return runQuic(t, packetSeams(dialer), probe.TargetInput{}), quicAddresses
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonUDPErrorUnclassified, probe.ReasonUDPErrorUnclassified},
+		},
+		{
+			// Control: silence embeds no error at all; the probe names each region
+			// itself and the detail must keep doing so.
+			name: "datagram silence",
+			run: func(t *testing.T) (probe.Result, []string) {
+				dialer := packetErrors(func(address string) *scriptedPacketConn {
+					return &scriptedPacketConn{readErr: networkError("read", "udp", address, os.ErrDeadlineExceeded)}
+				})
+				return runQuic(t, packetSeams(dialer), probe.TargetInput{}), quicAddresses
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonUDPSilence, probe.ReasonUDPSilence},
+		},
+		{
+			// tls.go tlsChainFact's handshake-error branch: the production verifier
+			// returns the dial error unchanged, address and all.
+			name: "a chain handshake that dialed nothing",
+			run: func(t *testing.T) (probe.Result, []string) {
+				verifier := &scriptedTLSVerifier{err: refused("dial", "tcp", tlsAddress)}
+				return runTLSInterception(t, tlsSeams(verifier), probe.TargetInput{}), []string{tlsAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonTLSHandshakeUnresolved},
+		},
+		{
+			// tls.go tlsTrustStoreFact's handshake-error branch, for the same reason.
+			name: "a trust-store handshake that dialed nothing",
+			run: func(t *testing.T) (probe.Result, []string) {
+				verifier := &scriptedTLSVerifier{err: refused("dial", "tcp", trustStoreAddress)}
+				platform := scriptedPlatform{goos: testTLSTrustStoreLinux, arch: "amd64"}
+				return runTLSTruststore(t, trustStoreSeams(verifier, platform, &scriptedEnv{}), probe.TargetInput{}), []string{trustStoreAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonTLSHandshakeUnresolved},
+		},
+		{
+			// Control: tls.go's denied-verifier branch, where the denial names no
+			// address and the prefix is the only thing that says what was measured.
+			name: "a chain handshake the seam denied",
+			run: func(t *testing.T) (probe.Result, []string) {
+				verifier := &scriptedTLSVerifier{err: probe.ErrSeamDenied}
+				return runTLSInterception(t, tlsSeams(verifier), probe.TargetInput{}), []string{tlsAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonCommandDenied},
+		},
+		{
+			// Control: the trust-store probe's denied-verifier branch.
+			name: "a trust-store handshake the seam denied",
+			run: func(t *testing.T) (probe.Result, []string) {
+				verifier := &scriptedTLSVerifier{err: probe.ErrSeamDenied}
+				platform := scriptedPlatform{goos: testTLSTrustStoreLinux, arch: "amd64"}
+				return runTLSTruststore(t, trustStoreSeams(verifier, platform, &scriptedEnv{}), probe.TargetInput{}), []string{trustStoreAddress}
+			},
+			wantReasons: []probe.ReasonCode{probe.ReasonCommandDenied},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, addresses := tc.run(t)
+			if len(result.Observations) != len(tc.wantReasons) {
+				t.Fatalf("the run reported %d observations, want %d", len(result.Observations), len(tc.wantReasons))
+			}
+			if len(addresses) != len(result.Observations) {
+				t.Fatalf("the case names %d addresses for %d observations", len(addresses), len(result.Observations))
+			}
+			for i, observation := range result.Observations {
+				if got := strings.Count(observation.Detail, addresses[i]); got != 1 {
+					t.Errorf("observation %d names %q %d times, want exactly once: %q", i, addresses[i], got, observation.Detail)
+				}
+				if observation.Reason != tc.wantReasons[i] {
+					t.Errorf("observation %d reason = %q, want %q: the wording must not move a classification", i, observation.Reason, tc.wantReasons[i])
+				}
+			}
+			if len(result.Observations) == 1 {
+				// The result's detail is what a conclusion quotes, so the property is
+				// asserted on it as well.
+				if got := strings.Count(result.Detail, addresses[0]); got != 1 {
+					t.Errorf("the result names %q %d times, want exactly once: %q", addresses[0], got, result.Detail)
 				}
 			}
 		})

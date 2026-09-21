@@ -215,8 +215,8 @@ func tlsChainFact(host, address string, verification TLSVerification, err error)
 	case err != nil:
 		return RawObservation{
 			Kind: ObsTLSHandshakeError,
-			Wording: fmt.Sprintf("tls %s: the handshake produced no answer (observed issuer %q, verification code %q): %v; the failure is neither a verification failure nor a concluded issuer mismatch, so nothing is claimed about the chain",
-				address, issuer, code, err),
+			Wording: fmt.Sprintf("%sthe handshake produced no answer (observed issuer %q, verification code %q): %v; the failure is neither a verification failure nor a concluded issuer mismatch, so nothing is claimed about the chain",
+				addressPrefix("tls", address, err), issuer, code, err),
 		}
 	case expectedIssuerFor(host, issuer):
 		return RawObservation{
@@ -480,8 +480,8 @@ func tlsTrustStoreFact(address string, verification TLSVerification, err error) 
 	case err != nil:
 		return RawObservation{
 			Kind: ObsTLSHandshakeError,
-			Wording: fmt.Sprintf("tls %s: the handshake produced no answer (observed issuer %q, verification code %q): %v; neither an acceptance nor a rejection of the chain was measured, so nothing is claimed about the local trust store",
-				address, issuer, code, err),
+			Wording: fmt.Sprintf("%sthe handshake produced no answer (observed issuer %q, verification code %q): %v; neither an acceptance nor a rejection of the chain was measured, so nothing is claimed about the local trust store",
+				addressPrefix("tls", address, err), issuer, code, err),
 		}
 	default:
 		return RawObservation{

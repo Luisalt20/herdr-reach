@@ -227,6 +227,29 @@ func (p *egressHub) declaredTarget() (EffectiveTarget, RawObservation) {
 	}
 }
 
+// addressPrefix returns the "<operation> <address>: " prefix a detail uses to say what a
+// failed attempt was made against, or "" when the error's own message already names the
+// address.
+//
+// The standard library formats its own network errors as "<operation> <address>:
+// <cause>" — "dial tcp 127.0.0.1:1: connect: connection refused", "read tcp
+// 192.0.2.5:53124->198.51.100.7:443: i/o timeout", "lookup nosuch.example: no such host"
+// — so joining this prefix to one names the address twice in a detail the tool presents
+// as verbatim evidence, and the doubling reaches every conclusion that quotes the detail.
+// Each detail names the address once either way: the error keeps it when the error carries
+// it, and the probe adds it when the error does not — a denied seam, or a dialer whose own
+// error names nothing — because otherwise the detail would not say what was measured.
+//
+// Which reason code the fact becomes is still chosen from the error's identity in
+// classify.go's table (R-HR-07): the only thing read from the text here is whether the
+// text already contains the address it is about to quote.
+func addressPrefix(operation, address string, err error) string {
+	if err != nil && address != "" && strings.Contains(err.Error(), address) {
+		return ""
+	}
+	return fmt.Sprintf("%s %s: ", operation, address)
+}
+
 // dialFact turns one failed dial into the raw fact the classification table sees.
 //
 // The mapping is by error identity, never by message text (R-HR-07): a denial from
@@ -253,7 +276,7 @@ func dialFact(address string, err error) RawObservation {
 // target was not measured"); the four outcome mappings are shared, so one dial
 // failure can never be classified two ways (RG-8).
 func dialFactFor(subject, address string, err error) RawObservation {
-	wording := fmt.Sprintf("dial tcp %s: %v", address, err)
+	wording := fmt.Sprintf("%s%v", addressPrefix("dial tcp", address, err), err)
 	switch {
 	case errors.Is(err, ErrSeamDenied):
 		return RawObservation{
@@ -263,8 +286,8 @@ func dialFactFor(subject, address string, err error) RawObservation {
 	case dialTimedOut(err):
 		return RawObservation{
 			Kind: ObsProbeBudgetExpired,
-			Wording: fmt.Sprintf("dial tcp %s: %v after the probe's own %s dial budget, which is shorter than the runner's %s per-probe bound: the declared port did not answer inside the probe's own budget, which for the question \"is this port reachable?\" is the measurement itself",
-				address, err, DefaultDialBudget, DefaultProbeTimeout),
+			Wording: fmt.Sprintf("%s after the probe's own %s dial budget, which is shorter than the runner's %s per-probe bound: the declared port did not answer inside the probe's own budget, which for the question \"is this port reachable?\" is the measurement itself",
+				wording, DefaultDialBudget, DefaultProbeTimeout),
 		}
 	case errors.Is(err, syscall.ECONNREFUSED):
 		return RawObservation{Kind: ObsTCPRefused, Wording: wording}
@@ -307,7 +330,7 @@ func dialTimedOut(err error) bool {
 // message, because the message is the operating system's wording and wording must
 // never move a classification.
 func resolverFact(host string, err error) RawObservation {
-	wording := fmt.Sprintf("resolve %s: %v", host, err)
+	wording := fmt.Sprintf("%s%v", addressPrefix("resolve", host, err), err)
 	switch {
 	case errors.Is(err, ErrSeamDenied):
 		return RawObservation{
@@ -646,15 +669,15 @@ func bannerFact(address string, data []byte, err error) RawObservation {
 	case dialTimedOut(err):
 		return RawObservation{
 			Kind: ObsProbeBudgetExpired,
-			Wording: fmt.Sprintf("tcp %s: the connection was accepted but %v inside the probe's own %s budget with no identification string: for the question \"does this port speak SSH?\" nothing inside the budget is the measurement itself",
-				address, err, DefaultDialBudget),
+			Wording: fmt.Sprintf("%sthe connection was accepted but %v inside the probe's own %s budget with no identification string: for the question \"does this port speak SSH?\" nothing inside the budget is the measurement itself",
+				addressPrefix("tcp", address, err), err, DefaultDialBudget),
 		}
 	case errors.Is(err, syscall.ECONNRESET):
-		return RawObservation{Kind: ObsTCPReset, Wording: fmt.Sprintf("tcp %s: %v", address, err)}
+		return RawObservation{Kind: ObsTCPReset, Wording: fmt.Sprintf("%s%v", addressPrefix("tcp", address, err), err)}
 	case err != nil && !errors.Is(err, io.EOF):
 		return RawObservation{
 			Kind:    ObsInternalFailure,
-			Wording: fmt.Sprintf("tcp %s: %v (reading the identification string failed for a reason no row of the classification table names, so nothing is claimed about this port)", address, err),
+			Wording: fmt.Sprintf("%s%v (reading the identification string failed for a reason no row of the classification table names, so nothing is claimed about this port)", addressPrefix("tcp", address, err), err),
 		}
 	case len(data) == 0:
 		ending := "without ending the connection"
