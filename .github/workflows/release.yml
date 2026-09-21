@@ -232,10 +232,13 @@ jobs:
           - commit: ${COMMIT}
           - platforms: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64
 
-          Verify the download before running it:
+          Verify the download before running it: SHA256SUMS lists all five platform
+          binaries, so check only the line for the one you downloaded:
 
-              sha256sum -c SHA256SUMS        # Linux
-              shasum -a 256 -c SHA256SUMS    # macOS
+              grep "herdr-reach_<tag>_linux_arm64$" SHA256SUMS | sha256sum -c -        # Linux
+              grep "herdr-reach_<tag>_darwin_arm64$" SHA256SUMS | shasum -a 256 -c -   # macOS
+
+          Substitute your artifact name for your platform.
 
           Then run the downloaded binary once and confirm it reports the tag:
 
@@ -243,7 +246,7 @@ jobs:
 
           This is the measurement slice. The one command is doctor, and it measures the
           machine it runs on: what the network allows and why a transport cannot work. It
-          does not provision, connect, pair or persist anything.
+          does not provision, connect two machines, pair or persist anything.
 
           What each platform's run establishes. Linux/ARM64: the published binary, its
           checksum and injected version verified, run on a real network with no --hub
@@ -263,9 +266,10 @@ jobs:
           run.completeness is the field to read. macOS reports tls.truststore unresolved by
           decision, measured on a real macOS runner, so a default macOS run exits 1. UDP
           silence is not a block either: when the edge's datagram path draws no answer the
-          question is unresolved, never a failure, and the tool advises HTTP/2 for that
-          path. A publisher outside the declared expected set is unresolved as well, never
-          an interception claim and never a failure.
+          question is unresolved, never a failure. The tool advises HTTP/2 for that path
+          only when the edge itself answered on TCP; when the edge draws no answer either,
+          it advises nothing. A publisher outside the declared expected set is unresolved
+          as well, never an interception claim and never a failure.
 
           Native Windows is measurement-only: no provisioning slice covers it, and the
           Herdr plugin declares linux and macos. The node's installed Herdr version is not
