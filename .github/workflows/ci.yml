@@ -132,6 +132,42 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -count=1 ./...
+      # Issue #81's measurement, run on the real macOS runner in both build
+      # variants: the first step uses the toolchain's default flags, the second
+      # the CGO_ENABLED=0 the release builds with. `go test -run` exits 0 when
+      # its selector matches nothing, so each step greps its own output for the
+      # run header and fails when the measurement did not run — the same guard
+      # the no-egress job uses for the same reason.
+      - name: Measure the macOS trust store (toolchain defaults)
+        if: runner.os == 'macOS'
+        run: |
+          set -o pipefail
+          selector='^TestDarwinTrustStoreMeasurement$'
+          out="$(go test -count=1 -v ./internal/probe/ -run "$selector" 2>&1)" || {
+            printf '%s\n' "$out"
+            exit 1
+          }
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q '=== RUN   TestDarwinTrustStoreMeasurement' || {
+            echo "::error::the selector matched no test: the trust-store measurement did not run"
+            exit 1
+          }
+      - name: Measure the macOS trust store (CGO_ENABLED=0)
+        if: runner.os == 'macOS'
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -o pipefail
+          selector='^TestDarwinTrustStoreMeasurement$'
+          out="$(go test -count=1 -v ./internal/probe/ -run "$selector" 2>&1)" || {
+            printf '%s\n' "$out"
+            exit 1
+          }
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q '=== RUN   TestDarwinTrustStoreMeasurement' || {
+            echo "::error::the selector matched no test: the trust-store measurement did not run"
+            exit 1
+          }
 
   cross-build:
     # The release builds binaries for these platforms; compiling for each of them

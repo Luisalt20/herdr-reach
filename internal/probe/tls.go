@@ -293,6 +293,20 @@ const (
 	// output itself to state (RG-3). It is a constant rather than a phrase written
 	// into one wording so that the platform limitation has exactly one home, and so
 	// that the reason code and the sentence a reader sees cannot drift apart.
+	//
+	// It is measured, not assumed (issue #81). On a real macOS runner, on 2026-09-21,
+	// with the toolchain this repository pins and again with the CGO_ENABLED=0 the
+	// release builds with, x509.SystemCertPool returned a pool exposing no subjects
+	// at all — so the two well-known roots the measurement asked about were absent
+	// from an empty list — while /etc/ssl/cert.pem existed and darwin's loader reads
+	// no such file.
+	// The two variants answered identically, which is what makes the enumeration half
+	// of this sentence a description of darwin rather than an artifact of the
+	// release's build flags: no darwin builder is needed for it to hold. The second
+	// half rests on crypto/x509's own source, which carries no cgo-constrained file
+	// and sends a nil-root verification to the platform verifier on darwin; the log
+	// performs no handshake, so that half is source-level evidence and is recorded as
+	// such in issue #81.
 	trustStoreMacOSLimitation = "Go cannot enumerate macOS system roots, and keychain trust is only visible through the platform verifier when no explicit root pool is supplied"
 	// trustStoreSubject names what was measured in the not-measured wordings, so a
 	// reader is told which capability was missing rather than which probe missed it.
