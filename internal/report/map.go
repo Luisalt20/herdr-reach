@@ -125,11 +125,14 @@ func probes(results []probe.Result) []ProbeRow {
 }
 
 // nullableTarget renders one target field the way design D3 requires: JSON null
-// when the run carried no target, the verbatim string otherwise. A script must
-// not have to tell an empty string from an absent target, because a measurement
-// that was never made has no target at all while a measurement that was made
-// names the address it dialed. The pointer is the whole representation: the key
-// stays present (no `omitempty`), and nothing else in the document is nullable.
+// when no subject was declared, the verbatim string otherwise. A script must not
+// have to tell "no subject declared" from an empty string. A target names the
+// subject a probe or observation is about — a dialed address, a local path, a
+// unit list, a service name — and resolution plays no part: local.sshd's
+// not-measured observations carry their targets, while egress.quic's
+// internal-failure observation carries none. The pointer is the whole
+// representation: the key stays present (no `omitempty`), and nothing else in
+// the document is nullable.
 func nullableTarget(target string) *string {
 	if target == "" {
 		return nil

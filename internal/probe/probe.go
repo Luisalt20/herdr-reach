@@ -67,8 +67,12 @@ const (
 // (R-HR-07), so neither has to be derived from the other.
 //
 // Label names the fact inside its probe ("tcp 7844 region1", "effective sshd
-// config"). Target is empty only for a not-measured observation, where no
-// target was attempted.
+// config"). Target names the subject the observation is about — a dialed
+// address, a local path, a unit list, a service name — and is empty when the
+// observation is about no subject; resolution plays no part. egress.quic's
+// internal-failure observation carries no target and is unresolved, while
+// local.sshd's not-measured service and config observations still carry their
+// unit list and config path.
 type Observation struct {
 	Label      string
 	Target     string
