@@ -289,9 +289,11 @@ func stringAt(t *testing.T, path string, value any) string {
 	return text
 }
 
-// targetAt asserts the JSON a target field owes: JSON null when the run carried no target, the
-// verbatim string otherwise. The JSON value is asserted, not the Go zero value, because a script
-// must be able to tell "no target" from an empty one (design D3).
+// targetAt asserts the JSON a target field owes: JSON null when no subject was declared, the
+// verbatim string otherwise; resolution plays no part, which is why local.sshd's not-measured
+// observations can carry their targets while egress.quic's internal-failure observation carries
+// none. The JSON value is asserted, not the Go zero value, because a script must be able to tell
+// "no target declared" from an empty one (design D3).
 func targetAt(t *testing.T, path string, value any, want string) {
 	t.Helper()
 	if want == "" {

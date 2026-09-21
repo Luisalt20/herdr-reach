@@ -43,8 +43,11 @@ const (
 // Payload is the whole machine-readable document of design §3.3: the top level
 // of the `schema_version: "1"` contract. Every field is always present; an empty
 // collection serialises as `[]` rather than `null`, and the only nullable fields
-// in the document are the target fields of ProbeRow and ObservationRow — null
-// exactly when the run carried no target — and Targets.Hub.
+// in the document are the target fields of ProbeRow and ObservationRow, plus
+// Targets.Hub. The ProbeRow and ObservationRow target fields are null when no
+// subject was declared and the verbatim subject otherwise; resolution plays no
+// part, which is why local.sshd's not-measured observations can carry their
+// targets while egress.quic's internal-failure observation carries none.
 type Payload struct {
 	SchemaVersion string            `json:"schema_version"`
 	GeneratedAt   string            `json:"generated_at"`
@@ -119,10 +122,14 @@ type DeclaredTarget struct {
 type ProbeRow struct {
 	Name string          `json:"name"`
 	Kind probe.ProbeKind `json:"kind"`
-	// Target is the probe's declared target verbatim, or JSON null when the run
-	// carried no target (a measurement that was never made has none). The key is
-	// always present: a script must not have to tell "no target" from an empty
-	// string, which is design D3's reason for the nullable field.
+	// Target names the subject the probe is about — a dialed address, a local
+	// path, a unit list, a service name — verbatim, or JSON null when no subject
+	// was declared; resolution plays no part. local.sshd's row carries its binary
+	// path while the probe is not_measured, and its not-measured observations
+	// carry their targets; egress.quic's internal-failure observation carries
+	// none and is unresolved. The key is always present: a script must not have
+	// to tell "no target declared" from an empty string, which is design D3's
+	// reason for the nullable field.
 	Target     *string          `json:"target"`
 	Verdict    probe.Verdict    `json:"verdict"`
 	Resolution probe.Resolution `json:"resolution"`
@@ -139,9 +146,13 @@ type ProbeRow struct {
 // verbatim; nothing here is derived from a verdict.
 type ObservationRow struct {
 	Label string `json:"label"`
-	// Target is the observation's own target verbatim, or JSON null when the
-	// observation carried none (a not-measured observation names no target), for
-	// the same reason ProbeRow's target is nullable.
+	// Target names the subject the observation is about — a dialed address, a
+	// local path, a unit list, a service name — verbatim, or JSON null when no
+	// subject was declared; resolution plays no part. local.sshd's not-measured
+	// service and config observations carry their targets, while egress.quic's
+	// internal-failure observation carries none and is unresolved. The key is
+	// always present: a script must not have to tell "no target declared" from
+	// an empty string, which is design D3's reason for the nullable field.
 	Target     *string          `json:"target"`
 	Verdict    probe.Verdict    `json:"verdict"`
 	Resolution probe.Resolution `json:"resolution"`
