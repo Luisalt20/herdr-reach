@@ -453,6 +453,29 @@ Four rules that decide arguments in this codebase.
 
 <div align="center"><sub>&middot; &middot; &middot;</sub></div>
 
+## Acknowledgements
+
+Built with **gentle-shell** &mdash; the Pi-native package
+[`gentle-pi`](https://github.com/Gentleman-Programming/gentle-pi), part of the
+[gentle-ai](https://gentle-ai.gentlemanprogramming.com/) ecosystem.
+
+What it gave this project is mostly a **way of working**: write the test before the behaviour and keep
+the evidence; verify a delegated result instead of trusting the report; keep a change small enough that
+someone can actually read it; and never state something at a higher confidence than its source
+supports.
+
+That last one shaped the design principles above, and for a diagnostic tool it matters more than usual
+&mdash; guessing is worse than saying *"I don't know"*.
+
+The release pipeline here was written after reading theirs, which is a debt worth naming.
+
+Thank you to [Gentleman Programming](https://gentlemanprogramming.com) for building it, and for
+sharing it.
+
+<div align="right"><a href="#top">Back to top</a></div>
+
+<div align="center"><sub>&middot; &middot; &middot;</sub></div>
+
 ## About the author
 
 Built by **Luisalt20** &mdash; out of necessity, on a work laptop that could not be reached
